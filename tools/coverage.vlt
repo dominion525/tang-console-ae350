@@ -1,0 +1,18 @@
+`verilator_config
+
+// カバレッジを数えるのは、モック (= ae350/rtl/AE350_SOC.v、ae350_plic.v、ae350_plmt.v) と
+// FPGA のロジック側の RTL (= ae350/rtl/apb_*.v) と shell_top だけ。上流のコピーと TB は数えない
+coverage_off -file "*hazard3/hdl/*"
+coverage_off -file "*vendor/verilog-uart/*"
+coverage_off -file "*tb/tb_mem.v"
+coverage_off -file "*tb/ahb_*_model.v"
+coverage_off -file "*tb/plic_tb.v"
+coverage_off -file "*tb/sram_tb.v"
+coverage_off -file "*tb/sdram_tb.v"
+// 流用したファイル (= sdram_bridge は Lapidary の側の TB で確かめている。SDRAM のモデルは上流のコピー)
+coverage_off -file "*rtl/sdram_bridge.v"
+coverage_off -file "*zeitlos/sdram_model.v"
+coverage_off -file "*tb/sdram_hs_path.v"
+coverage_off -file "*tb/gowin_io_models.v"
+coverage_off -file "*tb/sdram_io_tb.v"
+coverage_off -file "*tb/sdram_pll_tb.v"

@@ -1,0 +1,11 @@
+Hello, world!
+12345 beef ok
+A
+READY line
+got [abc def]
+getchar x y
+READY fifo
+fifo 256 0123456789ABCDEF F
+READY frame
+frame Q
+bye
