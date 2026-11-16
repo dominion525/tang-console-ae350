@@ -14,27 +14,27 @@ Gowin GW5AST-138 に内蔵された RISC-V ハードコア AE350（Andes A25）�
 
 ## ディレクトリ構成
 
-| ディレクトリ | 内容 |
-|---|---|
-| `rtl/` | Hazard3 版（AE350_SOC.v、ae350_fabric.v、ae350_plic.v、ae350_plmt.v など）と、ファブリック側の回路（apb_uart.v、apb_gpint.v、apb_paddr_probe.v、apb_reg_slice.v、ahb_reg_slice.v、ahb_sram.v、ahb_rom.v） |
-| `tb/` | shell_top.v（AE350_SOC とファブリック側の回路をつないだトップ。シミュレーションと実機の両方で使う）とテストベンチ |
-| `sw/` | テストプログラム（stage2_test.c〜stage5_test.c）、読み出しプログラム probe.c、リンカスクリプト |
-| `board/tang_console/` | ボードのトップ、PLL、ピン制約とタイミング制約、ビルドスクリプト、監視回路 |
-| `hazard3/` | Hazard3 v1.1.1 の RTL（変更点は hazard3/README.md） |
-| `tools/` | ポート比較、lint とカバレッジの設定、hex 変換、UART の読み書き |
+| ディレクトリ          | 内容                                                                                                                                                                                                      |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rtl/`                | Hazard3 版（AE350_SOC.v、ae350_fabric.v、ae350_plic.v、ae350_plmt.v など）と、ファブリック側の回路（apb_uart.v、apb_gpint.v、apb_paddr_probe.v、apb_reg_slice.v、ahb_reg_slice.v、ahb_sram.v、ahb_rom.v） |
+| `tb/`                 | shell_top.v（AE350_SOC とファブリック側の回路をつないだトップ。シミュレーションと実機の両方で使う）とテストベンチ                                                                                         |
+| `sw/`                 | テストプログラム（stage2_test.c〜stage5_test.c）、読み出しプログラム probe.c、リンカスクリプト                                                                                                            |
+| `board/tang_console/` | ボードのトップ、PLL、ピン制約とタイミング制約、ビルドスクリプト、監視回路                                                                                                                                 |
+| `hazard3/`            | Hazard3 v1.1.1 の RTL（変更点は hazard3/README.md）                                                                                                                                                       |
+| `tools/`              | ポート比較、lint とカバレッジの設定、hex 変換、UART の読み書き                                                                                                                                            |
 
 ## シミュレーション
 
 Verilator 5.052、Icarus Verilog 13.0、riscv64-elf-gcc、newlib を使います。
 newlib の場所は `NEWLIB` で指定します（既定値はありません）。
 
-| コマンド | 内容 |
-|---|---|
-| `make check` | プリミティブとのポート比較、lint、iverilog での読み込み |
-| `make test` | テストプログラム、PLIC と RAM の単体テスト、クロックの組み合わせ、実行中のリセット、ランダムなウェイト |
-| `make test-iverilog` | テストプログラムを 4 値シミュレーションで実行 |
-| `make coverage` | カバレッジ |
-| `make run-probe` | 読み出しプログラムを Hazard3 版で実行 |
+| コマンド             | 内容                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------ |
+| `make check`         | プリミティブとのポート比較、lint、iverilog での読み込み                                                |
+| `make test`          | テストプログラム、PLIC と RAM の単体テスト、クロックの組み合わせ、実行中のリセット、ランダムなウェイト |
+| `make test-iverilog` | テストプログラムを 4 値シミュレーションで実行                                                          |
+| `make coverage`      | カバレッジ                                                                                             |
+| `make run-probe`     | 読み出しプログラムを Hazard3 版で実行                                                                  |
 
 ### newlib のビルド（初回のみ）
 
@@ -94,16 +94,16 @@ CPU からの出力が 0.1 秒以上途切れると、監視回路（`board/tang
 
 ### 実機で読んだ値
 
-| 項目 | 読んだ値 |
-|---|---|
-| CPU の識別子 | mvendorid 0x31e、marchid 0x80000a25、mimpid 0x160 |
-| misa | 0x4094312d（RV32 IMAFDC + N、S、U、X） |
-| ILM と DLM | 0xA000_0000 と 0xA020_0000、リセット直後から有効 |
-| リセット直後のキャッシュ | mcache_ctl 0（無効） |
-| mcycle と mtime | mcycle は 800 MHz、mtime は 100 MHz（AHB_CLK で進む） |
-| PLIC | ターゲット 2 つ（0 が MEIP、1 が SEIP）、ソース 31 本、優先度 0〜3、全ソースがレベル割り込み。claim はしきい値で絞られ、complete は enable を落としていても有効 |
-| GP_INT | GP_INT[0] はソース 4、GP_INT[1〜15] はソース 11〜25 |
-| APB_P* の PADDR | 0xF800_0000 以降の全アドレスが出る。1 バイトと 2 バイトのアクセスも 4 バイト境界に揃い、PWDATA は書き込むバイトレーンにだけ値が入る |
+| 項目                     | 読んだ値                                                                                                                                                        |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CPU の識別子             | mvendorid 0x31e、marchid 0x80000a25、mimpid 0x160                                                                                                               |
+| misa                     | 0x4094312d（RV32 IMAFDC + N、S、U、X）                                                                                                                          |
+| ILM と DLM               | 0xA000_0000 と 0xA020_0000、リセット直後から有効                                                                                                                |
+| リセット直後のキャッシュ | mcache_ctl 0（無効）                                                                                                                                            |
+| mcycle と mtime          | mcycle は 800 MHz、mtime は 100 MHz（AHB_CLK で進む）                                                                                                           |
+| PLIC                     | ターゲット 2 つ（0 が MEIP、1 が SEIP）、ソース 31 本、優先度 0〜3、全ソースがレベル割り込み。claim はしきい値で絞られ、complete は enable を落としていても有効 |
+| GP_INT                   | GP_INT[0] はソース 4、GP_INT[1〜15] はソース 11〜25                                                                                                             |
+| APB_P* の PADDR          | 0xF800_0000 以降の全アドレスが出る。1 バイトと 2 バイトのアクセスも 4 バイト境界に揃い、PWDATA は書き込むバイトレーンにだけ値が入る                             |
 
 Hazard3 版はこれらの値に合わせています。
 ただし CPU は Hazard3 なので、次の点は本物と異なります。
@@ -134,13 +134,13 @@ ROM をローダーにしたビルドでは、監視回路は入れません。
 コマンドは 1 行のテキストで、アドレスと長さは 16 進 8 桁で書きます。
 応答の行末は `\r\n` です。
 
-| Mac → ローダー | ローダー → Mac |
-|---|---|
-| （電源投入時、プログラムから戻ったとき） | `READY ae350 loader` |
-| `load <アドレス> <長さ>` | `GO`（受信可能）、`ERR range`、`ERR syntax` |
-| データ（長さ分のバイト） | `OK <長さ> <CRC-32>`、`ERR timeout`、`ERR uart` |
-| `run <アドレス>` | `RUN <アドレス>`（この後はプログラムの出力） |
-| それ以外 | `ERR command` |
+| Mac → ローダー                           | ローダー → Mac                                  |
+| ---------------------------------------- | ----------------------------------------------- |
+| （電源投入時、プログラムから戻ったとき） | `READY ae350 loader`                            |
+| `load <アドレス> <長さ>`                 | `GO`（受信可能）、`ERR range`、`ERR syntax`     |
+| データ（長さ分のバイト）                 | `OK <長さ> <CRC-32>`、`ERR timeout`、`ERR uart` |
+| `run <アドレス>`                         | `RUN <アドレス>`（この後はプログラムの出力）    |
+| それ以外                                 | `ERR command`                                   |
 
 - データは `GO` を確認してから送ります。こうすると、拒否されたときにデータがコマンドとして解釈されません。
 - アドレスと長さが外部メモリか ILM（0xA000_0000〜0xA000_FFFF）の範囲に収まらないと、`ERR range` を返します。
@@ -171,11 +171,11 @@ SDRAM コントローラと、シーケンスを監視する回路自体はリ�
 
 ### テスト
 
-| コマンド | 内容 |
-|---|---|
-| `make test-loader` | 拒否されるコマンド、GO、タイムアウト、受信エラー、CRC-32、リセットシーケンスを含むデータ、止まらないプログラムからのリセットシーケンスによる復帰、hello の送信と実行（実機と同じ 1.25 Mbps の間隔で送るので、数分かかる） |
-| `make test-uart-reset` | リセットシーケンス検出回路の単体テスト |
-| `make test-uart-tool` | tools/ae350_uart.rb の単体テスト（シリアルポートの代わりに UNIX ドメインソケットを使う） |
+| コマンド               | 内容                                                                                                                                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `make test-loader`     | 拒否されるコマンド、GO、タイムアウト、受信エラー、CRC-32、リセットシーケンスを含むデータ、止まらないプログラムからのリセットシーケンスによる復帰、hello の送信と実行（実機と同じ 1.25 Mbps の間隔で送るので、数分かかる） |
+| `make test-uart-reset` | リセットシーケンス検出回路の単体テスト                                                                                                                                                                                    |
+| `make test-uart-tool`  | tools/ae350_uart.rb の単体テスト（シリアルポートの代わりに UNIX ドメインソケットを使う）                                                                                                                                  |
 
 `make test-loader` の手順ファイルは `tools/loader_test.rb` が生成し、テストベンチの `+uart_script` で流します。
 3 つとも `make test` に含まれています。
@@ -220,24 +220,24 @@ DDR3 用 PLL の本体（`gowin_pll_mod.v`）は、`build.sh` が `board/tang_co
 - 1 GB を超えるアドレスはエラー応答を返します。
   ただし 0x7F00_0000 からの 32 バイトは時間計測用のカウンタで、読むと値が返ります（`sw/mem_bench.c` が計測区間の前後の差を取ります）。
 
-  | オフセット | 内容 |
-  |---|---|
-  | +0x00 | 読み出し転送の数 |
-  | +0x04 | 読み出しで AE350 を待たせた DDR_CLK のサイクル数 |
-  | +0x08 | 書き込み転送の数 |
-  | +0x0C | 書き込みで AE350 を待たせた DDR_CLK のサイクル数 |
-  | +0x10 | 読み出しコマンドが受け付けられるまでの IP クロック数 |
-  | +0x14 | 読み出しコマンドからデータが返るまでの IP クロック数 |
-  | +0x18 | 書き込みコマンドが受け付けられるまでの IP クロック数 |
-  | +0x1C | 保持した 32 バイトから返した読み出しの数 |
+  | オフセット | 内容                                                 |
+  | ---------- | ---------------------------------------------------- |
+  | +0x00      | 読み出し転送の数                                     |
+  | +0x04      | 読み出しで AE350 を待たせた DDR_CLK のサイクル数     |
+  | +0x08      | 書き込み転送の数                                     |
+  | +0x0C      | 書き込みで AE350 を待たせた DDR_CLK のサイクル数     |
+  | +0x10      | 読み出しコマンドが受け付けられるまでの IP クロック数 |
+  | +0x14      | 読み出しコマンドからデータが返るまでの IP クロック数 |
+  | +0x18      | 書き込みコマンドが受け付けられるまでの IP クロック数 |
+  | +0x1C      | 保持した 32 バイトから返した読み出しの数             |
 
 ### アクセス速度（`sw/mem_bench.c`、データキャッシュなし、AE350 の CPU クロック 800 MHz で数えた 1 アクセスあたりのサイクル数）
 
-| アクセス | DDR3 | SDRAM（166.7 MHz 版） |
-|---|---|---|
-| シーケンシャル書き込み | 96（120 ns） | 258（322 ns） |
-| シーケンシャル読み出し | 179（224 ns） | 320（400 ns） |
-| ランダム読み出し（4 KB 間隔） | 468（585 ns） | 320（400 ns） |
+| アクセス                      | DDR3          | SDRAM（166.7 MHz 版） |
+| ----------------------------- | ------------- | --------------------- |
+| シーケンシャル書き込み        | 96（120 ns）  | 258（322 ns）         |
+| シーケンシャル読み出し        | 179（224 ns） | 320（400 ns）         |
+| ランダム読み出し（4 KB 間隔） | 468（585 ns） | 320（400 ns）         |
 
 シーケンシャル読み出しでは、8 回のうち 7 回を保持した 32 バイトから返します。
 ランダム読み出しでは毎回 IP から読み、IP の内部（読み出しコマンドからデータが返るまで）で IP クロック約 32 サイクル（320 ns）かかります。
@@ -271,17 +271,17 @@ Gowin の IP より遅いものの、生成される Verilog も含めてオー�
 `litedram_gen` は Python の仮想環境にインストールし、その場所を `LITEX_VENV` で指定します（例：`MEM=litedram LITEX_VENV=<仮想環境> sh board/tang_console/build.sh`。既定値はありません）。
 動作を確認したバージョンは次のとおりです（pip でインストールします）。
 
-| パッケージ | リポジトリ | バージョン |
-|---|---|---|
-| migen | https://github.com/m-labs/migen | e19524c |
-| litex | https://github.com/enjoy-digital/litex | 8cba6a6 |
-| litedram | https://github.com/enjoy-digital/litedram | 60b5ae1 |
-| litex-boards | https://github.com/litex-hub/litex-boards | 78bc7d7 |
-| pythondata-cpu-vexriscv | https://github.com/litex-hub/pythondata-cpu-vexriscv | 642ecfe |
-| pythondata-software-picolibc | https://github.com/litex-hub/pythondata-software-picolibc | 6a13ccc |
-| pythondata-software-compiler_rt | https://github.com/litex-hub/pythondata-software-compiler_rt | 6eb7660 |
-| meson | | 1.9.1 |
-| ninja | | 1.13.0 |
+| パッケージ                      | リポジトリ                                                   | バージョン |
+| ------------------------------- | ------------------------------------------------------------ | ---------- |
+| migen                           | https://github.com/m-labs/migen                              | e19524c    |
+| litex                           | https://github.com/enjoy-digital/litex                       | 8cba6a6    |
+| litedram                        | https://github.com/enjoy-digital/litedram                    | 60b5ae1    |
+| litex-boards                    | https://github.com/litex-hub/litex-boards                    | 78bc7d7    |
+| pythondata-cpu-vexriscv         | https://github.com/litex-hub/pythondata-cpu-vexriscv         | 642ecfe    |
+| pythondata-software-picolibc    | https://github.com/litex-hub/pythondata-software-picolibc    | 6a13ccc    |
+| pythondata-software-compiler_rt | https://github.com/litex-hub/pythondata-software-compiler_rt | 6eb7660    |
+| meson                           |                                                              | 1.9.1      |
+| ninja                           |                                                              | 1.13.0     |
 
 各リポジトリを上記のコミットでインストールします。
 picolibc と compiler_rt は中身を git のサブモジュールで持っているため、tarball ではなく git からインストールします。
@@ -304,11 +304,11 @@ picolibc と compiler_rt は中身を git のサブモジュールで持って�
 
 ### 設定
 
-| 項目 | 設定 |
-|---|---|
-| 速度 | 1:2、コントローラ 50 MHz、DDR3 クロック 100 MHz（200 MT/s、DLL オフ） |
-| ユーザポート | native（1 アクセス 32 バイト、アドレス 25 ビット） |
-| ピン | `board/tang_console/litedram/ddram.cst`（1 個目は LiteX-Boards の Tang Console 定義、2 個目は Sipeed の DDR3 テストの .cst から） |
+| 項目         | 設定                                                                                                                              |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| 速度         | 1:2、コントローラ 50 MHz、DDR3 クロック 100 MHz（200 MT/s、DLL オフ）                                                             |
+| ユーザポート | native（1 アクセス 32 バイト、アドレス 25 ビット）                                                                                |
+| ピン         | `board/tang_console/litedram/ddram.cst`（1 個目は LiteX-Boards の Tang Console 定義、2 個目は Sipeed の DDR3 テストの .cst から） |
 
 より速い設定（1:4、コントローラ 100 MHz、DDR3 400 MHz）は、コントローラのクロックが 100 MHz のタイミングを満たさなかったため採用していません。
 詳細は `tang_console.yml` の冒頭に書いてあります。
@@ -324,11 +324,11 @@ DDR3 の容量と 1 アクセスの幅はパラメータ（`MEM_AW`、`LINE_AW`�
 
 ### アクセス速度（`sw/mem_bench.c`、データキャッシュなし、AE350 の CPU クロック 800 MHz で数えた 1 アクセスあたりのサイクル数）
 
-| アクセス | LiteDRAM | DDR3（Gowin の IP） | SDRAM（166.7 MHz 版） |
-|---|---|---|---|
-| シーケンシャル書き込み | 298（372 ns） | 96（120 ns） | 258（322 ns） |
-| シーケンシャル読み出し | 260（325 ns） | 179（224 ns） | 320（400 ns） |
-| ランダム読み出し（4 KB 間隔） | 781（976 ns） | 468（585 ns） | 320（400 ns） |
+| アクセス                      | LiteDRAM      | DDR3（Gowin の IP） | SDRAM（166.7 MHz 版） |
+| ----------------------------- | ------------- | ------------------- | --------------------- |
+| シーケンシャル書き込み        | 298（372 ns） | 96（120 ns）        | 258（322 ns）         |
+| シーケンシャル読み出し        | 260（325 ns） | 179（224 ns）       | 320（400 ns）         |
+| ランダム読み出し（4 KB 間隔） | 781（976 ns） | 468（585 ns）       | 320（400 ns）         |
 
 読み出しコマンドからデータが返るまでは、コントローラクロックで約 34 サイクルで、Gowin の IP（約 32 サイクル）とほぼ同じです。
 コントローラクロックが Gowin の IP の半分（50 MHz と 100 MHz）なので、時間では約 2 倍になります。
@@ -346,12 +346,12 @@ DDR3 の容量と 1 アクセスの幅はパラメータ（`MEM_AW`、`LINE_AW`�
 このリポジトリは Apache-2.0（`LICENSE`）です。
 ただし次のファイルは他の作者によるもので、元のライセンスのまま含めています。
 
-| 場所 | 出典 | ライセンス（本文） |
-|---|---|---|
-| `hazard3/` | Hazard3 v1.1.1（Luke Wren）。変更点は hazard3/README.md | Apache-2.0（hazard3/LICENSE） |
-| `rtl/vendor/verilog-uart/` | verilog-uart（Alex Forencich） | MIT（rtl/vendor/verilog-uart/COPYING） |
-| `tb/vendor/zeitlos/sdram_model.v` | zeitlos（Lone Dynamics）。変更点はファイルの冒頭 | 独自の条件（tb/vendor/zeitlos/LICENSE.md） |
-| `board/tang_console/ddr3/` | Sipeed の TangMega-138K-example。ファイルごとの出典は board/tang_console/ddr3/README.md | Apache-2.0（LICENSE） |
-| `board/tang_console/litedram/tang_console.yml` | LiteDRAM の examples/tang_mega_138k_pro.yml | BSD-2-Clause（board/tang_console/litedram/LICENSE.litedram） |
-| `board/tang_console/litedram/ddram.cst` | 1 個目の DDR3：LiteX-Boards の Tang Console 定義 | BSD-2-Clause（board/tang_console/litedram/LICENSE.litex-boards） |
-| `board/tang_console/litedram/ddram.cst` | 2 個目の DDR3：Sipeed の TangMega-138K-example | Apache-2.0（LICENSE） |
+| 場所                                           | 出典                                                                                    | ライセンス（本文）                                               |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `hazard3/`                                     | Hazard3 v1.1.1（Luke Wren）。変更点は hazard3/README.md                                 | Apache-2.0（hazard3/LICENSE）                                    |
+| `rtl/vendor/verilog-uart/`                     | verilog-uart（Alex Forencich）                                                          | MIT（rtl/vendor/verilog-uart/COPYING）                           |
+| `tb/vendor/zeitlos/sdram_model.v`              | zeitlos（Lone Dynamics）。変更点はファイルの冒頭                                        | 独自の条件（tb/vendor/zeitlos/LICENSE.md）                       |
+| `board/tang_console/ddr3/`                     | Sipeed の TangMega-138K-example。ファイルごとの出典は board/tang_console/ddr3/README.md | Apache-2.0（LICENSE）                                            |
+| `board/tang_console/litedram/tang_console.yml` | LiteDRAM の examples/tang_mega_138k_pro.yml                                             | BSD-2-Clause（board/tang_console/litedram/LICENSE.litedram）     |
+| `board/tang_console/litedram/ddram.cst`        | 1 個目の DDR3：LiteX-Boards の Tang Console 定義                                        | BSD-2-Clause（board/tang_console/litedram/LICENSE.litex-boards） |
+| `board/tang_console/litedram/ddram.cst`        | 2 個目の DDR3：Sipeed の TangMega-138K-example                                          | Apache-2.0（LICENSE）                                            |
