@@ -1,6 +1,7 @@
 #
 # LiteDRAM の DDR3 の制御を、Tang Console 138K 向けに単体の Verilog として書き出す設定 (= 2026-11-16、実験)。
-# litedram_gen (= LITEX_VENV で渡す LiteX の仮想環境) で使う。元は LiteDRAM の examples/tang_mega_138k_pro.yml (= BSD-2-Clause)。
+# litedram_gen (= LITEX_VENV で渡す LiteX の仮想環境) で使う。元は LiteDRAM の examples/tang_mega_138k_pro.yml (= コミット 60b5ae1、BSD-2-Clause)。
+# ライセンスは同じディレクトリの LICENSE.litedram に従う。
 #
 # 元からの違い:
 #   - device: Tang Console の FPGA (= PG484、チップの版 B)

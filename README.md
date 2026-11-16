@@ -237,3 +237,18 @@ DDR_H* の先は DDR3 の版と同じ SOM の DDR3 (= 2 個、DQ 32 bit、1 GB) 
 - `sw/ddr3_check.c` で、1 GB の番地の線、32 byte の中の 4 つの 8 byte、1 / 2 / 4 byte の書き込みが合い、1 GB の外 (= 0x4000_0000) は例外 5 になった
 - `sw/mem_bench.c` のシーケンシャル読み出しで読んだ 1024 語が、書いた値と合った
 - hello を DDR3 に置いて動かした (= DDR3 1 個、512 MB の形で)
+
+## ライセンス
+
+このリポジトリは Apache-2.0 (= `LICENSE`)。ただし、次のファイルは他の人が作ったもので、元のライセンスのまま入れている。
+
+    場所                                         出どころ                                          ライセンス (= 本文)
+    hazard3/                                     Hazard3 v1.1.1 (= Luke Wren)。変えた箇所は         Apache-2.0 (= hazard3/LICENSE)
+                                                 hazard3/README.md
+    rtl/vendor/verilog-uart/                     verilog-uart (= Alex Forencich)                   MIT (= rtl/vendor/verilog-uart/COPYING)
+    tb/vendor/zeitlos/sdram_model.v              zeitlos (= Lone Dynamics)。変えた箇所はファイルの冒頭  独自の条件 (= tb/vendor/zeitlos/LICENSE.md)
+    board/tang_console/ddr3/                     Sipeed の TangMega-138K-example。ファイルごとの     Apache-2.0 (= LICENSE)
+                                                 出どころは board/tang_console/ddr3/README.md
+    board/tang_console/litedram/tang_console.yml LiteDRAM の examples/tang_mega_138k_pro.yml        BSD-2-Clause (= board/tang_console/litedram/LICENSE.litedram)
+    board/tang_console/litedram/ddram.cst        1 個目の DDR3: LiteX-Boards の Tang Console の定義  BSD-2-Clause (= board/tang_console/litedram/LICENSE.litex-boards)
+                                                 2 個目の DDR3: Sipeed の TangMega-138K-example     Apache-2.0 (= LICENSE)

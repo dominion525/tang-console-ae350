@@ -601,7 +601,7 @@ always @ (posedge clk or negedge rst_n) begin
 		minstreth <= X0;
 		minstret <= X0;
 		// Counters inhibited by default to save energy
-		// lapidary ae350: AE350 (A25) と同じく、リセット直後からカウンタを進める (= 上流は 1'b1)
+		// ae350: AE350 (A25) と同じく、リセット直後からカウンタを進める (= 上流は 1'b1)
 		mcountinhibit_cy <= 1'b0;
 		mcountinhibit_ir <= 1'b0;
 	end else begin
@@ -760,12 +760,12 @@ always @ (*) begin
 	MARCHID: if (CSR_M_MANDATORY) begin
 		decode_match = match_mro;
 		// Hazard3's open source architecture ID
-		// lapidary ae350: 外から決められるようにした (= 既定は 27)
+		// ae350: 外から決められるようにした (= 既定は 27)
 		rdata = MARCHID_VAL;
 	end
 	MIMPID: if (CSR_M_MANDATORY) begin
 		decode_match = match_mro;
-		// lapidary ae350: MIMPID_OVERRIDE が 1 なら MIMPID_VAL を返す
+		// ae350: MIMPID_OVERRIDE が 1 なら MIMPID_VAL を返す
 		rdata = MIMPID_OVERRIDE ? MIMPID_VAL : mimpid_rdata;
 	end
 	MHARTID: if (CSR_M_MANDATORY) begin

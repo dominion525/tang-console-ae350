@@ -1,7 +1,14 @@
 /*
- * 出どころ: machdyne/zeitlos の rtl/tb/sdram_model.v (= コミット 3242dedc733f)。LICENSE.md の条件で再配布する。
- * Lapidary の側で足したもの: W9825G6KH-6 のタイミングの検査、初期化の検査、tOH と tAC の間の出力の不定。
- * 変更の一覧と、Micron のモデルとの比べ方は ../../SETUP.md に書いてある。
+ * 出どころ: machdyne/zeitlos の rtl/tb/sdram_model.v (= コミット 3242dedc733f3571f6c53108fa853c7429b8a07b)。
+ * 同じディレクトリの LICENSE.md (= 著作権の表示と免責の文を残す条件) で、改変して再配布する。
+ *
+ * 元からの変更:
+ *   - タイミングの検査: W9825G6KH-6 のデータシートの 9.5 の値で検査する
+ *   - 電源投入の検査: 200 us の待ち、待ちの間の DQM、最初の全バンクのプリチャージ、8 回のリフレッシュ
+ *   - 読みの出力: tOH から、tAC か最大の tHZ までの間は不定を出す
+ *   - tAC、tOH、tHZ: 5 ns、2 ns の固定から、データシートの値に変えた。tAC と tHZ は CL ごと
+ *   - MEM_WORDS の既定値: 65,536 から 16,777,216 語に変えた
+ *   - メモリの初期値: 0 から不定に変えた (= 書いていない語を読むと分かる)
  *
  * Behavioural SDR SDRAM model -- W9825G6KH / MT48LC16M16A2 class (x16)
  *
