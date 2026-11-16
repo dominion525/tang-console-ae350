@@ -110,6 +110,8 @@ if [ "$AE350_MEM" = litedram ]; then
   sed -e "s|readmemh(\"litedram_core_rom.init\"|readmemh(\"$g/litedram_core_rom.init\"|" \
       -e "s|readmemh(\"litedram_core_sram.init\"|readmemh(\"$g/litedram_core_sram.init\"|" "$g/litedram_core.v" > "$out/litedram_core.v"
   grep -q "$g/litedram_core_rom.init" "$out/litedram_core.v" || { echo "ROM の中身のパスを書き換えられなかった" >&2; exit 1; }
+  # DDR3 のクロックを止める信号を、DHCE が受けるクロックで受け直す (= 理由は retime_litedram_stop.rb の冒頭)
+  ruby "$here/retime_litedram_stop.rb" "$out/litedram_core.v" || exit 1
   AE350_VEXRISCV_V="$("$venv/bin/python" -c 'import pythondata_cpu_vexriscv as v; print(v.data_location)')/VexRiscv.v"   # data_location が verilog のフォルダ
   [ -f "$AE350_VEXRISCV_V" ] || { echo "VexRiscv.v が無い" >&2; exit 1; }
   export AE350_VEXRISCV_V
