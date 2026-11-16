@@ -17,13 +17,25 @@ Gowin GW5AST-138 の中にある RISC-V のハードコア AE350 (= Andes A25) �
 
 ## シミュレーション
 
-Verilator 5.052、Icarus Verilog 13.0、riscv64-elf-gcc と newlib (= `NEWLIB` で場所を渡す) を使う。
+Verilator 5.052、Icarus Verilog 13.0、riscv64-elf-gcc と newlib (= `NEWLIB` で場所を渡す。既定値は無い) を使う。
 
     make -C ae350 check          部品とポートの比較、lint、iverilog での読み込み
     make -C ae350 test           段 2〜5、PLIC と RAM の単体の TB、クロックの組み合わせ、途中のリセット、乱数の待ち
     make -C ae350 test-iverilog  段 2〜5 を 4 値で流す
     make -C ae350 coverage       カバレッジ
     make -C ae350 run-probe      読み出しプログラムをモックで流す
+
+### newlib を作る (= 最初に 1 回)
+
+newlib を使うプログラム (= 段 3〜5、hello、ddr3_check、mem_bench、CoreMark など) を作るときは、`NEWLIB` に newlib の場所を渡す (= `make test NEWLIB=<場所>/riscv64-elf`)。渡していないと、newlib を使うプログラムを作るところで止まる。確かめた版は 4.6.0.20260123 で、riscv64-elf-gcc (= Homebrew) と同じ target で作る。tarball には libgloss の文書 (= porting.info) が入っておらず、作るのに makeinfo (= texinfo) が要るので、`MAKEINFO=true` で文書を作らないようにする (= ライブラリには関係しない)。
+
+    curl -O https://sourceware.org/pub/newlib/newlib-4.6.0.20260123.tar.gz
+    tar xf newlib-4.6.0.20260123.tar.gz
+    mkdir newlib-build && cd newlib-build
+    ../newlib-4.6.0.20260123/configure --target=riscv64-elf --prefix=<場所> \
+        --enable-newlib-io-long-double --enable-newlib-io-long-long --enable-newlib-io-c99-formats \
+        --enable-newlib-register-fini CFLAGS_FOR_TARGET="-Os -mcmodel=medany"
+    make MAKEINFO=true && make install MAKEINFO=true
 
 ## 実機
 
@@ -170,7 +182,7 @@ DDR_H* の先は DDR3 の版と同じ SOM の DDR3 (= 2 個、DQ 32 bit、1 GB) 
 
 ### LiteX の仮想環境を作る (= 最初に 1 回)
 
-`build.sh` は合成のたびに、LiteDRAM の `litedram_gen` で、設定 (= `board/tang_console/litedram/tang_console.yml`) から制御の Verilog を出力先に書き出す。`litedram_gen` は Python の仮想環境に入れる。場所は `LITEX_VENV` で指定し、既定は `tasks/riscv/litex/venv`。確かめた版は次のとおり (= pip で入れる)。
+`build.sh` は合成のたびに、LiteDRAM の `litedram_gen` で、設定 (= `board/tang_console/litedram/tang_console.yml`) から制御の Verilog を出力先に書き出す。`litedram_gen` は Python の仮想環境に入れる。場所は `LITEX_VENV` で指定する (= `MEM=litedram LITEX_VENV=<場所> sh board/tang_console/build.sh`。既定値は無い)。確かめた版は次のとおり (= pip で入れる)。
 
     migen                            https://github.com/m-labs/migen                                e19524c
     litex                            https://github.com/enjoy-digital/litex                         8cba6a6
@@ -180,6 +192,19 @@ DDR_H* の先は DDR3 の版と同じ SOM の DDR3 (= 2 個、DQ 32 bit、1 GB) 
     pythondata-software-picolibc     https://github.com/litex-hub/pythondata-software-picolibc      6a13ccc
     pythondata-software-compiler_rt  https://github.com/litex-hub/pythondata-software-compiler_rt   6eb7660
     meson 1.9.1、ninja 1.13.0
+
+作り方 (= 各リポジトリの、上のコミットを入れる。picolibc と compiler_rt は中身を git の submodule で持つので、tarball ではなく git から入れる)。
+
+    python3 -m venv <場所>
+    <場所>/bin/pip install meson==1.9.1 ninja==1.13.0
+    <場所>/bin/pip install \
+        https://github.com/m-labs/migen/archive/e19524c963a8342952840983047557707fbe0b6a.tar.gz \
+        https://github.com/enjoy-digital/litex/archive/8cba6a6cc4455e5549b67ef8f9388116e9294d71.tar.gz \
+        https://github.com/enjoy-digital/litedram/archive/60b5ae1b1ee5bc16ea695a93399434919797ff31.tar.gz \
+        https://github.com/litex-hub/litex-boards/archive/78bc7d7e4a3b88098d552345444f2739f15a04f3.tar.gz \
+        https://github.com/litex-hub/pythondata-cpu-vexriscv/archive/642ecfed1c84460555d6d803d660cc60cfc1ecb6.tar.gz \
+        git+https://github.com/litex-hub/pythondata-software-picolibc@6a13ccce7c575b32c102dd9dc52178505b81fe39 \
+        git+https://github.com/litex-hub/pythondata-software-compiler_rt@6eb76609c9627bf26635e57c63fb22cda7115887
 
 書き出した制御の中には、初期化と読み出しの調整をする小さな CPU (= VexRiscv) と、そのプログラム (= LiteX の BIOS) が入る。プログラムは、ほかのプログラムと同じ RISC-V のコンパイラ (= `riscv64-elf-gcc`) で作られる。`build.sh` は、書き出した Verilog の ROM の中身の読み込みを絶対パスに書き換え、仮想環境の VexRiscv の Verilog を合成に足す。書き出したものはリポジトリに入れない。
 

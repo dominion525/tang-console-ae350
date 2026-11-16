@@ -1,18 +1,18 @@
-# AE350 のシミュレーション用モック (= tasks/ae350-mock-design.md)
+# AE350 のシミュレーション用モック
 #
-#   make -C ae350 check    下の 3 つを続けて流す
-#   make -C ae350 ports    モックとプリミティブのポートを比べる
-#   make -C ae350 lint     Verilator の lint (-Wall。Hazard3 と取り込んだ UART のファイルは対象にしない)
-#   make -C ae350 iverilog Icarus Verilog で読めるか (-g2001)
+#   make check    下の 3 つを続けて流す
+#   make ports    モックとプリミティブのポートを比べる
+#   make lint     Verilator の lint (-Wall。Hazard3 と取り込んだ UART のファイルは対象にしない)
+#   make iverilog Icarus Verilog で読めるか (-g2001)
 #
-#   make -C ae350 test     段 2〜4 の確認用プログラムを、待ちのサイクル数を変えて 2 回ずつ流す。
-#                          段 3 は sw/stage3_input.txt を UART に送り、段 3 と段 4 は UART に出た文字を
-#                          sw/stage*_expected.txt と比べる
+#   make test     段 2〜4 の確認用プログラムを、待ちのサイクル数を変えて 2 回ずつ流す。
+#                 段 3 は sw/stage3_input.txt を UART に送り、段 3 と段 4 は UART に出た文字を
+#                 sw/stage*_expected.txt と比べる
 
 GOWIN_PRIM ?= /Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/IDE/simlib/gw5a/prim_sim.v
 
-# newlib (= worktree の tasks/riscv/ でビルドしたもの)
-NEWLIB ?= $(abspath ../tasks/riscv/newlib/riscv64-elf)
+# newlib の場所は NEWLIB で渡す (= 既定値は持たない。作り方は README)。newlib を使うプログラムを作るときだけ、場所を確かめる
+NEWLIB_CHECK = $(if $(wildcard $(NEWLIB)/include/stdio.h),,$(error NEWLIB に newlib の場所を指定する (= <場所>/include と <場所>/lib/rv32imac/ilp32 があるところ。作り方は README)))
 
 MOCK      := rtl/AE350_SOC.v
 MOCK_SRCS := $(MOCK) rtl/ae350_fabric.v rtl/ae350_reset_sync.v rtl/ae350_plic.v rtl/ae350_plmt.v
@@ -49,8 +49,8 @@ SW_LDFLAGS := -nostdlib -nostartfiles -T sw/ae350.ld -Wl,--no-warn-rwx-segments
 # 段 2: C ライブラリを使わない
 SW2_CFLAGS := $(SW_ARCH) -O2 -Wall -Wextra -ffreestanding
 # 段 3: newlib を使う
-SW3_CFLAGS := $(SW_ARCH) -O2 -Wall -Wextra -isystem $(NEWLIB)/include
-SW3_LIBS   := -L$(NEWLIB)/lib/rv32imac/ilp32 -Wl,--start-group -lc -lgcc -Wl,--end-group
+SW3_CFLAGS = $(NEWLIB_CHECK)$(SW_ARCH) -O2 -Wall -Wextra -isystem $(NEWLIB)/include
+SW3_LIBS   = -L$(NEWLIB)/lib/rv32imac/ilp32 -Wl,--start-group -lc -lgcc -Wl,--end-group
 
 .PHONY: check ports lint iverilog test test-stage2 test-stage3 test-stage4
 
@@ -108,7 +108,7 @@ $(BUILD)/bench.elf: $(SW_COMMON) sw/bench.c sw/syscalls.c sw/uart.h sw/irq.h sw/
 	mkdir -p $(BUILD)
 	$(RISCV_PREFIX)gcc $(SW3_CFLAGS) $(SW_COMMON) sw/bench.c sw/syscalls.c $(SW_LDFLAGS) $(SW3_LIBS) -o $@
 
-# 実機の値を読むプログラム (= ae350/board/tang_console/ の構成。ROM はブロック RAM、データは DLM)
+# 実機の値を読むプログラム (= board/tang_console/ の構成。ROM はブロック RAM、データは DLM)
 $(BUILD)/probe.elf: sw/start.S sw/trap.c sw/probe.c sw/uart.h sw/trap.h sw/board.ld
 	mkdir -p $(BUILD)
 	$(RISCV_PREFIX)gcc $(SW2_CFLAGS) $(SW_COMMON) sw/probe.c -nostdlib -nostartfiles -T sw/board.ld -Wl,--no-warn-rwx-segments -lgcc -o $@
@@ -138,6 +138,7 @@ $(BUILD)/%.hex: $(BUILD)/%.elf tools/bin2hex.rb
 # --- シミュレーション (Verilator) ---
 
 $(SIM): $(RTL_SRCS) $(TB_SRCS) tools/lint.vlt
+	mkdir -p $(BUILD)
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) --top-module tb_mem -Mdir $(BUILD)/tb_mem $(RTL_SRCS) $(TB_SRCS)
 
 # 1 回流す: $(1) = プログラム名、$(2) = ROM の待ち、$(3) = DDR の待ち、$(4) = ほかの plusarg。
@@ -287,9 +288,9 @@ $(BUILD)/coremark_ee_printf.c: $(COREMARK_DIR)/core_main.c
 
 define PUB_RULE
 $(BUILD)/coremark_ilm_$(1).elf: $(BUILD)/coremark_ee_printf.c sw/coremark/core_portme.c sw/coremark/core_portme.h $(SW_COMMON) sw/syscalls.c sw/ilm.ld
-	$(RISCV_PREFIX)gcc $(SW3_CFLAGS) -Wno-unused-parameter -Wno-implicit-fallthrough $(PUB_OPT) $(2) -DHAS_PRINTF=0 -DHAS_FLOAT=0 -Isw -Isw/coremark -I$(COREMARK_DIR) -DPERFORMANCE_RUN=1 \
+	$(RISCV_PREFIX)gcc $$(SW3_CFLAGS) -Wno-unused-parameter -Wno-implicit-fallthrough $(PUB_OPT) $(2) -DHAS_PRINTF=0 -DHAS_FLOAT=0 -Isw -Isw/coremark -I$(COREMARK_DIR) -DPERFORMANCE_RUN=1 \
 	    -DFLAGS_STR='"$(PUB_OPT) $(2)"' -DITERATIONS=0 $(SW_COMMON) $(PUB_SRCS) \
-	    $(ILM_PROG_LDFLAGS) -L$(PUB_LIBGCC) -L$(NEWLIB)/lib/rv32imac/ilp32 -Wl,--start-group -lc -lgcc -Wl,--end-group -o $$@
+	    $(ILM_PROG_LDFLAGS) -L$(PUB_LIBGCC) -L$$(NEWLIB)/lib/rv32imac/ilp32 -Wl,--start-group -lc -lgcc -Wl,--end-group -o $$@
 
 $(BUILD)/coremark_ilm_$(1).bin: $(BUILD)/coremark_ilm_$(1).elf
 	$(RISCV_PREFIX)objcopy -O binary $$< $$@
@@ -330,6 +331,7 @@ RAND := +rom_wait_rand=3 +ddr_wait_rand=3
 # DDR_H* の先を SDRAM の経路にして、段 3〜5 を流す (= SDRAM は 1 回の転送が遅いので、打ち切りのサイクル数を広げる)。
 # 段 2 は、TB の DDR のモデルにエラーを返させる確認 (= +ddr_err) を含むので流さない
 $(SIM_SDRAM): $(RTL_SRCS) $(TB_SRCS) $(SDRAM_SRCS) tools/lint.vlt
+	mkdir -p $(BUILD)
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(SDRAM_FLAGS) --top-module tb_mem -Mdir $(BUILD)/tb_sdram $(RTL_SRCS) $(TB_SRCS) $(SDRAM_SRCS)
 
 SDRAM_RUN := +max_cycles=20000000
@@ -338,6 +340,7 @@ SDRAM_RUN := +max_cycles=20000000
 SIM_SDRAM_UNIT := $(BUILD)/sdram_tb/Vsdram_tb
 
 $(SIM_SDRAM_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v tools/lint.vlt
+	mkdir -p $(BUILD)
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) --top-module sdram_tb -Mdir $(BUILD)/sdram_tb \
 		rtl/ahb_sdram.v tb/sdram_tb.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v
 
@@ -345,11 +348,13 @@ $(SIM_SDRAM_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v rtl/sdram_bridge.v tb/vendor/ze
 SIM_SDRAM_IO := $(BUILD)/sdram_io_tb/Vsdram_io_tb
 
 $(SIM_SDRAM_IO): rtl/sdram_io.v tb/sdram_io_tb.v tb/gowin_io_models.v tools/lint.vlt
+	mkdir -p $(BUILD)
 	verilator --binary --timing $(VERILATOR_FLAGS) --top-module sdram_io_tb -Mdir $(BUILD)/sdram_io_tb rtl/sdram_io.v tb/sdram_io_tb.v tb/gowin_io_models.v
 
 # uart_reset_seq (= UART の合図で AE350 をリセットする回路) の単体の TB
 SIM_UART_RESET := $(BUILD)/uart_reset_seq_tb/Vuart_reset_seq_tb
 $(SIM_UART_RESET): rtl/uart_reset_seq.v tb/uart_reset_seq_tb.v rtl/vendor/verilog-uart/uart_rx.v tools/lint.vlt
+	mkdir -p $(BUILD)
 	verilator --binary --timing $(VERILATOR_FLAGS) --top-module uart_reset_seq_tb -Mdir $(BUILD)/uart_reset_seq_tb rtl/uart_reset_seq.v tb/uart_reset_seq_tb.v rtl/vendor/verilog-uart/uart_rx.v
 
 .PHONY: test-uart-reset
@@ -370,6 +375,7 @@ $(PRIM_SIM_GW5A): tools/prim_sim_gw5a.rb
 	ruby tools/prim_sim_gw5a.rb $(GOWIN_SIMLIB)/gw5a/prim_sim.v $(GOWIN_SIMLIB)/gw2a/prim_sim.v $@
 
 $(BUILD)/sdram_pll_tb.vvp: board/tang_console/sdram_pll.v tb/sdram_pll_tb.v $(PRIM_SIM_GW5A)
+	mkdir -p $(BUILD)
 	iverilog -g2012 -s sdram_pll_tb -o $@ board/tang_console/sdram_pll.v tb/sdram_pll_tb.v $(PRIM_SIM_GW5A)
 
 .PHONY: test-sdram-pll
@@ -382,6 +388,7 @@ HS_SRCS            := rtl/sdram_ctrl_hs.v rtl/sdram_io.v tb/gowin_io_models.v tb
 SIM_SDRAM_HS_UNIT  := $(BUILD)/sdram_hs_tb/Vsdram_tb
 
 $(SIM_SDRAM_HS_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v $(HS_SRCS) tools/lint.vlt
+	mkdir -p $(BUILD)
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) -DSDRAM_HS --top-module sdram_tb -Mdir $(BUILD)/sdram_hs_tb \
 		rtl/ahb_sdram.v tb/sdram_tb.v $(HS_SRCS)
 
@@ -389,6 +396,7 @@ $(SIM_SDRAM_HS_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v $(HS_SRCS) tools/lint.vlt
 SIM_SDRAM_HS := $(BUILD)/tb_sdram_hs/Vtb_mem
 
 $(SIM_SDRAM_HS): $(RTL_SRCS) $(TB_SRCS) rtl/ahb_sdram.v $(HS_SRCS) tools/lint.vlt
+	mkdir -p $(BUILD)
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) -DTB_SDRAM -DSDRAM_HS --top-module tb_mem -Mdir $(BUILD)/tb_sdram_hs \
 		$(RTL_SRCS) $(TB_SRCS) rtl/ahb_sdram.v $(HS_SRCS)
 
@@ -471,6 +479,7 @@ test-clocks: $(SIM) $(BUILD)/stage3.hex $(BUILD)/stage4.hex $(BUILD)/stage5.hex 
 SIM_PLIC := $(BUILD)/plic_tb/Vplic_tb
 
 $(SIM_PLIC): rtl/ae350_plic.v tb/plic_tb.v tools/lint.vlt
+	mkdir -p $(BUILD)
 	verilator --binary --timing $(VERILATOR_FLAGS) --top-module plic_tb -Mdir $(BUILD)/plic_tb rtl/ae350_plic.v tb/plic_tb.v
 
 .PHONY: test-plic
@@ -481,6 +490,7 @@ test-plic: $(SIM_PLIC)
 SIM_SRAM := $(BUILD)/sram_tb/Vsram_tb
 
 $(SIM_SRAM): rtl/ahb_sram.v tb/sram_tb.v tools/lint.vlt
+	mkdir -p $(BUILD)
 	verilator --binary --timing $(VERILATOR_FLAGS) --top-module sram_tb -Mdir $(BUILD)/sram_tb rtl/ahb_sram.v tb/sram_tb.v
 
 .PHONY: test-sram
@@ -552,30 +562,37 @@ COV          := $(BUILD)/cov
 COV_FLAGS    := --coverage-line --coverage-toggle -Wno-UNOPTFLAT tools/coverage.vlt
 
 $(SIM_COV): $(RTL_SRCS) $(TB_SRCS) tools/lint.vlt tools/coverage.vlt
+	mkdir -p $(BUILD)
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(COV_FLAGS) \
 		--top-module tb_mem -Mdir $(BUILD)/tb_cov $(RTL_SRCS) $(TB_SRCS)
 
 $(SIM_COV_SDRAM_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v tools/lint.vlt tools/coverage.vlt
+	mkdir -p $(BUILD)
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(COV_FLAGS) --top-module sdram_tb \
 		-Mdir $(BUILD)/sdram_unit_cov rtl/ahb_sdram.v tb/sdram_tb.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v
 
 $(SIM_COV_SDRAM): $(RTL_SRCS) $(TB_SRCS) $(SDRAM_SRCS) tools/lint.vlt tools/coverage.vlt
+	mkdir -p $(BUILD)
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(COV_FLAGS) $(SDRAM_FLAGS) --top-module tb_mem \
 		-Mdir $(BUILD)/tb_sdram_cov $(RTL_SRCS) $(TB_SRCS) $(SDRAM_SRCS)
 
 $(SIM_COV_SDRAM_HS_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v $(HS_SRCS) tools/lint.vlt tools/coverage.vlt
+	mkdir -p $(BUILD)
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(COV_FLAGS) -DSDRAM_HS --top-module sdram_tb \
 		-Mdir $(BUILD)/sdram_hs_unit_cov rtl/ahb_sdram.v tb/sdram_tb.v $(HS_SRCS)
 
 $(SIM_COV_SDRAM_HS): $(RTL_SRCS) $(TB_SRCS) rtl/ahb_sdram.v $(HS_SRCS) tools/lint.vlt tools/coverage.vlt
+	mkdir -p $(BUILD)
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(COV_FLAGS) -DTB_SDRAM -DSDRAM_HS --top-module tb_mem \
 		-Mdir $(BUILD)/tb_sdram_hs_cov $(RTL_SRCS) $(TB_SRCS) rtl/ahb_sdram.v $(HS_SRCS)
 
 $(SIM_COV_SRAM): rtl/ahb_sram.v tb/sram_tb.v tools/lint.vlt tools/coverage.vlt
+	mkdir -p $(BUILD)
 	verilator --binary --timing $(VERILATOR_FLAGS) $(COV_FLAGS) --top-module sram_tb -Mdir $(BUILD)/sram_cov \
 		rtl/ahb_sram.v tb/sram_tb.v
 
 $(SIM_COV_PLIC): rtl/ae350_plic.v tb/plic_tb.v tools/lint.vlt tools/coverage.vlt
+	mkdir -p $(BUILD)
 	verilator --binary --timing $(VERILATOR_FLAGS) $(COV_FLAGS) --top-module plic_tb -Mdir $(BUILD)/plic_cov \
 		rtl/ae350_plic.v tb/plic_tb.v
 
