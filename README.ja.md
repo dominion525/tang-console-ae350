@@ -44,7 +44,9 @@ newlib を使うプログラム (= 段 3〜5、hello、ddr3_check、mem_bench、
     sh board/tang_console/build.sh
     openFPGALoader -b tangconsole build/board/ae350_probe/impl/pnr/ae350_probe.fs
 
-ビルドは Gowin EDA の Education 版 1.9.11.03、チップの版 B で通している。ROM はブロック RAM (= 中身は `sw/probe.c`)、データとスタックは AE350 の中の DLM で、DDR3 は使わない。出力は USB シリアルの 2 つ目 (= macOS では /dev/cu.usbserial-<番号>1) に 1,250,000 bps で出る (= macOS の stty は 230400 を超える速さを受けないので、ポートを開いたまま `IOSSIOSPEED` で設定する)。何か 1 文字送ると、もう一度出す。
+ビルドは Gowin EDA の Education 版 1.9.11.03、チップの版 B で通している。ROM はブロック RAM (= 中身は `sw/probe.c`)、データとスタックは AE350 の中の DLM で、DDR3 は使わない。出力は USB シリアルの 2 つ目 (= macOS では /dev/cu.usbserial-<番号>1) に 1,250,000 bps で出る (= macOS の stty は 230400 を超える速さを受けないので、ポートを開いたまま `IOSSIOSPEED` で設定する)。何か 1 文字送ると、もう一度出す。出力は `tools/ae350_uart.rb` で読める。受信したデータを画面に出し、キーボードの入力を送信する。秒数を指定するとその時間で終了し、指定しなければ Ctrl-C で終了する。読み出しプログラムは起動直後の時間計測 (約 10 秒) が終わってから 1 文字を受け取るので、書き込んだ直後に全体を読むには 15 秒ほど待つ。`tools/ae350_uart.rb` と `tools/ae350_load.rb` は、速度の設定に macOS の `IOSSIOSPEED` を使うため、macOS でしか動かない。
+
+    printf x | ruby tools/ae350_uart.rb /dev/cu.usbserial-<番号>1 15
 
 CPU の文字が 0.1 秒以上途切れると、見張りの回路 (= `board/tang_console/ae350_observer.v`) が、CPU を通さずに次の 1 行を出す。
 
@@ -118,6 +120,7 @@ UART に 8 byte の合図 `1B 1B 61 65 33 35 30 21` (= ESC ESC "ae350!") が続�
                            合図で戻る、
                            hello を送って動かす (= 送る間隔は実機の 1.25 Mbps と同じ。数分かかる)
     make test-uart-reset   合図の回路の単体の TB
+    make test-uart-tool    tools/ae350_uart.rb の単体テスト (= シリアルポートの代わりに UNIX ドメインソケットを使う)
 
 手順のファイルは `tools/loader_test.rb` が作り、TB の `+uart_script` で流す。どちらも `make test` に入っている。
 
