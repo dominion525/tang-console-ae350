@@ -447,15 +447,17 @@ module ae350_fabric (
             wire [15:0] dlm_dob [0:3];
             genvar gk;
             for (gk = 0; gk < 4; gk = gk + 1) begin : g_bank
+                // BLK_SEL_* は 3 bit (= BLKSELA / BLKSELB と同じ幅)。genvar をそのまま渡すと、合成が幅を合わせる警告 (= EX0346) を出す
+                localparam [2:0] BLK_SEL = gk;
                 DPB #(.READ_MODE0 (1'b0), .READ_MODE1 (1'b0), .WRITE_MODE0 (2'b00), .WRITE_MODE1 (2'b00),
-                      .BIT_WIDTH_0 (8), .BIT_WIDTH_1 (8), .BLK_SEL_0 (gk), .BLK_SEL_1 (gk), .RESET_MODE ("SYNC")) u_ilm (
+                      .BIT_WIDTH_0 (8), .BIT_WIDTH_1 (8), .BLK_SEL_0 (BLK_SEL), .BLK_SEL_1 (BLK_SEL), .RESET_MODE ("SYNC")) u_ilm (
                     .DOA (ilm_doa[gk]), .DOB (ilm_dob[gk]), .DIA ({8'd0, dia}), .DIB ({8'd0, dib}),
                     .BLKSELA ({1'b0, c_tcm_aidx[12:11]}), .BLKSELB ({1'b0, tcm_idx[12:11]}),
                     .ADA ({c_tcm_aidx[10:0], 3'b000}), .ADB ({tcm_idx[10:0], 3'b000}),
                     .WREA (ilm_wea), .WREB (ilm_web), .CLKA (core_clk), .CLKB (ahb_clk),
                     .CEA (1'b1), .CEB (1'b1), .OCEA (1'b1), .OCEB (1'b1), .RESETA (1'b0), .RESETB (1'b0));
                 DPB #(.READ_MODE0 (1'b0), .READ_MODE1 (1'b0), .WRITE_MODE0 (2'b00), .WRITE_MODE1 (2'b00),
-                      .BIT_WIDTH_0 (8), .BIT_WIDTH_1 (8), .BLK_SEL_0 (gk), .BLK_SEL_1 (gk), .RESET_MODE ("SYNC")) u_dlm (
+                      .BIT_WIDTH_0 (8), .BIT_WIDTH_1 (8), .BLK_SEL_0 (BLK_SEL), .BLK_SEL_1 (BLK_SEL), .RESET_MODE ("SYNC")) u_dlm (
                     .DOA (dlm_doa[gk]), .DOB (dlm_dob[gk]), .DIA ({8'd0, dia}), .DIB ({8'd0, dib}),
                     .BLKSELA ({1'b0, c_tcm_aidx[12:11]}), .BLKSELB ({1'b0, tcm_idx[12:11]}),
                     .ADA ({c_tcm_aidx[10:0], 3'b000}), .ADB ({tcm_idx[10:0], 3'b000}),
