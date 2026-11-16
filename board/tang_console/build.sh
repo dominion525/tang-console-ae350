@@ -1,22 +1,22 @@
 #!/bin/sh
-# 実機の値を読む構成 (= ae350/board/tang_console/top.v) のビットストリームを作る。
-#   sh ae350/board/tang_console/build.sh [出力先]     (= 既定は ae350/build/board)
-# 先に読み出しプログラム (= ae350/sw/probe.c) を作り、その hex を ROM の中身として合成する。
+# 実機の値を読む構成 (= board/tang_console/top.v) のビットストリームを作る。
+#   sh board/tang_console/build.sh [出力先]     (= 既定は build/board)
+# 先に読み出しプログラム (= sw/probe.c) を作り、その hex を ROM の中身として合成する。
 # ビットストリームは <出力先>/ae350_probe/impl/pnr/ae350_probe.fs
 #
 # SDRAM の制御は、環境変数で選ぶ。
-#   (指定なし)       sdram_bridge (= Lapidary の 20 MHz 版)
+#   (指定なし)       sdram_bridge (= 20 MHz 版)
 #   SDRAM=hs         sdram_ctrl_hs + sdram_io (= 166.7 MHz 版)。DLY=<0〜255> (= DQ の入力の IODELAY の刻み、約 12.5 ps、
 #                    既定 180)、EDGE=<0|1> (= 0 立ち上がり、1 立ち下がりで取る。既定 0)、RDF=<数> (= 読んだ語を取る位置
 #                    RD_FIRST、既定 12。立ち下がりなら 11)。クロックの指定は top.sdc から作り、出力先に置く
-#   ROM=loader       ROM に、プログラムを UART で受けて SDRAM で動かすローダー (= ae350/sw/loader.c) を置く。観測の回路
-#                    (= ae350_observer) は外す。既定は ROM=probe (= ae350/sw/probe.c)
-#   CPU=hazard3      本物の AE350 の代わりに、モック (= ae350/rtl/AE350_SOC.v、中は Hazard3) を FPGA のロジックで動かす
+#   ROM=loader       ROM に、プログラムを UART で受けて SDRAM で動かすローダー (= sw/loader.c) を置く。観測の回路
+#                    (= ae350_observer) は外す。既定は ROM=probe (= sw/probe.c)
+#   CPU=hazard3      本物の AE350 の代わりに、モック (= rtl/AE350_SOC.v、中は Hazard3) を FPGA のロジックで動かす
 #   CPU=hazard3-fast 同上で、Hazard3 の速さの選択肢 (= 分岐予測、速い乗算器) と Zb* の拡張を全部入れる (= AE350 との互換性は無い)
 #   MEM=ddr3         DDR_H* の先を SOM の DDR3 (= Gowin の DDR3 の IP、1 GB) にする。SDRAM は使わない (= SDRAM=hs とは
 #                    一緒に使えない)。IP は ddr3/ddr3_memory_interface.v (= IDE の IP Core Generator で版 B 向けに作ったもの)
 #   MEM=litedram     実験。DDR_H* の先を SOM の DDR3 の 1 個目 (= 512 MB) にし、制御は LiteDRAM (= litedram/tang_console.yml を
-#                    litedram_gen で出力先に書き出す)。LITEX_VENV で LiteX の仮想環境を指定する (= 既定は tasks/riscv/litex/venv)
+#                    litedram_gen で出力先に書き出す)。LITEX_VENV で LiteX の仮想環境を指定する (= 既定値は無い。作り方は README)
 #   PLACE=<値> ROUTE=<値>  配置配線の設定 (= Gowin の place_option / route_option)。指定しなければ Gowin の既定
 #                    (= 2026-11-16、CPU=hazard3 MEM=ddr3 で core_clk の違反が配置で出たため)。Hazard3 の版の PLACE の既定は 2
 #   TRACE=1          実験用。ahb_sdram に、受けた転送の記録を入れる (= rtl/ahb_sdram.v の AHB_SDRAM_TRACE)
@@ -99,8 +99,8 @@ cat "$here/top.cst" > "$out/top_build.cst" || exit 1
 # LiteDRAM の版: litedram_gen で制御を出力先に書き出し、ROM の中身を絶対パスで読むように写す (= 書き出した Verilog は
 # $readmemh を相対パスで書く)。Gowin のライブラリの環境変数 (= 下の DYLD_*) を設定する前に動かす
 if [ "$AE350_MEM" = litedram ]; then
-  venv=${LITEX_VENV:-$ae/../tasks/riscv/litex/venv}
-  [ -x "$venv/bin/litedram_gen" ] || { echo "litedram_gen が無い (= LITEX_VENV に LiteX の仮想環境を指定する)" >&2; exit 1; }
+  venv=${LITEX_VENV:-}
+  [ -n "$venv" ] && [ -x "$venv/bin/litedram_gen" ] || { echo "LITEX_VENV に、litedram_gen を入れた LiteX の仮想環境を指定する (= 作り方は README)" >&2; exit 1; }
   PATH="$venv/bin:$PATH" litedram_gen "$here/litedram/tang_console.yml" --output-dir "$out/litedram" > "$out/litedram_gen.log" 2>&1 ||
     { echo "litedram_gen が失敗した (= $out/litedram_gen.log)" >&2; exit 1; }
   g="$out/litedram/gateware"
