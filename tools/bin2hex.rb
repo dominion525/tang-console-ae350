@@ -3,7 +3,7 @@
 
 # バイナリを $readmemh で読める hex (= 1 行 1 word、32 bit、リトルエンディアン) に直す。
 #
-#   ruby ae350/tools/bin2hex.rb <in.bin> <out.hex>
+#   ruby tools/bin2hex.rb <in.bin> <out.hex>
 
 in_path, out_path = ARGV
 abort 'usage: bin2hex.rb <in.bin> <out.hex>' unless in_path && out_path

@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/rtl/ahb_ddr3.v
+// File:        rtl/ahb_ddr3.v
 // Module:      ahb_ddr3
 // Role:        AE350 の DDR_H* (= 64 bit の AHB) を、Gowin の DDR3 Memory Interface の IP (= 利用者の側の口) につなぐ回路
 //              (= 2026-11-13)。FPGA のロジック側の回路で、ボードの DDR3 の版 (= board/tang_console/build.sh の MEM=ddr3)

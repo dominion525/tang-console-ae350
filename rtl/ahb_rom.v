@@ -1,8 +1,8 @@
 // =============================================================
-// File:        ae350/rtl/ahb_rom.v
+// File:        rtl/ahb_rom.v
 // Module:      ahb_rom
 // Role:        ROM_H* (= AE350 が命令を読む AHB) の先に置くブロック RAM の ROM (= 実機の値を読む構成、2026-11-10)。
-//              FPGA のロジック側の回路で、中身は合成のときに INIT_FILE (= ae350/tools/bin2hex.rb の hex) から入れる。
+//              FPGA のロジック側の回路で、中身は合成のときに INIT_FILE (= tools/bin2hex.rb の hex) から入れる。
 //
 //   - アドレスフェーズを受けた端でブロック RAM を読み、データフェーズに返す (= 待ちなし)
 //   - HADDR の下位 (= WORDS に収まるビット) だけを見る。範囲の外は折り返す

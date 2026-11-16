@@ -1,10 +1,10 @@
 // =============================================================
-// File:        ae350/rtl/ae350_plmt.v
+// File:        rtl/ae350_plmt.v
 // Module:      ae350_plmt
-// Role:        AE350 のモックの中の PLMT (= Platform Level Machine Timer、段 4、2026-11-10)。
+// Role:        AE350 の Hazard3 の版の中の PLMT (= Platform Level Machine Timer、段 4、2026-11-10)。
 //              シミュレーション専用。レジスタの配置は MUG1029 表 15-1 に合わせる (= hart 0 だけ)。
 //
-// Registers (= モックが 0xE600_0000 からのオフセットで渡す):
+// Registers (= Hazard3 の版が 0xE600_0000 からのオフセットで渡す):
 //   0x00  MTIME[31:0]       0x04  MTIME[63:32]       R/W   clk の 1 サイクルごとに 1 進む。初期値 0
 //   0x08  MTIMECMP0[31:0]   0x0C  MTIMECMP0[63:32]   R/W   初期値 0xFFFF_FFFF_FFFF_FFFF
 //   それ以外                                            読むと 0、書いても何も起きない
@@ -12,10 +12,10 @@
 // mtime のクロック (= 2026-11-10 に確かめた): Gowin の BSP (ae350.h の OSCFREQ = HCLKFREQ = 100 MHz) と
 // PLMT のデモ (demo_plmt.c の MACHINE_TIMER_PERIOD = 2 * OSCFREQ が 2 秒) は、mtime がバスのクロック
 // (= リファレンスデザインの AHB_CLK / APB_CLK、100 MHz) で進む前提。同じデザインの RTC_CLK は 10 MHz なので、
-// RTC_CLK では進まない。モックは AHB_CLK (= clk) で 1 サイクルごとに進める
+// RTC_CLK では進まない。Hazard3 の版は AHB_CLK (= clk) で 1 サイクルごとに進める
 //
 // Ports:
-//   input  wire        clk / rst_n     AHB_CLK と、モックのリセット。mtime もこのクロックで進む
+//   input  wire        clk / rst_n     AHB_CLK と、Hazard3 の版のリセット。mtime もこのクロックで進む
 //   input  wire        wen             このサイクルに書く
 //   input  wire [5:0]  addr            バイトのオフセット (= 下位 2 bit は見ない)
 //   input  wire [31:0] wdata

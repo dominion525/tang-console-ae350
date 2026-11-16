@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/rtl/apb_paddr_probe.v
+// File:        rtl/apb_paddr_probe.v
 // Module:      apb_paddr_probe
 // Role:        APB_P* に届いた PADDR / PSTRB / PWDATA を、CPU のプログラムから読めるようにする回路 (= 2026-11-10)。
 //              本物の AE350 が APB_P* に出す PADDR の形 (= 0xF800_0000 からの全アドレスか、下位だけか) を

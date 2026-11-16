@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/tb/uart_reset_seq_tb.v
+// File:        tb/uart_reset_seq_tb.v
 // Module:      uart_reset_seq_tb
 // Role:        uart_reset_seq (= UART の合図で AE350 をリセットする回路) の単体の TB (= 2026-11-12)。
 //              byte の並びを送り、rst_out_n のパルスの数と長さを数えて、期待と比べる。

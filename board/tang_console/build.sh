@@ -11,7 +11,7 @@
 #                    RD_FIRST、既定 12。立ち下がりなら 11)。クロックの指定は top.sdc から作り、出力先に置く
 #   ROM=loader       ROM に、プログラムを UART で受けて SDRAM で動かすローダー (= sw/loader.c) を置く。観測の回路
 #                    (= ae350_observer) は外す。既定は ROM=probe (= sw/probe.c)
-#   CPU=hazard3      本物の AE350 の代わりに、モック (= rtl/AE350_SOC.v、中は Hazard3) を FPGA のロジックで動かす
+#   CPU=hazard3      本物の AE350 の代わりに、Hazard3 の版 (= rtl/AE350_SOC.v) を FPGA のロジックで動かす
 #   CPU=hazard3-fast 同上で、Hazard3 の速さの選択肢 (= 分岐予測、速い乗算器) と Zb* の拡張を全部入れる (= AE350 との互換性は無い)
 #   MEM=ddr3         DDR_H* の先を SOM の DDR3 (= Gowin の DDR3 の IP、1 GB) にする。SDRAM は使わない (= SDRAM=hs とは
 #                    一緒に使えない)。IP は ddr3/ddr3_memory_interface.v (= IDE の IP Core Generator で版 B 向けに作ったもの)

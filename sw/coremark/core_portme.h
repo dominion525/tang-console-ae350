@@ -1,6 +1,6 @@
 /*
  * CoreMark (= EEMBC の CoreMark。ソースはリポジトリに取り込まず、make が build/ に取ってくる) を、この構成 (= AE350 か、
- * モックの Hazard3) で動かすための定義 (= 2026-11-13)。CoreMark の雛形 (= barebones/core_portme.h) が求める名前を、
+ * Hazard3 の版) で動かすための定義 (= 2026-11-13)。CoreMark の雛形 (= barebones/core_portme.h) が求める名前を、
  * この構成に合わせて新しく書いたもの。
  *
  * - 時間は mcycle (= CPU のクロックの数、64 bit) で測る。1 MHz あたりの点数は、くり返しの回数と mcycle から出せる

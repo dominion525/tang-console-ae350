@@ -1,5 +1,5 @@
 /*
- * CoreMark を、この構成 (= AE350 か、モックの Hazard3) で動かすための関数 (= 2026-11-13。core_portme.h の説明を見る)。
+ * CoreMark を、この構成 (= AE350 か、Hazard3 の版) で動かすための関数 (= 2026-11-13。core_portme.h の説明を見る)。
  *
  * - 時間は mcycle を 64 bit で読む (= mcycleh を前後で読み、上位が繰り上がる途中を避ける)
  * - 秒に直すための CPU の周波数は misa で見分ける: F 拡張がある (= 本物の AE350、A25 は RV32 IMAFDC) なら 800 MHz、

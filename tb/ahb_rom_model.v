@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/tb/ahb_rom_model.v
+// File:        tb/ahb_rom_model.v
 // Module:      ahb_rom_model
 // Role:        ROM_H* (= 32 bit、読み出し専用の AHB) の先に置く命令メモリのモデル (= 段 2、2026-11-08)。
 //              シミュレーション専用。中身は +rom=<hex> で与えた hex ファイル (= 1 行 1 word) から読む。

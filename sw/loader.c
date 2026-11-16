@@ -28,11 +28,11 @@
  * - 起動の始めに、データキャッシュを全部書き戻して捨てる (= mcctlcommand に L1D_WBINVAL_ALL。前に動かしたプログラムが
  *   書いた値が、後で新しいプログラムの上に書き戻されないように)。その後、命令キャッシュだけを入れ、データキャッシュは
  *   切ったまま受ける (= 書いた中身がそのまま SDRAM に届く)
- * - 中身を受けている間は、UART の合図 (= ae350/rtl/uart_reset_seq.v) の見張りを止める (= apb_uart の CTRL)。中身に合図の
+ * - 中身を受けている間は、UART の合図 (= rtl/uart_reset_seq.v) の見張りを止める (= apb_uart の CTRL)。中身に合図の
  *   8 byte が並んでいても、リセットがかからない。受け終わったら (= OK、ERR timeout、ERR uart のどれでも) 見張りに戻す
  * - run では、UART が送り終わるのを待ち、fence (= 書き込みを終わらせる) と fence.i (= 命令キャッシュを捨てる) の後、
  *   データキャッシュも入れてから飛ぶ。飛んだ先は自分のスタートアップ (= sw/start.S) から始め、main から戻るとここへ戻る
- * - キャッシュの CSR (= mcache_ctl 0x7CA、mcctlcommand 0x7CC) は、モックの Hazard3 には無い。例外になり、次の命令から
+ * - キャッシュの CSR (= mcache_ctl 0x7CA、mcctlcommand 0x7CC) は、Hazard3 には無い。例外になり、次の命令から
  *   再開する (= sw/trap.c)
  */
 

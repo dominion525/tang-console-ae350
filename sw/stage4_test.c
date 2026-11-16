@@ -1,9 +1,9 @@
 /*
  * 段 4 の確認用プログラム (2026-11-10)。
  * PLMT のタイマ割り込みと、GP_INT → PLIC → 外部割り込みの経路を確かめる。
- * UART に出す行は sw/stage4_expected.txt と比べる (= ae350/Makefile)。
+ * UART に出す行は sw/stage4_expected.txt と比べる (= Makefile)。
  *
- * 戻り値は start.S が 0x0000_0000 に書き、TB (= ae350/tb/tb_mem.v) が表示する。
+ * 戻り値は start.S が 0x0000_0000 に書き、TB (= tb/tb_mem.v) が表示する。
  *   0x600D  全部通った
  *   1〜     最初に失敗した確認の番号 (= 下の check の番号)
  */

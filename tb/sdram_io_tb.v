@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/tb/sdram_io_tb.v
+// File:        tb/sdram_io_tb.v
 // Module:      sdram_io_tb
 // Role:        sdram_io (= SDRAM のピンまわり) の単体の TB (= 2026-11-11)。Gowin の IO の部品のモデル
 //              (= tb/gowin_io_models.v) とつなぎ、ピンに出る時刻と、取り込みの位置と遅れを確かめる。破れたら $fatal で止まる。
@@ -11,7 +11,7 @@
 //   5  立ち下がりで取る (= CAP_EDGE 1): 立ち下がり m - 0.5 で取った値が、縁 m + 2 の後に dq_in に出る
 //   6  IODELAY: 80 刻み (= 1 ns) 遅らせると、縁の 0.5 ns 前に変わった値はまだ取らない (= 遅らせない側は取る)
 //
-// 実行: make -C ae350 test-sdram-io
+// 実行: make test-sdram-io
 // =============================================================
 
 `default_nettype none

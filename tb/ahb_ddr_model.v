@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/tb/ahb_ddr_model.v
+// File:        tb/ahb_ddr_model.v
 // Module:      ahb_ddr_model
 // Role:        DDR_H* (= 64 bit の AHB) の先に置くデータメモリのモデル (= 段 2、2026-11-08)。
 //              シミュレーション専用。

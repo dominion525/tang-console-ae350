@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/tb/sdram_tb.v
+// File:        tb/sdram_tb.v
 // Module:      sdram_tb
 // Role:        ahb_sdram (= DDR_H* から SDRAM の制御へつなぐ回路) の単体の TB (= 2026-11-11)。
 //              ahb_sdram → rtl/sdram_bridge.v → SDRAM のモデルをつなぎ、AHB の転送を TB から出して確かめる。
@@ -14,7 +14,7 @@
 //   7  乱数の番地と HSIZE で読み書きし、写しと比べる
 //   8  転送を待っている途中のリセットの後も、正しく動く
 //
-// 実行: make -C ae350 test-sdram-unit
+// 実行: make test-sdram-unit
 // =============================================================
 
 `default_nettype none

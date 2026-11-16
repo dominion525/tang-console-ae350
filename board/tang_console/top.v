@@ -1,15 +1,15 @@
 // =============================================================
-// File:        ae350/board/tang_console/top.v
+// File:        board/tang_console/top.v
 // Module:      ae350_probe_top
 // Role:        Tang Console 138K で本物の AE350 を動かし、実機でしか決まらない値を読む構成のトップ (= 2026-11-10)。
 //              DDR3 は使わない。命令はブロック RAM の ROM から読み、データとスタックは AE350 の中の DLM に置く
-//              (= ae350/sw/board.ld)。値は ae350/sw/probe.c が UART (= USB シリアル、1,250,000 bps) に出す。
+//              (= sw/board.ld)。値は sw/probe.c が UART (= USB シリアル、1,250,000 bps) に出す。
 //
 //   50 MHz ─▶ ae350_pll ─▶ CORE 800 / DDR 50 / AHB 100 / APB 100 / RTC 10 MHz (= Sipeed のデモと同じ)
-//   shell_top (= ae350/tb/shell_top.v。シミュレーションと同じ回路で、合成では本物の AE350_SOC につながる)
+//   shell_top (= tb/shell_top.v。シミュレーションと同じ回路で、合成では本物の AE350_SOC につながる)
 //     ROM_H*   ─▶ ahb_rom (= 16 KB、中身は ROM_HEX)
 //     DDR_H*   ─▶ ahb_sdram ─▶ SDRAM の制御 ─▶ ベースボードの SDRAM0 (= 32 MB)
-//                  SDRAM の制御は、定義 SDRAM_HS が無ければ sdram_bridge (= Lapidary の 20 MHz 版)、あれば sdram_ctrl_hs +
+//                  SDRAM の制御は、定義 SDRAM_HS が無ければ sdram_bridge (= 20 MHz 版)、あれば sdram_ctrl_hs +
 //                  sdram_io (= 166.7 MHz 版。2 つ目の PLL。読んだデータを取る位置は SDRAM_IN_DLY / SDRAM_CAP_EDGE / SDRAM_RD_FIRST)
 //     EXTM_H*  ─▶ 使わない
 //
@@ -34,7 +34,7 @@ module ae350_probe_top #(
     input  wire uart_rx,
     output wire uart_tx,
 
-    // ベースボードの SDRAM0 (= W9825G6KH、32 MB。ピンは Lapidary の SDRAM 版と同じ)
+    // ベースボードの SDRAM0 (= W9825G6KH、32 MB)
     inout  wire [15:0] sdram_dq,
     output wire [12:0] sdram_addr,
     output wire [1:0]  sdram_ba,
@@ -96,7 +96,7 @@ module ae350_probe_top #(
     wire lock_all;
 
 `ifdef AE350_CPU_HAZARD3
-    // モックの Hazard3 を FPGA のロジックで動かす版: CORE_CLK 40 MHz、AHB_CLK 50 MHz (= 配置配線の Fmax は 41.6 / 53.1 MHz)
+    // Hazard3 の版を FPGA のロジックで動かすとき: CORE_CLK 40 MHz、AHB_CLK 50 MHz (= 配置配線の Fmax は 41.6 / 53.1 MHz)
     localparam integer CORE_DIV = 20;
     localparam integer AHB_DIV  = 16;
 `else
@@ -115,7 +115,7 @@ module ae350_probe_top #(
         .lock     (lock)
     );
 
-    // ボタンと PLL の lock からリセットを作る (= Lapidary と同じ回路。50 MHz で 10 ms 押されたら、離して 10 ms で解く)
+    // ボタンと PLL の lock からリセットを作る (= rtl/reset_gen.v。50 MHz で 10 ms 押されたら、離して 10 ms で解く)
     wire rst_n;
 
     reset_gen #(
@@ -195,7 +195,7 @@ wire         ddr_hready;
 wire         ddr_hresp;
 
 // リセットは、DDR_CLK と SDRAM のクロックのそれぞれで、解くときだけ同期させる。ahb_sdram は非同期、sdram_bridge と
-// sdram_ctrl_hs は同期でリセットを受ける (= ae350/tb/tb_mem.v の TB_SDRAM と同じ形)
+// sdram_ctrl_hs は同期でリセットを受ける (= tb/tb_mem.v の TB_SDRAM と同じ形)
 /* verilator lint_off SYNCASYNCNET */
 reg [1:0] ddr_rst_s;
 reg [1:0] sdram_rst_s;
@@ -486,7 +486,7 @@ sdram_bridge #(.ADDR_WIDTH(25)) u_sdram_bridge (
     .sdram_dqm   (sdram_dqm)
 );
 
-// SDRAM は命令の半 cycle 後に受ける (= rtl/sdram_bridge.v。Lapidary の SDRAM 版と同じ)
+// SDRAM は命令の半 cycle 後に受ける (= rtl/sdram_bridge.v)
 assign sdram_clk = ~clk20;
 
 `endif
@@ -497,7 +497,7 @@ wire unused_sdram = s_init_done;
 `endif   // AE350_MEM_DDR3
 
     /* verilator lint_off PINCONNECTEMPTY */
-    // UART は 1,250,000 bps (= APB_CLK 100 MHz ÷ 8 ÷ 10。Lapidary の docs/uart-speed-log.md で、BL616 を通ることを確かめた速さ)
+    // UART は 1,250,000 bps (= APB_CLK 100 MHz ÷ 8 ÷ 10。ボードの USB シリアル (= BL616) を通ることを確かめた速さ)
     shell_top #(.UART_PRESCALE (16'd10)) u_top (
         .core_clk       (core_clk),
         .ahb_clk        (ahb_clk),

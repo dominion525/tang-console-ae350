@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/rtl/ahb_litedram.v
+// File:        rtl/ahb_litedram.v
 // Module:      ahb_litedram
 // Role:        AE350 の DDR_H* (= 64 bit の AHB) を、LiteDRAM の DDR3 の制御 (= litedram_gen で書き出した litedram_core の
 //              native port) につなぐ回路 (= 2026-11-16、実験。board/tang_console/build.sh の MEM=litedram)。形は ahb_ddr3.v と同じ。

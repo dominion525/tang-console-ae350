@@ -1,9 +1,8 @@
 // =============================================================
-// File:        ae350/board/tang_console/ae350_pll.v
+// File:        board/tang_console/ae350_pll.v
 // Module:      ae350_pll
 // Role:        AE350 のクロック 5 本を、Tang Console の 50 MHz の発振器から作る PLL (= 実機の値を読む構成、2026-11-10)。
-//              分周の値は Sipeed の AE350 のデモ (= tasks/_shared/refs/ae350/sipeed/gowin_pll_ae350.v) と同じ。
-//              パラメータの並びは cores/sdram/board/tang_console/lclk_pll.v と同じ。
+//              分周の値は Sipeed の AE350 のデモの PLL (= gowin_pll_ae350.v) と同じ。
 //
 //     VCO       = 50 MHz ÷ IDIV (1) × FBDIV (1) × MDIV (16) = 800 MHz
 //     DDR_CLK   = VCO ÷ ODIV0 (16) = 50 MHz
@@ -11,10 +10,10 @@
 //     AHB_CLK   = VCO ÷ ODIV2 (AHB_DIV、既定 8)  = 100 MHz
 //     APB_CLK   = VCO ÷ ODIV3 (8)  = 100 MHz
 //     RTC_CLK   = VCO ÷ ODIV4 (80) = 10 MHz
-//     SDRAM_CLK = VCO ÷ ODIV5 (40) = 20 MHz  (= Lapidary の SDRAM 版と同じ。DDR_H* の先の SDRAM の制御が使う)
+//     SDRAM_CLK = VCO ÷ ODIV5 (40) = 20 MHz  (= DDR_H* の先の SDRAM の制御が使う)
 //
 // Parameters:
-//   CORE_DIV / AHB_DIV  CORE_CLK と AHB_CLK の分周 (= 既定は本物の AE350 の 800 / 100 MHz。モックの Hazard3 を FPGA のロジックで
+//   CORE_DIV / AHB_DIV  CORE_CLK と AHB_CLK の分周 (= 既定は本物の AE350 の 800 / 100 MHz。Hazard3 の版を FPGA のロジックで
 //                       動かす版 (= build.sh の CPU=hazard3) は、配置配線の Fmax に合わせて下げる)
 // =============================================================
 `default_nettype none

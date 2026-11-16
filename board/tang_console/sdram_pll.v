@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/board/tang_console/sdram_pll.v
+// File:        board/tang_console/sdram_pll.v
 // Module:      sdram_pll
 // Role:        SDRAM の制御の 166.7 MHz 版のクロックを作る 2 つ目の PLL (= 2026-11-11)。AE350 の PLL (= ae350_pll.v、
 //              PLL_R[0]、VCO 800 MHz) とは別に置く (= 800 MHz の VCO からは 166.7 MHz を作れない)。

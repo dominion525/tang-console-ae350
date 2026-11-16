@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/rtl/ahb_reg_slice.v
+// File:        rtl/ahb_reg_slice.v
 // Module:      ahb_reg_slice
 // Role:        AHB (= 32 bit) の転送をレジスタで区切る回路 (= 2026-11-10)。AE350 の EXTS_H* と FPGA 側のスレーブの
 //              間に置く。実機では AE350 が FPGA の端にあり、行きと帰りの配線だけで AHB_CLK の周期の大半を使う。

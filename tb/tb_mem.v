@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/tb/tb_mem.v
+// File:        tb/tb_mem.v
 // Module:      tb_mem
 // Role:        shell_top (= AE350_SOC をインスタンス化したトップ) に ROM と DDR のメモリモデルをつなぎ、
 //              プログラムを流す TB (= 段 2、2026-11-08。段 3 で UART の受信と APB の検査、段 3b (2026-11-10) で
@@ -41,7 +41,7 @@
 //
 // 結果:
 //   0x0000_600D         合格。UART が送り終わってから、終了コード 0 で終わる (= +uart_in の送り残しは見ない)
-//   それ以外             失敗した確認の番号 (= ae350/sw/stage*_test.c)。UART が送り終わってから $fatal で終わる
+//   それ以外             失敗した確認の番号 (= sw/stage*_test.c)。UART が送り終わってから $fatal で終わる
 //
 // バスの形の検査 (= 破れたら $fatal):
 //   - ROM_HWRITE が 1 にならない
@@ -53,7 +53,7 @@
 
 `default_nettype none
 
-// 時間の単位は、ビルドのオプションで 1ns / 1ps を与える (= ae350/Makefile)
+// 時間の単位は、ビルドのオプションで 1ns / 1ps を与える (= Makefile)
 
 module tb_mem;
 
@@ -112,7 +112,7 @@ module tb_mem;
     wire        ddr_hresp;
 
     // ---------------------------------------------------------
-    // EXTM_H* のマスタのモデル (= 段 5。FPGA 側のマスタは後の Lapidary になるので、TB のモデルで動かす)
+    // EXTM_H* のマスタのモデル (= 段 5。FPGA 側のマスタは TB のモデルで動かす)
     //   +extm_cmd=<ファイル>  手順。1 行に 1 つの命令 (= # から行の終わりまでは読まない)
     //     wait                       プログラムが「EXTM」で始まる行を UART に出すまで待つ (= N 個目の wait は N 行目)
     //     w  <アドレス> <HSIZE> <データ>   書く (= 64 bit のデータのうち、アドレスと HSIZE で決まるレーンが書かれる)
@@ -355,7 +355,7 @@ module tb_mem;
 
     `ifdef TB_SDRAM
     // DDR_H* の先を、実機と同じ SDRAM の経路にする (= ahb_sdram → sdram_bridge → SDRAM のモデル)。
-    // SDRAM のクロックは +sdram_hp (= 半周期 ps、既定 25000 = 20 MHz)。ピンには反転して出す (= Lapidary と同じ)
+    // SDRAM のクロックは +sdram_hp (= 半周期 ps、既定 25000 = 20 MHz)。ピンには反転して出す
     integer sdram_hp;
     reg     sdram_clk;
     initial begin

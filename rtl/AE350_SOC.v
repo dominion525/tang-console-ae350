@@ -1,7 +1,7 @@
 // =============================================================
-// File:        ae350/rtl/AE350_SOC.v
+// File:        rtl/AE350_SOC.v
 // Module:      AE350_SOC
-// Role:        GW5AST に内蔵された RISC-V ハードコア AE350 の、シミュレーション用のモック。
+// Role:        GW5AST に内蔵された RISC-V ハードコア AE350 の Hazard3 の版 (= 同じポートを持ち、中の CPU を Hazard3 にしたもの)。
 //              Gowin の AE350_SOC プリミティブ (= simlib/gw5a/prim_sim.v) とポートの名前・向き・幅が同じ。
 //              シミュレーションでは prim_sim.v の代わりにこのファイルを読み、トップモジュールは
 //              シミュレーションでも合成でも同じ記述で AE350_SOC をインスタンス化する。
@@ -12,9 +12,8 @@
 //              段 3 (= 2026-11-09): AHB-APB ブリッジを入れ、APB_P* に転送を出す。
 //              段 4 (= 2026-11-10): PLMT と PLIC を入れ、Hazard3 のタイマ割り込みと外部割り込みにつなぐ。
 //              段 4 の後 (= 2026-11-10): クロックを本物と同じ関係にした (= CPU は CORE_CLK、各ポートはそのクロック)。
-//              設計は tasks/ae350-mock-design.md。前提の出典 (= 資料の写しと行の索引) は tasks/_shared/refs/ae350/README.md。
 //
-// Ports:       prim_sim.v の AE350_SOC と同じ (= ae350/tools/check_ports.rb で比べる)。
+// Ports:       prim_sim.v の AE350_SOC と同じ (= tools/check_ports.rb で比べる)。
 //              主なもの:
 //   input  POR_N / HW_RSTN            リセット (= どちらも active low)
 //   input  CORE_CLK                   CPU (= Hazard3) のクロック
@@ -29,25 +28,25 @@
 //   input  GP_INT   (16 本)           ユーザーの割り込み
 //
 // Reset:       POR_N と HW_RSTN の AND を、クロックごとに同期させる (= かかるのは非同期、解けるのは同期。
-//              ae350/rtl/ae350_reset_sync.v)。HRESETN は AHB_CLK、PRESETN は APB_CLK、DDR_RSTN は DDR_CLK に同期した
+//              rtl/ae350_reset_sync.v)。HRESETN は AHB_CLK、PRESETN は APB_CLK、DDR_RSTN は DDR_CLK に同期した
 //              もの。Hazard3 は CORE_CLK に同期したリセットを使う
 // Clock:       CORE_CLK / AHB_CLK / APB_CLK / DDR_CLK は互いに非同期として扱い、どの比でも動く
 //              (= リファレンスデザインは CORE 800、AHB 100、APB 100、DDR 50 MHz を 1 つの PLL から出し、SDC では
 //              互いに非同期として扱う。周波数比の制約は資料に無い)
 //
 // Testbench:
-//   ae350/tb/shell_top.v   AE350_SOC をインスタンス化した確認用のトップ (= lint 用)
-//   ae350/tb/tb_mem.v      ROM と DDR のメモリモデルをつなぎ、プログラムを流す TB
-//   make -C ae350 check / make -C ae350 test
+//   tb/shell_top.v   AE350_SOC をインスタンス化した確認用のトップ (= lint 用)
+//   tb/tb_mem.v      ROM と DDR のメモリモデルをつなぎ、プログラムを流す TB
+//   make check / make test
 //
 // Design Notes:
-//   - バス (= ae350/rtl/ae350_fabric.v): Hazard3 の AHB を受け、アドレスで行き先を決めて、行き先のクロックの
+//   - バス (= rtl/ae350_fabric.v): Hazard3 の AHB を受け、アドレスで行き先を決めて、行き先のクロックの
 //     側で転送する。転送は同時に 1 つだけで、クロックの間はトグルのハンドシェイクで乗せ換える
 //       0x8000_0000〜0x8FFF_FFFF の読み出し → ROM_H* (= AHB_CLK)
 //       0x0000_0000〜0x7FFF_FFFF            → DDR_H* (= DDR_CLK)
 //       0xF800_0000〜0xFBFF_FFFF            → APB_P* (= APB_CLK)
-//       0xE400_0000〜0xE5FF_FFFF            → モックの中の PLIC (= AHB_CLK。Andes NCEPLIC100 と同じ挙動。ae350/rtl/ae350_plic.v)
-//       0xE600_0000〜0xE60F_FFFF            → モックの中の PLMT (= AHB_CLK。ae350/rtl/ae350_plmt.v)
+//       0xE400_0000〜0xE5FF_FFFF            → Hazard3 の版の中の PLIC (= AHB_CLK。Andes NCEPLIC100 と同じ挙動。rtl/ae350_plic.v)
+//       0xE600_0000〜0xE60F_FFFF            → Hazard3 の版の中の PLMT (= AHB_CLK。rtl/ae350_plmt.v)
 //       それ以外、ROM の範囲への書き込み     → バスの入口でエラー応答 (= 2 サイクルの HRESP = 1)
 //   - ROM_H*: HADDR は Hazard3 のアドレスをそのまま出す (= 下位 2 bit も)。読み出しは常に 32 bit。ROM_HWRITE は常に 0
 //   - DDR_H*: 書き込みは 32 bit の値を上下の 32 bit に同じように並べる。読み出しは HADDR[2] で上下を選ぶ。
@@ -61,10 +60,10 @@
 //     GP1〜GP15 → ソース 11〜25 (= MUG1029 表 4-2) に入れる。PLIC-SWINT (= ソフトウェア割り込み) は入れない
 //   - EXTS_H*: 0xE800_0000〜0xEFFF_FFFF を AHB_CLK の 32 bit の AHB として出す (= 段 5)。HADDR はフルアドレス
 //     (= 第三者の設計 2 件が 0xE800_xxxx と比べている)。HREADYIN はスレーブの HREADYOUT
-//   - ILM / DLM: 0xA000_0000 と 0xA020_0000 に 64 KB ずつ (= 段 5、モックの中のメモリ)
+//   - ILM / DLM: 0xA000_0000 と 0xA020_0000 に 64 KB ずつ (= 段 5、Hazard3 の版の中のメモリ)
 //   - EXTM_H*: AHB_CLK の 64 bit のスレーブとして受け、中央のバスに乗せる (= 段 5)。行き先は CPU と同じアドレス空間
 //     全体で、中央のバスが CPU と交互に 1 つずつ処理する。HBURST は見ない
-//   - UART はモックに入れない (= FPGA のロジック側に作る)。UART2_TXD は 1 (= アイドル) に固定する
+//   - UART は Hazard3 の版に入れない (= FPGA のロジック側に作る)。UART2_TXD は 1 (= アイドル) に固定する
 //   - 使わない入力は lint_off UNUSEDSIGNAL で囲む
 // =============================================================
 
@@ -566,7 +565,7 @@ module AE350_SOC (
     assign UART1_OUT1N = 1'b0;
     assign UART1_OUT2N = 1'b0;
 
-    // UART2 はモックに入れない。TXD はアイドルの 1 に固定する
+    // UART2 は Hazard3 の版に入れない。TXD はアイドルの 1 に固定する
     assign UART2_TXD   = 1'b1;
     assign UART2_RTSN  = 1'b0;
     assign UART2_DTRN  = 1'b0;

@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/tb/gowin_io_models.v
+// File:        tb/gowin_io_models.v
 // Role:        シミュレーション用の Gowin の IO の部品 (= ODDR、IDDR、IOBUF) のモデル (= 2026-11-11)。
 //              Gowin のモデル (= simlib/gw5a/prim_sim.v) は手続きの中の assign / deassign を使い、Verilator で動かないので、
 //              同じ遅れのふるまいだけを写した。GSR (= 全体のリセット) と INIT 以外のパラメータは持たない。

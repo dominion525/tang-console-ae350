@@ -1,7 +1,7 @@
-# AE350 のシミュレーション用モック
+# AE350 の Hazard3 の版 (= rtl/AE350_SOC.v) のシミュレーションと、プログラムのビルド
 #
 #   make check    下の 3 つを続けて流す
-#   make ports    モックとプリミティブのポートを比べる
+#   make ports    Hazard3 の版とプリミティブのポートを比べる
 #   make lint     Verilator の lint (-Wall。Hazard3 と取り込んだ UART のファイルは対象にしない)
 #   make iverilog Icarus Verilog で読めるか (-g2001)
 #
@@ -14,11 +14,11 @@ GOWIN_PRIM ?= /Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/IDE/simlib
 # newlib の場所は NEWLIB で渡す (= 既定値は持たない。作り方は README)。newlib を使うプログラムを作るときだけ、場所を確かめる
 NEWLIB_CHECK = $(if $(wildcard $(NEWLIB)/include/stdio.h),,$(error NEWLIB に newlib の場所を指定する (= <場所>/include と <場所>/lib/rv32imac/ilp32 があるところ。作り方は README)))
 
-MOCK      := rtl/AE350_SOC.v
-MOCK_SRCS := $(MOCK) rtl/ae350_fabric.v rtl/ae350_reset_sync.v rtl/ae350_plic.v rtl/ae350_plmt.v
-FPGA_SRCS := rtl/apb_uart.v rtl/uart_reset_seq.v rtl/apb_gpint.v rtl/apb_paddr_probe.v rtl/apb_reg_slice.v rtl/ahb_reg_slice.v rtl/ahb_sram.v rtl/vendor/verilog-uart/uart_tx.v rtl/vendor/verilog-uart/uart_rx.v
-SHELL_TOP := tb/shell_top.v
-TB_SRCS   := tb/tb_mem.v tb/ahb_rom_model.v tb/ahb_ddr_model.v
+HZ3_SOC      := rtl/AE350_SOC.v
+HZ3_SOC_SRCS := $(HZ3_SOC) rtl/ae350_fabric.v rtl/ae350_reset_sync.v rtl/ae350_plic.v rtl/ae350_plmt.v
+FPGA_SRCS    := rtl/apb_uart.v rtl/uart_reset_seq.v rtl/apb_gpint.v rtl/apb_paddr_probe.v rtl/apb_reg_slice.v rtl/ahb_reg_slice.v rtl/ahb_sram.v rtl/vendor/verilog-uart/uart_tx.v rtl/vendor/verilog-uart/uart_rx.v
+SHELL_TOP    := tb/shell_top.v
+TB_SRCS      := tb/tb_mem.v tb/ahb_rom_model.v tb/ahb_ddr_model.v
 
 HAZARD3_DIR  := hazard3/hdl
 HAZARD3_SRCS := $(addprefix $(HAZARD3_DIR)/, \
@@ -29,7 +29,7 @@ HAZARD3_SRCS := $(addprefix $(HAZARD3_DIR)/, \
 	arith/hazard3_onehot_encode.v arith/hazard3_onehot_priority.v arith/hazard3_onehot_priority_dynamic.v \
 	arith/hazard3_priority_encode.v arith/hazard3_shift_barrel.v)
 
-RTL_SRCS := $(MOCK_SRCS) $(FPGA_SRCS) $(SHELL_TOP) $(HAZARD3_SRCS)
+RTL_SRCS := $(HZ3_SOC_SRCS) $(FPGA_SRCS) $(SHELL_TOP) $(HAZARD3_SRCS)
 
 VERILATOR_FLAGS := -Wall --timescale 1ns/1ps -I$(HAZARD3_DIR) tools/lint.vlt
 
@@ -57,7 +57,7 @@ SW3_LIBS   = -L$(NEWLIB)/lib/rv32imac/ilp32 -Wl,--start-group -lc -lgcc -Wl,--en
 check: ports lint iverilog
 
 ports:
-	ruby tools/check_ports.rb $(GOWIN_PRIM) $(MOCK)
+	ruby tools/check_ports.rb $(GOWIN_PRIM) $(HZ3_SOC)
 
 lint: $(PLL_STUB)
 	verilator --lint-only $(VERILATOR_FLAGS) --top-module shell_top $(RTL_SRCS)
@@ -302,7 +302,7 @@ $(BUILD)/coremark.bin: $(BUILD)/coremark.elf
 	$(RISCV_PREFIX)objdump -d -h $< > $(BUILD)/coremark.dis
 	$(RISCV_PREFIX)objcopy -O binary $< $@
 
-# CoreMark をシミュレーションのモック (= 中は Hazard3) で 1 回くり返し、結果が正しいかを見る。10 秒より短いと CoreMark は
+# CoreMark をシミュレーションの Hazard3 の版で 1 回くり返し、結果が正しいかを見る。10 秒より短いと CoreMark は
 # 「Errors detected」を出す (= 時間の決まりで誤りの数に 1 を足す) ので、3 つの CRC が 2K performance run の正しい値
 # (= core_main.c の表の 3 番目) であることと、CRC の誤りの行が無いことで見る。main の戻り値は 0 なので、TB は
 # 「失敗」で終わる (= 終了コードは見ない)。CoreMark を取ってくるのにネットが要るので、make test には入れない

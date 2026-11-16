@@ -1,10 +1,10 @@
 // =============================================================
-// File:        ae350/tb/shell_top.v
+// File:        tb/shell_top.v
 // Module:      shell_top
 // Role:        AE350_SOC をインスタンス化した確認用のトップ (= 段 1、2026-11-08。段 2 で ROM_H* / DDR_H* を外に出した)。
 //              全ポートを名前で接続する。制御用の入力は、実機で使う値 (= Sipeed のデモの IP の出力と
-//              同じ値。tasks/_shared/tang-console-facts.md の「制御用のポートの値」) を与える。
-//              シミュレーションではモック (ae350/rtl/AE350_SOC.v) とつながり、合成では本物の
+//              同じ値) を与える。
+//              シミュレーションでは Hazard3 の版 (rtl/AE350_SOC.v) とつながり、合成では本物の
 //              プリミティブとつながる記述にしてある。
 //
 // Ports:
@@ -12,24 +12,24 @@
 //   input  wire ahb_clk    AHB_CLK (= 100 MHz)。ROM_H* と、AE350 の中の PLIC / PLMT のクロック
 //   input  wire apb_clk    APB_CLK (= 100 MHz)。APB_P* と、その先の UART / GP_INT のレジスタのクロック
 //   input  wire ddr_clk    DDR_CLK (= 50 MHz)。DDR_H* のクロック
-//   input  wire rtc_clk    RTC_CLK に与えるクロック (= 本物では内蔵の RTC が使う。モックは使わない。PLMT の mtime は AHB_CLK で進む)
-//   input  wire rst_n      HW_RSTN に与えるリセット (active low)。POR_N は 1 に固定する。UART の合図 (= ae350/rtl/uart_reset_seq.v)
+//   input  wire rtc_clk    RTC_CLK に与えるクロック (= 本物では内蔵の RTC が使う。Hazard3 の版は使わない。PLMT の mtime は AHB_CLK で進む)
+//   input  wire rst_n      HW_RSTN に与えるリセット (active low)。POR_N は 1 に固定する。UART の合図 (= rtl/uart_reset_seq.v)
 //                          でも HW_RSTN にリセットを入れる (= 固まったプログラムから ROM のローダーへ戻す。2026-11-12)
-//   output wire uart_tx    APB_P* の先の UART (= ae350/rtl/apb_uart.v、段 3) の送信。AE350 の UART2_TXD は使わない
+//   output wire uart_tx    APB_P* の先の UART (= rtl/apb_uart.v、段 3) の送信。AE350 の UART2_TXD は使わない
 //   input  wire uart_rx    同じ UART の受信 (= 段 3b)。アイドルは 1。AE350 の UART2_RXD は使わない
 //   output wire hresetn    AE350_SOC が出す AHB 側のリセット
 //   rom_h*                 ROM_H* をそのまま外に出す (= 命令メモリは外に置く)
 //   ddr_h*                 DDR_H* のうち HADDR / HTRANS / HWRITE / HSIZE / HWDATA / HRDATA / HREADY / HRESP を外に出す
 //
 // Testbench:
-//   make -C ae350 check    (= lint)
-//   ae350/tb/tb_mem.v      (= メモリモデルをつないでプログラムを流す)
+//   make check    (= lint)
+//   tb/tb_mem.v      (= メモリモデルをつないでプログラムを流す)
 //
 // Design Notes:
 //   - APB_P* の先に、UART (= 段 3、0xF800_0000)、GP_INT を立てるレジスタ (= 段 4、0xF800_1000)、届いた PADDR を
 //     読み返すレジスタ (= 実機の値を読む構成、0xF800_F000) を置く。
 //     どちらにも当たらないアドレスは PSLVERR を返す。PRESETN を周辺回路のリセットに使う
-//   - EXTS_H* の先に 4 KB の RAM (= ae350/rtl/ahb_sram.v、段 5) を置く。EXTS_WAIT でデータフェーズの待ちを選ぶ
+//   - EXTS_H* の先に 4 KB の RAM (= rtl/ahb_sram.v、段 5) を置く。EXTS_WAIT でデータフェーズの待ちを選ぶ
 //   - EXTM_H* は外に出す (= マスタは外に置く。EXTM_HREADY には EXTM_HREADYOUT を返す。Falcon の設計と同じ形)
 //   - DDR_HBURST / DDR_HPROT は外に出さない (= 段 2 のメモリモデルは使わない)
 //   - 使わない出力は空の接続にし、lint_off PINCONNECTEMPTY で囲む
@@ -52,7 +52,7 @@ module shell_top #(
     input  wire        uart_rx,
     output wire        hresetn,
 
-    // 実機で見張るための出力 (= ae350/board/tang_console/ae350_observer.v。シミュレーションでは使わない)
+    // 実機で見張るための出力 (= board/tang_console/ae350_observer.v。シミュレーションでは使わない)
     output wire        dbg_presetn,
     output wire        dbg_apb_access,
     output wire [31:0] dbg_apb_paddr,
@@ -76,7 +76,7 @@ module shell_top #(
     input  wire        ddr_hready,
     input  wire        ddr_hresp,
 
-    // FPGA 側のマスタから AE350 へ (= EXTM_H*、AHB_CLK、64 bit)。マスタは外に置く (= 後の Lapidary。TB ではモデル)
+    // FPGA 側のマスタから AE350 へ (= EXTM_H*、AHB_CLK、64 bit)。マスタは外に置く (= TB ではモデル)
     input  wire        extm_hsel,
     input  wire [31:0] extm_haddr,
     input  wire [1:0]  extm_htrans,
@@ -109,7 +109,7 @@ module shell_top #(
     wire [3:0]  apb_pstrb;
 
     assign dbg_presetn    = presetn;
-    // AE350 の APB_P* (= ae_apb_*) とデコーダ (= apb_*) の間を、レジスタで区切る (= ae350/rtl/apb_reg_slice.v。
+    // AE350 の APB_P* (= ae_apb_*) とデコーダ (= apb_*) の間を、レジスタで区切る (= rtl/apb_reg_slice.v。
     // 実機で、PADDR からデコーダを通って AE350 に戻る経路が APB_CLK に収まらなかった)
     wire [31:0] ae_apb_paddr;
     wire        ae_apb_penable;
@@ -217,7 +217,7 @@ module shell_top #(
 
     // ---------------------------------------------------------
     // EXTS_H* の先: 4 KB の RAM (= 0xE800_0000〜0xE800_0FFF。その外の EXTS_H* の範囲はエラー応答)
-    // EXTS_H* は AHB_CLK で動く (= 出典は tasks/_shared/refs/ae350/README.md)
+    // EXTS_H* は AHB_CLK で動く (= Gowin の AE350 の資料)
     // ---------------------------------------------------------
     wire [31:0] exts_haddr;
     wire [1:0]  exts_htrans;
@@ -229,7 +229,7 @@ module shell_top #(
     wire        exts_hreadyout;
     wire        exts_hresp;
 
-    // AE350 の EXTS_H* (= ae_exts_*) と RAM (= exts_*) の間を、レジスタで区切る (= ae350/rtl/ahb_reg_slice.v。
+    // AE350 の EXTS_H* (= ae_exts_*) と RAM (= exts_*) の間を、レジスタで区切る (= rtl/ahb_reg_slice.v。
     // 実機で、RAM の HREADYOUT から AE350 を通って HSEL が戻る経路が AHB_CLK に収まらなかった)
     wire [31:0] ae_exts_haddr;
     wire [1:0]  ae_exts_htrans;
