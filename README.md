@@ -44,7 +44,9 @@ To build programs that use newlib (= stages 3-5, hello, ddr3_check, mem_bench, C
     sh board/tang_console/build.sh
     openFPGALoader -b tangconsole build/board/ae350_probe/impl/pnr/ae350_probe.fs
 
-Built with Gowin EDA Education 1.9.11.03 for chip revision B. The ROM is block RAM (= contents from `sw/probe.c`), data and stack are in the DLM inside AE350, and DDR3 is not used. Output goes to the second USB serial port (= /dev/cu.usbserial-<number>1 on macOS) at 1,250,000 bps (= macOS stty does not accept speeds above 230400, so the port is kept open and set with `IOSSIOSPEED`). Send any character to print the values again.
+Built with Gowin EDA Education 1.9.11.03 for chip revision B. The ROM is block RAM (= contents from `sw/probe.c`), data and stack are in the DLM inside AE350, and DDR3 is not used. Output goes to the second USB serial port (= /dev/cu.usbserial-<number>1 on macOS) at 1,250,000 bps (= macOS stty does not accept speeds above 230400, so the port is kept open and set with `IOSSIOSPEED`). Send any character to print the values again. Read the output with `tools/ae350_uart.rb` (= prints what it receives and sends keyboard input; it ends after the given number of seconds, or on Ctrl-C if no seconds are given).
+
+    printf x | ruby tools/ae350_uart.rb /dev/cu.usbserial-<number>1 15
 
 When the CPU output stops for more than 0.1 s, the observer circuit (= `board/tang_console/ae350_observer.v`) prints the following line without going through the CPU.
 

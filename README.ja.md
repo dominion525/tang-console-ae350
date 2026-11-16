@@ -44,7 +44,9 @@ newlib を使うプログラム (= 段 3〜5、hello、ddr3_check、mem_bench、
     sh board/tang_console/build.sh
     openFPGALoader -b tangconsole build/board/ae350_probe/impl/pnr/ae350_probe.fs
 
-ビルドは Gowin EDA の Education 版 1.9.11.03、チップの版 B で通している。ROM はブロック RAM (= 中身は `sw/probe.c`)、データとスタックは AE350 の中の DLM で、DDR3 は使わない。出力は USB シリアルの 2 つ目 (= macOS では /dev/cu.usbserial-<番号>1) に 1,250,000 bps で出る (= macOS の stty は 230400 を超える速さを受けないので、ポートを開いたまま `IOSSIOSPEED` で設定する)。何か 1 文字送ると、もう一度出す。
+ビルドは Gowin EDA の Education 版 1.9.11.03、チップの版 B で通している。ROM はブロック RAM (= 中身は `sw/probe.c`)、データとスタックは AE350 の中の DLM で、DDR3 は使わない。出力は USB シリアルの 2 つ目 (= macOS では /dev/cu.usbserial-<番号>1) に 1,250,000 bps で出る (= macOS の stty は 230400 を超える速さを受けないので、ポートを開いたまま `IOSSIOSPEED` で設定する)。何か 1 文字送ると、もう一度出す。出力は `tools/ae350_uart.rb` で読む (= 受けたものを画面に出し、キーボードの入力を送る。秒を渡すとその秒数で終わり、渡さなければ Ctrl-C で終わる)。
+
+    printf x | ruby tools/ae350_uart.rb /dev/cu.usbserial-<番号>1 15
 
 CPU の文字が 0.1 秒以上途切れると、見張りの回路 (= `board/tang_console/ae350_observer.v`) が、CPU を通さずに次の 1 行を出す。
 
