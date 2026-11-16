@@ -39,9 +39,15 @@ pll = merged[sp...ep]
     abort "PLL の initial に「#{reg} = 0;」が 1 か所だけある前提が崩れた (= #{pll.scan(from).size} か所)" unless pll.scan(from).size == 1
     pll.sub!(from, "\n#{reg} = (DYN_PE#{n}_SEL == \"FALSE\") ? #{param} : 0;   // prim_sim_gw5a.rb\n")
   end
+  # 同じ always @(*) は、固定の指定では動的な側の枝が定数で消えて、きっかけが 1 つも残らない (= Icarus が
+  # 「@* found no sensitivities」を出す)。動的な側が読む fine_dyn_n / coarse_dyn_n をきっかけとして書く
+  from = "\n// clkout#{n}\n//\nalways @(*)\n"
+  abort "PLL に clkout#{n} の always @(*) が 1 か所だけある前提が崩れた (= #{pll.scan(from).size} か所)" unless pll.scan(from).size == 1
+  pll.sub!(from, "\n// clkout#{n}\n//\nalways @(fine_dyn_#{n} or coarse_dyn_#{n})   // prim_sim_gw5a.rb\n")
 end
 merged[sp...ep] = pll
 
 File.write(out_path, merged)
 puts "#{out_path}: GW5A の DQS (#{gw5a[s5...e5].lines.size} 行) を GW2A の DQS (#{gw2a[s2...e2].lines.size} 行) に差し替えた"
 puts "#{out_path}: PLL の位相の初期値 (= fine_0〜6、coarse_0〜6 の 14 か所) を、固定の指定の値にした"
+puts "#{out_path}: PLL の位相を読む always @(*) (= clkout0〜6 の 7 か所) のきっかけを、fine_dyn_n / coarse_dyn_n にした"
