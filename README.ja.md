@@ -100,9 +100,9 @@ ROM にローダー (= `sw/loader.c`、2,001 byte) を置くと、16 KB の ROM 
 
 - `GO` を見てから中身を送る。断られたときに中身が命令として読まれない
 - 番地と長さは、DDR_H* の先か ILM (= 0xA000_0000〜0xA000_FFFF) に収まらないと `ERR range`。DDR_H* の先の大きさは、起動のときに 0x0200_0000 を読んで見分ける (= 例外になれば SDRAM の版で 32 MB、ならなければ DDR3 の版で 1 GB)
-- `OK` の CRC-32 は、書いた後に SDRAM から読み直した中身で計算する (= zlib と同じ値。Ruby の `Zlib.crc32` で照らせる)
+- `OK` の CRC-32 は、書いた後に DDR_H* の先のメモリから読み直した中身で計算する (= zlib と同じ値。Ruby の `Zlib.crc32` で照らせる)
 - 中身の途中で次の byte が 1 秒来ないと `ERR timeout`、受けている間に受信があふれるかストップビットが 0 の文字を捨てると `ERR uart` を返し、命令待ちに戻る
-- 受けている間はデータキャッシュを切って SDRAM に直接書く。`run` では `fence` と `fence.i` の後、データキャッシュを入れてから飛ぶ。起動の始めにデータキャッシュを全部書き戻して捨てる (= 前のプログラムの値が、新しいプログラムの上に書き戻されないように)
+- 受けている間はデータキャッシュを切って DDR_H* の先のメモリに直接書く。`run` では `fence` と `fence.i` の後、データキャッシュを入れてから飛ぶ。起動の始めにデータキャッシュを全部書き戻して捨てる (= 前のプログラムの値が、新しいプログラムの上に書き戻されないように)
 
 ### SDRAM で動かすプログラム
 
@@ -137,7 +137,7 @@ DDR_H* の先を、ベースボードの SDRAM の代わりに、SOM の DDR3 (=
 IP の本体は Gowin のツールが作るファイルなので、リポジトリには入れていない。設定 (= `board/tang_console/ddr3/ddr3_memory_interface.ipc`) から、Gowin EDA の IP Core Generator で作る。
 
 1. IP Core Generator を開き、Open Config File で `board/tang_console/ddr3/ddr3_memory_interface.ipc` を開く
-2. Device が GW5AST-138、Device Version が B (= 手元のボード) になっていることを確かめて OK を押す
+2. Device が GW5AST-138、Device Version が B になっていることを確かめて OK を押す
 3. 同じフォルダに `ddr3_memory_interface.v` ができる (= 「Decode Process failed」と出ることがあるが、できないのはシミュレーション用の `.vo` だけで、合成には使わない)
 
 チップの版 C のボードでは、`.ipc` の `target_device` を `gw5ast138c-007` にして作る (= `build.tcl` と `board/tang_console/ddr3/gowin_pll.mod` の `-device_version` も C に変える)。DDR3 の PLL の中身 (= `gowin_pll_mod.v`) は、`build.sh` が `board/tang_console/ddr3/gowin_pll.mod` から Gowin の GowinModgen で出力先に作る。

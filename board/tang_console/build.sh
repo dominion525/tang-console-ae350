@@ -122,6 +122,6 @@ if [ "$AE350_MEM" = ddr3 ]; then
   sed "s|^-path .*|-path $out/ddr3_pll/|" "$here/ddr3/gowin_pll.mod" > "$out/ddr3_pll/gowin_pll.mod"
   "$G/bin/GowinModgen" -do "$out/ddr3_pll/gowin_pll.mod" > "$out/ddr3_pll/modgen.log" 2>&1 || { cat "$out/ddr3_pll/modgen.log"; exit 1; }
   [ -f "$out/ddr3_pll/gowin_pll_mod.v" ] || { echo "DDR3 の PLL を作れなかった" >&2; exit 1; }
-  [ -f "$here/ddr3/ddr3_memory_interface.v" ] || { echo "DDR3 の IP (= ddr3/ddr3_memory_interface.v) が無い。README の「DDR3 の版」の手順で作る" >&2; exit 1; }
+  [ -f "$here/ddr3/ddr3_memory_interface.v" ] || { echo "DDR3 の IP (= ddr3/ddr3_memory_interface.v) が無い。README.md の「DDR3 build」(= README.ja.md の「DDR3 の版」) の手順で作る" >&2; exit 1; }
 fi
 exec "$G/bin/gw_sh" "$here/build.tcl"
