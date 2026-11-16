@@ -1,0 +1,8 @@
+build/
+# DDR3 の IP (= IDE の IP Core Generator で board/tang_console/ddr3/ddr3_memory_interface.ipc から作るもの。Gowin のツールが
+# 作ったファイルなので入れない。作り方は README の「DDR3 の版」)
+board/tang_console/ddr3/ddr3_memory_interface.v
+board/tang_console/ddr3/ddr3_memory_interface_tmp.v
+board/tang_console/ddr3/temp/
+# 作業用のメモ (= git に入れない)
+tasks/
