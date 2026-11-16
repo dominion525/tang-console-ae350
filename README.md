@@ -14,14 +14,14 @@ It consists of two parts.
 
 ## Repository layout
 
-| Directory             | Contents                                                                                                                                                                                                                   |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Directory             | Contents                                                                                                                                                                                                                     |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `rtl/`                | The Hazard3 version (AE350_SOC.v, ae350_fabric.v, ae350_plic.v, ae350_plmt.v, and others) and the fabric-side circuits (apb_uart.v, apb_gpint.v, apb_paddr_probe.v, apb_reg_slice.v, ahb_reg_slice.v, ahb_sram.v, ahb_rom.v) |
-| `tb/`                 | shell_top.v (the top level that connects AE350_SOC to the fabric-side circuits; used both in simulation and on the board) and the testbenches                                                                              |
-| `sw/`                 | Test programs (stage2_test.c to stage5_test.c), the probe program probe.c, and linker scripts                                                                                                                              |
-| `board/tang_console/` | Board top level, PLLs, pin and timing constraints, build scripts, and the monitor circuit                                                                                                                                  |
-| `hazard3/`            | Hazard3 v1.1.1 RTL (changes are listed in hazard3/README.md)                                                                                                                                                               |
-| `tools/`              | Port comparison, lint and coverage settings, hex conversion, and UART access                                                                                                                                               |
+| `tb/`                 | shell_top.v (the top level that connects AE350_SOC to the fabric-side circuits; used both in simulation and on the board) and the testbenches                                                                                |
+| `sw/`                 | Test programs (stage2_test.c to stage5_test.c), the probe program probe.c, and linker scripts                                                                                                                                |
+| `board/tang_console/` | Board top level, PLLs, pin and timing constraints, build scripts, and the monitor circuit                                                                                                                                    |
+| `hazard3/`            | Hazard3 v1.1.1 RTL (changes are listed in [hazard3/README.md](hazard3/README.md))                                                                                                                                            |
+| `tools/`              | Port comparison, lint and coverage settings, hex conversion, and UART access                                                                                                                                                 |
 
 ## Simulation
 
@@ -346,12 +346,12 @@ A write takes about 12 controller clock cycles until the command and data are ac
 This repository is licensed under Apache-2.0 (`LICENSE`).
 The following files are by other authors and are included under their original licenses.
 
-| Location                                       | Origin                                                                                          | License (text)                                                  |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `hazard3/`                                     | Hazard3 v1.1.1 (Luke Wren). Changes are listed in hazard3/README.md                             | Apache-2.0 (hazard3/LICENSE)                                    |
-| `rtl/vendor/verilog-uart/`                     | verilog-uart (Alex Forencich)                                                                   | MIT (rtl/vendor/verilog-uart/COPYING)                           |
-| `tb/vendor/zeitlos/sdram_model.v`              | zeitlos (Lone Dynamics). Changes are listed at the top of the file                              | Custom terms (tb/vendor/zeitlos/LICENSE.md)                     |
-| `board/tang_console/ddr3/`                     | Sipeed's TangMega-138K-example. The origin of each file is in board/tang_console/ddr3/README.md | Apache-2.0 (LICENSE)                                            |
-| `board/tang_console/litedram/tang_console.yml` | examples/tang_mega_138k_pro.yml in LiteDRAM                                                     | BSD-2-Clause (board/tang_console/litedram/LICENSE.litedram)     |
-| `board/tang_console/litedram/ddram.cst`        | First DDR3: LiteX-Boards' Tang Console definition                                               | BSD-2-Clause (board/tang_console/litedram/LICENSE.litex-boards) |
-| `board/tang_console/litedram/ddram.cst`        | Second DDR3: Sipeed's TangMega-138K-example                                                     | Apache-2.0 (LICENSE)                                            |
+| Location                                       | Origin                                                                                                                               | License (text)                                                  |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `hazard3/`                                     | Hazard3 v1.1.1 (Luke Wren). Changes are listed in [hazard3/README.md](hazard3/README.md)                                             | Apache-2.0 (hazard3/LICENSE)                                    |
+| `rtl/vendor/verilog-uart/`                     | verilog-uart (Alex Forencich)                                                                                                        | MIT (rtl/vendor/verilog-uart/COPYING)                           |
+| `tb/vendor/zeitlos/sdram_model.v`              | zeitlos (Lone Dynamics). Changes are listed at the top of the file                                                                   | Custom terms (tb/vendor/zeitlos/LICENSE.md)                     |
+| `board/tang_console/ddr3/`                     | Sipeed's TangMega-138K-example. The origin of each file is in [board/tang_console/ddr3/README.md](board/tang_console/ddr3/README.md) | Apache-2.0 (LICENSE)                                            |
+| `board/tang_console/litedram/tang_console.yml` | examples/tang_mega_138k_pro.yml in LiteDRAM                                                                                          | BSD-2-Clause (board/tang_console/litedram/LICENSE.litedram)     |
+| `board/tang_console/litedram/ddram.cst`        | First DDR3: LiteX-Boards' Tang Console definition                                                                                    | BSD-2-Clause (board/tang_console/litedram/LICENSE.litex-boards) |
+| `board/tang_console/litedram/ddram.cst`        | Second DDR3: Sipeed's TangMega-138K-example                                                                                          | Apache-2.0 (LICENSE)                                            |

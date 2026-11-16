@@ -20,7 +20,7 @@ Gowin GW5AST-138 に内蔵された RISC-V ハードコア AE350（Andes A25）�
 | `tb/`                 | shell_top.v（AE350_SOC とファブリック側の回路をつないだトップ。シミュレーションと実機の両方で使う）とテストベンチ                                                                                         |
 | `sw/`                 | テストプログラム（stage2_test.c〜stage5_test.c）、読み出しプログラム probe.c、リンカスクリプト                                                                                                            |
 | `board/tang_console/` | ボードのトップ、PLL、ピン制約とタイミング制約、ビルドスクリプト、監視回路                                                                                                                                 |
-| `hazard3/`            | Hazard3 v1.1.1 の RTL（変更点は hazard3/README.md）                                                                                                                                                       |
+| `hazard3/`            | Hazard3 v1.1.1 の RTL（変更点は [hazard3/README.ja.md](hazard3/README.ja.md)）                                                                                                                            |
 | `tools/`              | ポート比較、lint とカバレッジの設定、hex 変換、UART の読み書き                                                                                                                                            |
 
 ## シミュレーション
@@ -346,12 +346,12 @@ DDR3 の容量と 1 アクセスの幅はパラメータ（`MEM_AW`、`LINE_AW`�
 このリポジトリは Apache-2.0（`LICENSE`）です。
 ただし次のファイルは他の作者によるもので、元のライセンスのまま含めています。
 
-| 場所                                           | 出典                                                                                    | ライセンス（本文）                                               |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `hazard3/`                                     | Hazard3 v1.1.1（Luke Wren）。変更点は hazard3/README.md                                 | Apache-2.0（hazard3/LICENSE）                                    |
-| `rtl/vendor/verilog-uart/`                     | verilog-uart（Alex Forencich）                                                          | MIT（rtl/vendor/verilog-uart/COPYING）                           |
-| `tb/vendor/zeitlos/sdram_model.v`              | zeitlos（Lone Dynamics）。変更点はファイルの冒頭                                        | 独自の条件（tb/vendor/zeitlos/LICENSE.md）                       |
-| `board/tang_console/ddr3/`                     | Sipeed の TangMega-138K-example。ファイルごとの出典は board/tang_console/ddr3/README.md | Apache-2.0（LICENSE）                                            |
-| `board/tang_console/litedram/tang_console.yml` | LiteDRAM の examples/tang_mega_138k_pro.yml                                             | BSD-2-Clause（board/tang_console/litedram/LICENSE.litedram）     |
-| `board/tang_console/litedram/ddram.cst`        | 1 個目の DDR3：LiteX-Boards の Tang Console 定義                                        | BSD-2-Clause（board/tang_console/litedram/LICENSE.litex-boards） |
-| `board/tang_console/litedram/ddram.cst`        | 2 個目の DDR3：Sipeed の TangMega-138K-example                                          | Apache-2.0（LICENSE）                                            |
+| 場所                                           | 出典                                                                                                                               | ライセンス（本文）                                               |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `hazard3/`                                     | Hazard3 v1.1.1（Luke Wren）。変更点は [hazard3/README.ja.md](hazard3/README.ja.md)                                                 | Apache-2.0（hazard3/LICENSE）                                    |
+| `rtl/vendor/verilog-uart/`                     | verilog-uart（Alex Forencich）                                                                                                     | MIT（rtl/vendor/verilog-uart/COPYING）                           |
+| `tb/vendor/zeitlos/sdram_model.v`              | zeitlos（Lone Dynamics）。変更点はファイルの冒頭                                                                                   | 独自の条件（tb/vendor/zeitlos/LICENSE.md）                       |
+| `board/tang_console/ddr3/`                     | Sipeed の TangMega-138K-example。ファイルごとの出典は [board/tang_console/ddr3/README.ja.md](board/tang_console/ddr3/README.ja.md) | Apache-2.0（LICENSE）                                            |
+| `board/tang_console/litedram/tang_console.yml` | LiteDRAM の examples/tang_mega_138k_pro.yml                                                                                        | BSD-2-Clause（board/tang_console/litedram/LICENSE.litedram）     |
+| `board/tang_console/litedram/ddram.cst`        | 1 個目の DDR3：LiteX-Boards の Tang Console 定義                                                                                   | BSD-2-Clause（board/tang_console/litedram/LICENSE.litex-boards） |
+| `board/tang_console/litedram/ddram.cst`        | 2 個目の DDR3：Sipeed の TangMega-138K-example                                                                                     | Apache-2.0（LICENSE）                                            |

@@ -1,21 +1,19 @@
-# DDR3 の版のファイルの出どころ
+# Origin of the DDR3 build files
 
-このディレクトリのファイルは、Sipeed の TangMega-138K-example (= https://github.com/sipeed/TangMega-138K-example) の `ddr_memory/ddr_memory_test_uart` (= Tang Console 138K で動いた DDR3 の試験) から来ている。ライセンスは Apache-2.0 (= リポジトリの LICENSE)。
+[日本語](README.ja.md)
 
-    ファイル                    出どころ (= ddr_memory/ddr_memory_test_uart/ の下)
-                                変更
-    gowin_pll.v                 src/gowin_pll/gowin_pll.v
-                                なし (= 冒頭に出どころの 2 行を足しただけ)
-    pll_init.v                  src/pll_init.v
-                                なし (= 冒頭に出どころの 2 行を足しただけ)
-    ddr3.cst                    src/ddr3_1v4_hs.cst
-                                DDR3 の行と INS_LOC の行を選んだ (= 行の中身は元のまま)
-    ddr3_memory_interface.ipc   src/ddr3_memory_interface/ddr3_memory_interface.ipc
-                                target_device を版 C (= gw5ast138c-007) から版 B (= gw5ast138b-011) に変えた。ほかに、キーの並びが
-                                違い、AXI と MC の設定のキー (= 9 個) が無い
-    gowin_pll.mod               src/gowin_pll/gowin_pll.mod
-                                -device_version を C から B に、-path を元の絶対パスから ./ に変えた
+The files in this directory are taken from `ddr_memory/ddr_memory_test_uart` (a DDR3 test that runs on the Tang Console 138K) in Sipeed's [TangMega-138K-example](https://github.com/sipeed/TangMega-138K-example).
+They are licensed under Apache-2.0 (the repository's LICENSE).
 
-`.ipc` と `.mod` は Gowin のツール (= IP Core Generator、GowinModgen) が読むファイルなので、出どころはファイルの中ではなく、ここに書く。
+| File                        | Origin (path under `ddr_memory/ddr_memory_test_uart/`) | Changes                                                                                                                                                                        |
+| --------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `gowin_pll.v`               | `src/gowin_pll/gowin_pll.v`                            | Only two lines stating the origin were added at the top                                                                                                                        |
+| `pll_init.v`                | `src/pll_init.v`                                       | Only two lines stating the origin were added at the top                                                                                                                        |
+| `ddr3.cst`                  | `src/ddr3_1v4_hs.cst`                                  | Only the DDR3 lines and the INS_LOC lines were kept (each line is unchanged)                                                                                                   |
+| `ddr3_memory_interface.ipc` | `src/ddr3_memory_interface/ddr3_memory_interface.ipc`  | `target_device` was changed from revision C (`gw5ast138c-007`) to revision B (`gw5ast138b-011`). The key order also differs, and 9 keys for the AXI and MC settings are absent |
+| `gowin_pll.mod`             | `src/gowin_pll/gowin_pll.mod`                          | `-device_version` was changed from C to B, and `-path` from the original absolute path to `./`                                                                                 |
 
-`.ipc` から作る `ddr3_memory_interface.v` (= Gowin の DDR3 の IP の本体) は、Gowin のツールが作るファイルなので、リポジトリには入れない。作り方は README.md の「DDR3 build」(= 日本語は README.ja.md の「DDR3 の版」)。
+The `.ipc` and `.mod` files are read by Gowin's tools (IP Core Generator and GowinModgen), so their origin is recorded in this README rather than in the files themselves.
+
+`ddr3_memory_interface.v` (the Gowin DDR3 IP itself), generated from the `.ipc` file, is produced by Gowin's tools and is not included in the repository.
+The generation steps are in the "DDR3 build" section of the top-level [README.md](../../../README.md).
