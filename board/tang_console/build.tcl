@@ -2,7 +2,6 @@
 # チップの版は B (= 手元のボード。tasks/_shared/tang-console-facts.md)
 set here [file dirname [file normalize [info script]]]
 set ae   [file normalize $here/../..]
-set root [file normalize $ae/..]
 set out  $::env(AE350_BOARD_BUILD)
 create_project -name ae350_probe -dir $out -pn GW5AST-LV138PG484AC1/I0 -device_version B -force
 set_option -top_module ae350_probe_top
@@ -12,14 +11,13 @@ set_option -gen_text_timing_rpt 1
 # 配置配線の設定 (= build.sh の PLACE / ROUTE。空なら Gowin の既定)
 if {[info exists ::env(AE350_PLACE_OPTION)] && $::env(AE350_PLACE_OPTION) ne ""} { set_option -place_option $::env(AE350_PLACE_OPTION) }
 if {[info exists ::env(AE350_ROUTE_OPTION)] && $::env(AE350_ROUTE_OPTION) ne ""} { set_option -route_option $::env(AE350_ROUTE_OPTION) }
-# rtl/sdram_bridge.v が rtl/lapidary_config.vh と rtl/prog_bsram/prog_config.vh を読む
-set_option -include_path "$root/rtl;$root/rtl/prog_bsram;$ae/hazard3/hdl"
+set_option -include_path "$ae/hazard3/hdl"
 add_file $out/defines.v
 foreach f {apb_uart uart_reset_seq apb_gpint apb_paddr_probe apb_reg_slice ahb_reg_slice ahb_sram ahb_rom ahb_sdram sdram_ctrl_hs sdram_io} { add_file $ae/rtl/$f.v }
-add_file $root/rtl/sdram_bridge.v
-add_file $root/rtl/vendor/verilog-uart/uart_tx.v
-add_file $root/rtl/vendor/verilog-uart/uart_rx.v
-add_file $root/rtl/reset_gen.v
+add_file $ae/rtl/sdram_bridge.v
+add_file $ae/rtl/vendor/verilog-uart/uart_tx.v
+add_file $ae/rtl/vendor/verilog-uart/uart_rx.v
+add_file $ae/rtl/reset_gen.v
 # シミュレーションと同じ shell_top。AE350_SOC は、既定ではモック (= ae350/rtl/AE350_SOC.v) を読まないので、本物の部品になる。
 # CPU=hazard3 (= build.sh) のときは、モックと Hazard3 を FPGA のロジックで動かす
 add_file $ae/tb/shell_top.v

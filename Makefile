@@ -16,7 +16,7 @@ NEWLIB ?= $(abspath ../tasks/riscv/newlib/riscv64-elf)
 
 MOCK      := rtl/AE350_SOC.v
 MOCK_SRCS := $(MOCK) rtl/ae350_fabric.v rtl/ae350_reset_sync.v rtl/ae350_plic.v rtl/ae350_plmt.v
-FPGA_SRCS := rtl/apb_uart.v rtl/uart_reset_seq.v rtl/apb_gpint.v rtl/apb_paddr_probe.v rtl/apb_reg_slice.v rtl/ahb_reg_slice.v rtl/ahb_sram.v ../rtl/vendor/verilog-uart/uart_tx.v ../rtl/vendor/verilog-uart/uart_rx.v
+FPGA_SRCS := rtl/apb_uart.v rtl/uart_reset_seq.v rtl/apb_gpint.v rtl/apb_paddr_probe.v rtl/apb_reg_slice.v rtl/ahb_reg_slice.v rtl/ahb_sram.v rtl/vendor/verilog-uart/uart_tx.v rtl/vendor/verilog-uart/uart_rx.v
 SHELL_TOP := tb/shell_top.v
 TB_SRCS   := tb/tb_mem.v tb/ahb_rom_model.v tb/ahb_ddr_model.v
 
@@ -35,10 +35,11 @@ VERILATOR_FLAGS := -Wall --timescale 1ns/1ps -I$(HAZARD3_DIR) tools/lint.vlt
 
 BUILD := build
 SIM   := $(BUILD)/tb_mem/Vtb_mem
+PLL_STUB   := $(BUILD)/gowin_pll_stub.v
 
-# DDR_H* の先を、実機と同じ SDRAM の経路にしたシミュレータ (= ahb_sdram → Lapidary の sdram_bridge → SDRAM のモデル)
-SDRAM_SRCS  := rtl/ahb_sdram.v ../rtl/sdram_bridge.v ../cores/sdram/simulation/vendor/zeitlos/sdram_model.v
-SDRAM_FLAGS := -DTB_SDRAM -I../rtl -I../rtl/prog_bsram
+# DDR_H* の先を、実機と同じ SDRAM の経路にしたシミュレータ (= ahb_sdram → sdram_bridge → SDRAM のモデル)
+SDRAM_SRCS  := rtl/ahb_sdram.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v
+SDRAM_FLAGS := -DTB_SDRAM
 SIM_SDRAM   := $(BUILD)/tb_sdram/Vtb_mem
 
 # ソフトウェア
@@ -61,8 +62,8 @@ ports:
 lint: $(PLL_STUB)
 	verilator --lint-only $(VERILATOR_FLAGS) --top-module shell_top $(RTL_SRCS)
 	verilator --lint-only $(VERILATOR_FLAGS) --timing --no-sched-zero-delay --top-module tb_mem $(RTL_SRCS) $(TB_SRCS)
-	verilator --lint-only $(VERILATOR_FLAGS) $(BOARD_INC) --top-module ae350_probe_top $(BOARD_SRCS)
-	verilator --lint-only $(VERILATOR_FLAGS) $(BOARD_INC) +define+SDRAM_HS +define+AE350_NO_OBSERVER +define+AHB_SDRAM_TRACE --top-module ae350_probe_top $(BOARD_SRCS)
+	verilator --lint-only $(VERILATOR_FLAGS) --top-module ae350_probe_top $(BOARD_SRCS)
+	verilator --lint-only $(VERILATOR_FLAGS) +define+SDRAM_HS +define+AE350_NO_OBSERVER +define+AHB_SDRAM_TRACE --top-module ae350_probe_top $(BOARD_SRCS)
 	@# ahb_ddr3 は DDR3 の IP (= 暗号化されていて Verilator では読めない) とつなぐので、単体で流す。頂点の口になるので、
 	@# 使わない htrans[0] (= ahb_sdram と同じく NONSEQ と SEQ を区別しない) の警告だけを外す
 	verilator --lint-only $(VERILATOR_FLAGS) -Wno-UNUSEDSIGNAL --top-module ahb_ddr3 rtl/ahb_ddr3.v
@@ -71,9 +72,7 @@ lint: $(PLL_STUB)
 # ボードの回路 (= board/tang_console/top.v) の lint。Gowin の部品のうち PLL は、Gowin のモデルから作った中身の無いモジュール、
 # IO の部品 (= sdram_io.v の ODDR / IDDR / IOBUF / IODELAY) は TB のモデルで置き換える。定義で回路が変わるので、既定 (= probe、
 # 20 MHz 版、観測の回路あり) と全部入り (= 166.7 MHz 版、観測の回路なし、転送の記録あり) の 2 通りで流す
-PLL_STUB   := $(BUILD)/gowin_pll_stub.v
-BOARD_INC  := -I../rtl -I../rtl/prog_bsram
-BOARD_SRCS := $(RTL_SRCS) rtl/ahb_rom.v rtl/ahb_sdram.v rtl/sdram_ctrl_hs.v rtl/sdram_io.v ../rtl/sdram_bridge.v ../rtl/reset_gen.v \
+BOARD_SRCS := $(RTL_SRCS) rtl/ahb_rom.v rtl/ahb_sdram.v rtl/sdram_ctrl_hs.v rtl/sdram_io.v rtl/sdram_bridge.v rtl/reset_gen.v \
               tb/gowin_io_models.v $(PLL_STUB) board/tang_console/ae350_pll.v board/tang_console/sdram_pll.v \
               board/tang_console/ae350_observer.v board/tang_console/top.v
 
@@ -338,9 +337,9 @@ SDRAM_RUN := +max_cycles=20000000
 # ahb_sdram の単体の TB (= ahb_sdram → sdram_bridge → SDRAM のモデル)
 SIM_SDRAM_UNIT := $(BUILD)/sdram_tb/Vsdram_tb
 
-$(SIM_SDRAM_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v ../rtl/sdram_bridge.v ../cores/sdram/simulation/vendor/zeitlos/sdram_model.v tools/lint.vlt
-	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) -I../rtl -I../rtl/prog_bsram --top-module sdram_tb -Mdir $(BUILD)/sdram_tb \
-		rtl/ahb_sdram.v tb/sdram_tb.v ../rtl/sdram_bridge.v ../cores/sdram/simulation/vendor/zeitlos/sdram_model.v
+$(SIM_SDRAM_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v tools/lint.vlt
+	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) --top-module sdram_tb -Mdir $(BUILD)/sdram_tb \
+		rtl/ahb_sdram.v tb/sdram_tb.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v
 
 # sdram_io (= SDRAM のピンまわり、166.7 MHz 版の部品) の単体の TB。Gowin の IO の部品は TB 用のモデル
 SIM_SDRAM_IO := $(BUILD)/sdram_io_tb/Vsdram_io_tb
@@ -350,8 +349,8 @@ $(SIM_SDRAM_IO): rtl/sdram_io.v tb/sdram_io_tb.v tb/gowin_io_models.v tools/lint
 
 # uart_reset_seq (= UART の合図で AE350 をリセットする回路) の単体の TB
 SIM_UART_RESET := $(BUILD)/uart_reset_seq_tb/Vuart_reset_seq_tb
-$(SIM_UART_RESET): rtl/uart_reset_seq.v tb/uart_reset_seq_tb.v ../rtl/vendor/verilog-uart/uart_rx.v tools/lint.vlt
-	verilator --binary --timing $(VERILATOR_FLAGS) --top-module uart_reset_seq_tb -Mdir $(BUILD)/uart_reset_seq_tb rtl/uart_reset_seq.v tb/uart_reset_seq_tb.v ../rtl/vendor/verilog-uart/uart_rx.v
+$(SIM_UART_RESET): rtl/uart_reset_seq.v tb/uart_reset_seq_tb.v rtl/vendor/verilog-uart/uart_rx.v tools/lint.vlt
+	verilator --binary --timing $(VERILATOR_FLAGS) --top-module uart_reset_seq_tb -Mdir $(BUILD)/uart_reset_seq_tb rtl/uart_reset_seq.v tb/uart_reset_seq_tb.v rtl/vendor/verilog-uart/uart_rx.v
 
 .PHONY: test-uart-reset
 test-uart-reset: $(SIM_UART_RESET)
@@ -361,14 +360,14 @@ test-uart-reset: $(SIM_UART_RESET)
 test-sdram-io: $(SIM_SDRAM_IO)
 	$(SIM_SDRAM_IO)
 
-# sdram_pll (= 2 つ目の PLL) を Gowin の PLL のモデルで確かめる (= iverilog。モデルは Lapidary の prim_sim_gw5a.rb で
+# sdram_pll (= 2 つ目の PLL) を Gowin の PLL のモデルで確かめる (= iverilog。モデルは tools/prim_sim_gw5a.rb で
 # 静的な位相の指定を直したものを build/ に作る。Gowin のファイルなのでコミットしない)
 GOWIN_SIMLIB ?= /Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/IDE/simlib
 PRIM_SIM_GW5A := $(BUILD)/prim_sim_gw5a.v
 
-$(PRIM_SIM_GW5A): ../cores/ddr3/simulation/prim_sim_gw5a.rb
+$(PRIM_SIM_GW5A): tools/prim_sim_gw5a.rb
 	mkdir -p $(BUILD)
-	ruby ../cores/ddr3/simulation/prim_sim_gw5a.rb $(GOWIN_SIMLIB)/gw5a/prim_sim.v $(GOWIN_SIMLIB)/gw2a/prim_sim.v $@
+	ruby tools/prim_sim_gw5a.rb $(GOWIN_SIMLIB)/gw5a/prim_sim.v $(GOWIN_SIMLIB)/gw2a/prim_sim.v $@
 
 $(BUILD)/sdram_pll_tb.vvp: board/tang_console/sdram_pll.v tb/sdram_pll_tb.v $(PRIM_SIM_GW5A)
 	iverilog -g2012 -s sdram_pll_tb -o $@ board/tang_console/sdram_pll.v tb/sdram_pll_tb.v $(PRIM_SIM_GW5A)
@@ -379,7 +378,7 @@ test-sdram-pll: $(BUILD)/sdram_pll_tb.vvp
 
 # 166.7 MHz 版の経路 (= sdram_ctrl_hs → sdram_io → ボードの遅れ → SDRAM のモデル) で、ahb_sdram の単体の TB を流す
 # +cap_phase=<0〜47> (= c_clk の位相、0.125 ns 刻み)、+board_ps=<ps> (= ボードの片道の遅れ)
-HS_SRCS            := rtl/sdram_ctrl_hs.v rtl/sdram_io.v tb/gowin_io_models.v tb/sdram_hs_path.v ../cores/sdram/simulation/vendor/zeitlos/sdram_model.v
+HS_SRCS            := rtl/sdram_ctrl_hs.v rtl/sdram_io.v tb/gowin_io_models.v tb/sdram_hs_path.v tb/vendor/zeitlos/sdram_model.v
 SIM_SDRAM_HS_UNIT  := $(BUILD)/sdram_hs_tb/Vsdram_tb
 
 $(SIM_SDRAM_HS_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v $(HS_SRCS) tools/lint.vlt
@@ -556,9 +555,9 @@ $(SIM_COV): $(RTL_SRCS) $(TB_SRCS) tools/lint.vlt tools/coverage.vlt
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(COV_FLAGS) \
 		--top-module tb_mem -Mdir $(BUILD)/tb_cov $(RTL_SRCS) $(TB_SRCS)
 
-$(SIM_COV_SDRAM_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v ../rtl/sdram_bridge.v ../cores/sdram/simulation/vendor/zeitlos/sdram_model.v tools/lint.vlt tools/coverage.vlt
-	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(COV_FLAGS) -I../rtl -I../rtl/prog_bsram --top-module sdram_tb \
-		-Mdir $(BUILD)/sdram_unit_cov rtl/ahb_sdram.v tb/sdram_tb.v ../rtl/sdram_bridge.v ../cores/sdram/simulation/vendor/zeitlos/sdram_model.v
+$(SIM_COV_SDRAM_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v tools/lint.vlt tools/coverage.vlt
+	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(COV_FLAGS) --top-module sdram_tb \
+		-Mdir $(BUILD)/sdram_unit_cov rtl/ahb_sdram.v tb/sdram_tb.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v
 
 $(SIM_COV_SDRAM): $(RTL_SRCS) $(TB_SRCS) $(SDRAM_SRCS) tools/lint.vlt tools/coverage.vlt
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(COV_FLAGS) $(SDRAM_FLAGS) --top-module tb_mem \
