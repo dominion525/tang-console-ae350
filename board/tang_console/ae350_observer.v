@@ -1,24 +1,24 @@
 // =============================================================
 // File:        board/tang_console/ae350_observer.v
 // Module:      ae350_observer
-// Role:        実機で AE350 が動いているかを、CPU を通さずに見る回路 (= 2026-11-10)。
-//              50 MHz で動き、約 1 秒ごとに UART へ 1 行出す。
+// Role:        実機で AE350 が動いているかを、CPU を通さずに調べる監視回路。
+//              50 MHz で動き、約 1 秒ごとに UART へ 1 行出力する。
 //
-//   OBS lk=<PLL の lock> rs=<リセットの解除> hr=<HRESETN> pr=<PRESETN>
-//       rom=<ROM_H* の読み出しの回数> ra=<最後の ROM_HADDR> apb=<APB_P* の転送の回数> pa=<最後の PADDR>
-//       tx=<CPU が UART に出した文字の数> c=<最後の文字> m=<{DDR_RSTN, CORE0_WFI_MODE, RTC_WAKEUP, PRDYN_CHAIN_O}>
+//   OBS lk=<PLL のロック> rs=<リセット解除> hr=<HRESETN> pr=<PRESETN>
+//       rom=<ROM_H* の読み出し回数> ra=<最後の ROM_HADDR> apb=<APB_P* の転送回数> pa=<最後の PADDR>
+//       tx=<CPU が UART に出力した文字数> c=<最後の文字> m=<{DDR_RSTN, CORE0_WFI_MODE, RTC_WAKEUP, PRDYN_CHAIN_O}>
 //
-//   - 回数と番地は、それぞれのクロック (= AHB_CLK、APB_CLK) で数え、50 MHz へ 1 bit ずつ 2 段で移す
-//     (= 変わっている途中の値を読むことがある。動いているか、どこを回っているかを見るためのもの)
-//   - CPU の文字は、FPGA 側の UART (= apb_uart) の送信線を 50 MHz で受け直して数える
-//   - リセットは持たない (= リセットが解けたかも見張るため)。レジスタは initial の値 (= FPGA の電源投入の値) で始める
+//   - 回数とアドレスは、それぞれのクロック (AHB_CLK、APB_CLK) で数え、50 MHz へ 1 ビットずつ 2 段の FF で移す
+//     (変化の途中の値を読むことがある。動いているか、どこでループしているかを調べるためのもの)
+//   - CPU の出力文字は、ファブリック側の UART (apb_uart) の送信線を 50 MHz で受信し直して数える
+//   - リセットは持たない (リセットが解除されたかも監視するため)。レジスタは initial の値 (FPGA のコンフィグレーション時の値) から始める
 //
 // Ports:
 //   input  wire        clk50 / lock / rst_n
 //   input  wire        ahb_clk / hresetn / rom_htrans1 / rom_haddr
 //   input  wire        apb_clk / presetn / apb_access / apb_paddr
 //   input  wire        cpu_txd
-//   output wire        txd       この回路の UART の送信 (= 50 MHz ÷ 8 ÷ PRESCALE。既定 5 で 1,250,000 bps)
+//   output wire        txd       この回路の UART の送信 (50 MHz ÷ 8 ÷ PRESCALE。既定値 5 で 1,250,000 bps)
 // =============================================================
 
 `default_nettype none
@@ -38,9 +38,9 @@ module ae350_observer #(
     input  wire        apb_access,
     input  wire [31:0] apb_paddr,
     input  wire        cpu_txd,
-    input  wire [3:0]  misc,      // AE350 のほかの出力 (= {DDR_RSTN, CORE0_WFI_MODE, RTC_WAKEUP, PRDYN_CHAIN_O})
+    input  wire [3:0]  misc,      // AE350 のその他の出力 ({DDR_RSTN, CORE0_WFI_MODE, RTC_WAKEUP, PRDYN_CHAIN_O})
     output wire        txd,
-    output wire        active     // 1 の間は txd を USB シリアルに出す (= それ以外は CPU の文字を出す)
+    output wire        active     // 1 の間は txd を USB シリアルに出力する (それ以外は CPU の文字を出力する)
 );
 
     // ---- AHB_CLK: ROM_H* の読み出し ----
@@ -54,7 +54,7 @@ module ae350_observer #(
     end
 
     // ---- APB_CLK: APB_P* の転送 ----
-    // AE350 の出力は 1 段レジスタで受けてから使う (= AE350 からの配線が長いので、CE に直接配らない)
+    // AE350 の出力は 1 段のレジスタで受けてから使う (AE350 からの配線が長いので、CE に直接配線しない)
     reg        apb_access_q; initial apb_access_q = 1'b0;
     reg [31:0] apb_paddr_q;  initial apb_paddr_q = 32'd0;
     reg [31:0] apb_cnt;      initial apb_cnt = 32'd0;
@@ -76,7 +76,7 @@ module ae350_observer #(
         s2 <= s1;
     end
 
-    // ---- CPU が出した文字を受け直す ----
+    // ---- CPU が出力した文字を受信し直す ----
     wire [7:0] rx_data;
     wire       rx_valid;
     /* verilator lint_off PINCONNECTEMPTY */
@@ -102,8 +102,8 @@ module ae350_observer #(
         end
     end
 
-    // ---- 1 行を組み立てて出す ----
-    // 行の形 (= 文字の位置と中身)
+    // ---- 1 行を組み立てて出力する ----
+    // 行の形式 (文字の位置と内容)
     //   "OBS lk=L rs=R hr=H pr=P rom=XXXXXXXX ra=XXXXXXXX apb=XXXXXXXX pa=XXXXXXXX tx=XXXX c=XX m=X\r\n"
     localparam integer LEN = 91;
     reg [135:0] snap; initial snap = 136'd0;
@@ -149,7 +149,7 @@ module ae350_observer #(
         endcase
     end
 
-    // CPU の送信線が 0.1 秒以上 1 のまま (= 文字を出していない) のときだけ、行を出し始める
+    // CPU の送信線が 0.1 秒以上 1 のまま (文字を出力していない) のときだけ、行の出力を始める
     reg  [22:0] idle;    initial idle = 23'd0;
     always @(posedge clk50) begin
         if (!cpu_txd)                  idle <= 23'd0;

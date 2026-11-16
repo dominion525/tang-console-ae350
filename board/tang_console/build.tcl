@@ -1,5 +1,5 @@
-# 実機の値を読む構成を、Tang Console 138K 向けに配置配線してビットストリームを作る。build.sh から gw_sh で実行する。
-# チップの版は B
+# ボード構成を、Tang Console 138K 向けに配置配線してビットストリームを作る。build.sh から gw_sh で実行する。
+# チップのリビジョンは B
 set here [file dirname [file normalize [info script]]]
 set ae   [file normalize $here/../..]
 set out  $::env(AE350_BOARD_BUILD)
@@ -8,7 +8,7 @@ set_option -top_module ae350_probe_top
 set_option -verilog_std v2001
 set_option -print_all_synthesis_warning 1
 set_option -gen_text_timing_rpt 1
-# 配置配線の設定 (= build.sh の PLACE / ROUTE。空なら Gowin の既定)
+# 配置配線のオプション (build.sh の PLACE と ROUTE。空なら Gowin の既定値)
 if {[info exists ::env(AE350_PLACE_OPTION)] && $::env(AE350_PLACE_OPTION) ne ""} { set_option -place_option $::env(AE350_PLACE_OPTION) }
 if {[info exists ::env(AE350_ROUTE_OPTION)] && $::env(AE350_ROUTE_OPTION) ne ""} { set_option -route_option $::env(AE350_ROUTE_OPTION) }
 set_option -include_path "$ae/hazard3/hdl"
@@ -18,8 +18,8 @@ add_file $ae/rtl/sdram_bridge.v
 add_file $ae/rtl/vendor/verilog-uart/uart_tx.v
 add_file $ae/rtl/vendor/verilog-uart/uart_rx.v
 add_file $ae/rtl/reset_gen.v
-# シミュレーションと同じ shell_top。AE350_SOC は、既定では Hazard3 の版 (= rtl/AE350_SOC.v) を読まないので、本物の部品になる。
-# CPU=hazard3 (= build.sh) のときは、Hazard3 の版を FPGA のロジックで動かす
+# シミュレーションと同じ shell_top。AE350_SOC は、既定では Hazard3 版 (rtl/AE350_SOC.v) を読み込まないので、本物のプリミティブになる。
+# CPU=hazard3 (build.sh) のときは、Hazard3 版をファブリック上で動かす
 add_file $ae/tb/shell_top.v
 if {[info exists ::env(AE350_CPU)] && $::env(AE350_CPU) eq "hazard3"} {
     foreach f {AE350_SOC ae350_fabric ae350_reset_sync ae350_plic ae350_plmt} { add_file $ae/rtl/$f.v }
@@ -33,21 +33,21 @@ add_file $here/ae350_pll.v
 add_file $here/sdram_pll.v
 add_file $here/ae350_observer.v
 add_file $here/top.v
-# MEM=ddr3 (= build.sh) のときは、DDR_H* の先を DDR3 にする (= ahb_ddr3、Gowin の DDR3 の IP、DDR3 の PLL)
+# MEM=ddr3 (build.sh) のときは、DDR_H* の先を DDR3 にする (ahb_ddr3、Gowin の DDR3 IP、DDR3 の PLL)
 if {[info exists ::env(AE350_MEM)] && $::env(AE350_MEM) eq "ddr3"} {
     add_file $ae/rtl/ahb_ddr3.v
     foreach f {ddr3_memory_interface gowin_pll pll_init} { add_file $here/ddr3/$f.v }
     add_file $out/ddr3_pll/gowin_pll_mod.v
 }
-# MEM=litedram (= build.sh。実験) のときは、DDR_H* の先を LiteDRAM の制御にする (= ahb_litedram、書き出した litedram_core、VexRiscv)
+# MEM=litedram (build.sh) のときは、DDR_H* の先を LiteDRAM のコントローラにする (ahb_litedram、生成した litedram_core、VexRiscv)
 if {[info exists ::env(AE350_MEM)] && $::env(AE350_MEM) eq "litedram"} {
     add_file $ae/rtl/ahb_litedram.v
     add_file $out/litedram_core.v
     add_file $::env(AE350_VEXRISCV_V)
 }
-# ピンと配置の制約 (= build.sh が出力先に 1 つにまとめて作る。Gowin は制約のファイルを 1 つしか使わない)
+# ピン制約と配置制約 (build.sh が出力先に 1 つにまとめて作る。Gowin は制約ファイルを 1 つしか使わないため)
 add_file $out/top_build.cst
-# クロックの指定 (= build.sh が選ぶ。166.7 MHz 版は出力先に作ったもの)
+# タイミング制約 (build.sh が選ぶ。166.7 MHz 版は出力先に生成したものを使う)
 add_file $::env(AE350_SDC)
 run all
 run close

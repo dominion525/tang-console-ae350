@@ -1,7 +1,7 @@
-// LiteDRAM の版 (= build.sh の MEM=litedram) の DDR3 のピン (= SOM の DDR3 の 2 個、DQ 32 bit)。2026-11-16、実験
-// LiteX-Boards の Tang Console の定義 (= platforms/sipeed_tang_console.py、78bc7d7) から作った。口の名前は litedram_core と同じ
-// ライセンス: 1 個目の DDR3 の行は LiteX-Boards の BSD-2-Clause (= 同じディレクトリの LICENSE.litex-boards)。2 個目の DDR3 の行 (= 下の
-// 「2 個目の DDR3」から後) は、Sipeed の TangMega-138K-example の ddr3_1v4_hs.cst の Apache-2.0 (= リポジトリの LICENSE)
+// LiteDRAM 版 (build.sh の MEM=litedram) の DDR3 のピン (SOM の DDR3 2 個、DQ 32 ビット)。
+// LiteX-Boards の Tang Console の定義 (platforms/sipeed_tang_console.py、78bc7d7) から作った。ポート名は litedram_core に合わせてある
+// ライセンス: 1 個目の DDR3 の行は LiteX-Boards の BSD-2-Clause (同じディレクトリの LICENSE.litex-boards)。2 個目の DDR3 の行 (下の
+// 「2 個目の DDR3」以降) は、Sipeed の TangMega-138K-example の ddr3_1v4_hs.cst の Apache-2.0 (リポジトリの LICENSE)
 IO_LOC  "ddram_a[0]" M1;
 IO_PORT "ddram_a[0]" IO_TYPE=SSTL15 DRIVE=12 PULL_MODE=NONE BANK_VCCIO=1.5;
 IO_LOC  "ddram_a[1]" K2;
@@ -94,8 +94,8 @@ IO_LOC  "ddram_odt" M2;
 IO_PORT "ddram_odt" IO_TYPE=SSTL15 DRIVE=12 PULL_MODE=NONE BANK_VCCIO=1.5;
 IO_LOC  "ddram_reset_n" L6;
 IO_PORT "ddram_reset_n" IO_TYPE=SSTL15 DRIVE=12 PULL_MODE=NONE BANK_VCCIO=1.5;
-// 2 個目の DDR3 (= DQ 16〜31、DQS 2〜3、DM 2〜3)。LiteX の定義には無いので、Sipeed の DDR3 の試験の ddr3_1v4_hs.cst から写した
-// (= 1 個目の分は、LiteX の定義と Sipeed の .cst で 20 本とも同じピンだった)
+// 2 個目の DDR3 (DQ 16〜31、DQS 2〜3、DM 2〜3)。LiteX の定義にはないので、Sipeed の DDR3 のテストの ddr3_1v4_hs.cst から取り込んだ
+// (1 個目の分は、LiteX の定義と Sipeed の .cst で 20 本とも同じピンだった)
 IO_LOC  "ddram_dq[16]" U5;
 IO_PORT "ddram_dq[16]" IO_TYPE=SSTL15 DRIVE=12 PULL_MODE=NONE BANK_VCCIO=1.5;
 IO_LOC  "ddram_dq[17]" R6;

@@ -1,11 +1,10 @@
-# LiteDRAM の版 (= build.sh の MEM=litedram) のクロックの指定を、元の指定 (= build.sh がそれまでに選んだもの) から作る
-# (= 2026-11-16、実験)。
-#   ruby make_sdc_litedram.rb <元の指定> <書き出す先> <DDR3 のクロックの周期 ns> <制御のクロックの周期 ns>
+# LiteDRAM 版 (build.sh の MEM=litedram) のタイミング制約を、元の制約 (build.sh がそれまでに選んだもの) から作る。
+#   ruby make_sdc_litedram.rb <元の制約> <出力先> <DDR3 のクロックの周期 ns> <コントローラのクロックの周期 ns>
 #
-# litedram_core の中の 2 つのクロックを足す: DDR3 のクロック (= PLL の出力を DHCE で止められるようにしたもの、sys2x) と、
-# それを CLKDIV で分けた制御のクロック (= sys、user_clk)。どちらもほかのクロックとは非同期 (= ahb_litedram は DDR_CLK と
-# user_clk の間をトグルで乗せ換える)。SDRAM の 20 MHz のクロック (= clk20) は使わないので、合成で線が消える。その指定を外す
-# (= make_sdc_ddr3.rb と同じ)
+# litedram_core の内部の 2 つのクロックを追加する: DDR3 のクロック (PLL の出力を DHCE で止められるようにしたもの、sys2x) と、
+# それを CLKDIV で分周したコントローラのクロック (sys、user_clk)。どちらも他のクロックとは非同期 (ahb_litedram は DDR_CLK と
+# user_clk の間をトグルで乗せ換える)。SDRAM の 20 MHz のクロック (clk20) は使わないので、合成で配線が消える。その制約を外す
+# (make_sdc_ddr3.rb と同じ)
 
 src, dst, ddr_ns, sys_ns = ARGV
 abort 'usage: ruby make_sdc_litedram.rb <元の指定> <out> <DDR3 のクロックの周期 ns> <制御のクロックの周期 ns>' unless sys_ns

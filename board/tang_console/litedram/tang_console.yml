@@ -1,24 +1,24 @@
 #
-# LiteDRAM の DDR3 の制御を、Tang Console 138K 向けに単体の Verilog として書き出す設定 (= 2026-11-16、実験)。
-# litedram_gen (= LITEX_VENV で渡す LiteX の仮想環境) で使う。元は LiteDRAM の examples/tang_mega_138k_pro.yml (= コミット 60b5ae1、BSD-2-Clause)。
+# LiteDRAM の DDR3 コントローラを、Tang Console 138K 向けに単体の Verilog として生成するための設定。
+# litedram_gen (LITEX_VENV で指定する LiteX の仮想環境) で使う。元は LiteDRAM の examples/tang_mega_138k_pro.yml (コミット 60b5ae1、BSD-2-Clause)。
 # ライセンスは同じディレクトリの LICENSE.litedram に従う。
 #
-# 元からの違い:
-#   - device: Tang Console の FPGA (= PG484、チップの版 B)
-#   - DDR3 を 2 個使う (= DQ 32 bit、1 GB。sdram_module_nb は 8 bit の組の数なので 4。元の例は 2 で 16 bit の 1 個。
-#     2 個目のピンは litedram/ddram.cst に、Sipeed の DDR3 の試験の .cst から足した)
-#   - 利用者の口を native にする (= DDR_H* とつなぐ回路 rtl/ahb_litedram.v を単純にするため)
+# 元の設定からの変更点:
+#   - device: Tang Console の FPGA (PG484、チップのリビジョン B)
+#   - DDR3 を 2 個使う (DQ 32 ビット、1 GB。sdram_module_nb は 8 ビット単位の数なので 4。元の例は 2 で、16 ビットの 1 個。
+#     2 個目のピンは、Sipeed の DDR3 のテストの .cst から litedram/ddram.cst に追加した)
+#   - ユーザーポートを native にする (DDR_H* とつなぐブリッジ rtl/ahb_litedram.v を単純にするため)
 #
-# 速さは 1:2、制御 50 MHz、DDR3 100 MHz (= 200 MT/s、DLL を切る) のままにする (= 元の例と同じ)。速い設定 (= 1:4、制御 100 MHz、
-# DDR3 400 MHz、DLL を使う。LiteX-Boards の Tang Console の定義が示す値) は、制御のクロックが 100 MHz に収まらず、選ばなかった
-# (= 2026-11-16 に試した)。
-#   初期化用の CPU が standard のとき     Fmax 75.5 MHz (= 遅い経路は CPU の中)
-#   初期化用の CPU を minimal にしたとき   Fmax 70.7 MHz (= 遅い経路は DDR3 の制御そのもの。bankmachine、refresher など)
-# 間の速さも効率が悪い。DDR3 は、DLL を切る動かし方が 125 MHz 以下、DLL を使う動かし方が約 303 MHz 以上なので、1:4 なら制御
-# 76 MHz 以上 (= 収まらない)、1:2 なら 62.5 MHz 以下になる。1:2 で 62.5 MHz にしても、読み出しの遅れ (= 制御のクロックで約 34
-# サイクル) が 2 割縮むだけで、Gowin の IP (= MEM=ddr3) にも SDRAM のランダム読み出しにも届かない
+# 速度は 1:2、コントローラ 50 MHz、DDR3 100 MHz (200 MT/s、DLL オフ) のままにする (元の例と同じ)。より速い設定 (1:4、
+# コントローラ 100 MHz、DDR3 400 MHz、DLL オン。LiteX-Boards の Tang Console の定義にある値) は、コントローラのクロックが
+# 100 MHz のタイミングを満たさなかったため採用していない。
+#   初期化用の CPU が standard のとき     Fmax 75.5 MHz (クリティカルパスは CPU の内部)
+#   初期化用の CPU を minimal にしたとき   Fmax 70.7 MHz (クリティカルパスは DDR3 コントローラ自体。bankmachine、refresher など)
+# 中間の速度も効率が悪い。DDR3 は、DLL オフで動かせるのが 125 MHz 以下、DLL オンで動かせるのが約 303 MHz 以上なので、1:4 なら
+# コントローラは 76 MHz 以上 (タイミングを満たさない)、1:2 なら 62.5 MHz 以下になる。1:2 で 62.5 MHz にしても、読み出しの遅延
+# (コントローラのクロックで約 34 サイクル) が 2 割縮むだけで、Gowin の IP (MEM=ddr3) にも SDRAM のランダム読み出しにも届かない
 #
-# 初期化と調整は、生成した制御の中の小さな CPU (= VexRiscv) が行う (= 元の例と同じ)
+# 初期化とレベリングは、生成したコントローラの内部にある小さな CPU (VexRiscv) が行う (元の例と同じ)
 {
   # General ------------------------------------------------------------------
   "cpu": "vexriscv",

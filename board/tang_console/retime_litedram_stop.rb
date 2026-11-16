@@ -1,12 +1,12 @@
-# LiteDRAM の版 (= build.sh の MEM=litedram) で、litedram_gen が書き出した litedram_core.v の、DDR3 のクロックを止める信号を
-# 受け直す (= 2026-11-17)。
-#   ruby retime_litedram_stop.rb <litedram_core.v>      (= その場で書き換える)
+# LiteDRAM 版 (build.sh の MEM=litedram) で、litedram_gen が生成した litedram_core.v の、DDR3 のクロックを止める信号を
+# 受け直す。
+#   ruby retime_litedram_stop.rb <litedram_core.v>      (ファイルをその場で書き換える)
 #
-# DDR3 の PHY の初期化の手順は、DDR3 のクロック (= sys2x_i_clk、PLL の出力) を DHCE で止めて戻す。止める信号 (= crg_stop) は
-# init_clk (= 50 MHz) の FF から出て、DHCE は CEN を sys2x_i_clk の立ち下がりで受ける。両者は同じ PLL の系列なので、配置配線は
-# この経路を 50 MHz の立ち上がりから 100 MHz の立ち下がりまでの 5 ns で検査し、FPGA の中の DHCE までの配線で setup の違反が出た
-# (= 1 か所、-0.859 ns)。crg_stop を sys2x_i_clk の立ち下がりで 1 度受けてから CEN に渡すと、DHCE までは 1 周期 (= 10 ns) になる。
-# 止める・戻す時刻は 1 周期遅れるが、手順の各段の間は init_clk で 8 サイクル (= 160 ns) あるので、手順には効かない
+# DDR3 の PHY の初期化手順では、DDR3 のクロック (sys2x_i_clk、PLL の出力) を DHCE で止めてから再開する。止める信号 (crg_stop) は
+# init_clk (50 MHz) の FF から出て、DHCE は CEN を sys2x_i_clk の立ち下がりで取り込む。両者は同じ PLL から生成されるので、配置配線は
+# この経路を 50 MHz の立ち上がりから 100 MHz の立ち下がりまでの 5 ns で検査し、FPGA 内部の DHCE までの配線で setup 違反が出た
+# (1 か所、-0.859 ns)。crg_stop を sys2x_i_clk の立ち下がりで一度受けてから CEN に渡すと、DHCE までは 1 周期 (10 ns) になる。
+# クロックを止める時刻と再開する時刻は 1 周期遅れるが、初期化手順の各ステップの間は init_clk で 8 サイクル (160 ns) あるので、手順には影響しない
 
 path = ARGV[0] or abort 'usage: ruby retime_litedram_stop.rb <litedram_core.v>'
 s = File.read(path)
