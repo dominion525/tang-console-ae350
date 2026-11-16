@@ -1,12 +1,12 @@
 // =============================================================
 // File:        tb/sdram_pll_tb.v
 // Module:      sdram_pll_tb
-// Role:        sdram_pll (= 166.7 MHz 版の SDRAM の制御のクロック) を、Gowin の PLL のモデルで確かめる TB (= 2026-11-11)。
-//              Gowin のモデルは iverilog で動かす (= モデルは
-//              tools/prim_sim_gw5a.rb が直したものを使う)。破れたら $fatal で止まる。
+// Role:        sdram_pll (166.7 MHz 版の SDRAM コントローラのクロック) を、Gowin の PLL のモデルで確かめるテストベンチ。
+//              Gowin のモデルは iverilog で動かす (tools/prim_sim_gw5a.rb で修正したモデルを使う)。
+//              期待と違えば $fatal で止まる。
 //
-//   1  lock が立つ
-//   2  s_clk の周期が 6.0 ns (= 166.7 MHz) で、High の長さが 3.0 ns
+//   1  lock が 1 になる
+//   2  s_clk の周期が 6.0 ns (166.7 MHz) で、High の期間が 3.0 ns
 //
 // 実行: make test-sdram-pll
 // =============================================================

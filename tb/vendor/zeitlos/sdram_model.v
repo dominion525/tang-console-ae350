@@ -1,14 +1,14 @@
 /*
- * 出どころ: machdyne/zeitlos の rtl/tb/sdram_model.v (= コミット 3242dedc733f3571f6c53108fa853c7429b8a07b)。
- * 同じディレクトリの LICENSE.md (= 著作権の表示と免責の文を残す条件) で、改変して再配布する。
+ * 出典: machdyne/zeitlos の rtl/tb/sdram_model.v (コミット 3242dedc733f3571f6c53108fa853c7429b8a07b)。
+ * 同じディレクトリの LICENSE.md の条件 (著作権表示と免責の文を残すこと) に従い、改変して再配布する。
  *
- * 元からの変更:
+ * 元のファイルからの変更点:
  *   - タイミングの検査: W9825G6KH-6 のデータシートの 9.5 の値で検査する
  *   - 電源投入の検査: 200 us の待ち、待ちの間の DQM、最初の全バンクのプリチャージ、8 回のリフレッシュ
- *   - 読みの出力: tOH から、tAC か最大の tHZ までの間は不定を出す
- *   - tAC、tOH、tHZ: 5 ns、2 ns の固定から、データシートの値に変えた。tAC と tHZ は CL ごと
- *   - MEM_WORDS の既定値: 65,536 から 16,777,216 語に変えた
- *   - メモリの初期値: 0 から不定に変えた (= 書いていない語を読むと分かる)
+ *   - 読み出しの出力: tOH から、tAC か tHZ の最大値までの間は不定値を出す
+ *   - tAC、tOH、tHZ: 5 ns と 2 ns の固定値から、データシートの値に変えた。tAC と tHZ は CL ごとの値
+ *   - MEM_WORDS の既定値: 65,536 ワードから 16,777,216 ワードに変えた
+ *   - メモリの初期値: 0 から不定値に変えた (書き込んでいないワードを読むと分かるように)
  *
  * Behavioural SDR SDRAM model -- W9825G6KH / MT48LC16M16A2 class (x16)
  *
@@ -36,9 +36,9 @@
  *   - REF while any bank is open
  *   - MRS while any bank is open
  *
- * タイミングの検査: W9825G6KH-6 のデータシート (= 9.5 AC Characteristics) の値で、tRC、tRAS、tRCD、tRP、tRRD、
- * tWR、tRSC、tCK、tCH、tCL、tREF、入力のセットアップとホールド、電源投入の後の手順を見る。違反は
- * "SDRAM ERROR" で始まる行に出し、errors を増やす。
+ * タイミングの検査: W9825G6KH-6 のデータシート (9.5 AC Characteristics) の値で、tRC、tRAS、tRCD、tRP、tRRD、
+ * tWR、tRSC、tCK、tCH、tCL、tREF、入力のセットアップとホールド、電源投入後の手順を検査する。違反は
+ * "SDRAM ERROR" で始まる行に出力し、errors を増やす。
  *
  * Backing store is sparse: only the low MEM_WORDS 16-bit words of the
  * flattened {bank,row,col} space exist; anything above reads 16'hDEAD.
@@ -51,13 +51,13 @@
 
 module sdram_model #(
     parameter MEM_WORDS = 16777216,  // 16-bit words backed
-    // 読みの出力の時間 (= -6)。単位は ns
+    // 読み出しの出力のタイミング (-6 の値)。単位は ns
     parameter real TAC_CL2 = 6.0,    // clock-to-data-valid
     parameter real TAC_CL3 = 5.0,
-    parameter real THZ_CL2 = 6.0,    // Hi-Z になるまでの最大
+    parameter real THZ_CL2 = 6.0,    // ハイインピーダンスになるまでの最大値
     parameter real THZ_CL3 = 5.0,
     parameter real TOH = 3.0,        // data hold after next edge, ns
-    // W9825G6KH-6 の値。単位は ns、_CK が付くものは tCK
+    // W9825G6KH-6 の値。単位は ns。_CK が付くものは tCK
     parameter real T_RC = 60.0,
     parameter real T_RAS = 42.0,
     parameter real T_RAS_MAX = 100000.0,
@@ -79,8 +79,8 @@ module sdram_model #(
     parameter real T_CMH = 0.8,
     parameter real T_CKS = 1.5,
     parameter real T_CKH = 0.8,
-    parameter real T_INIT = 200000.0,   // 電源投入の後の待ち
-    parameter real T_REF = 64000000.0   // この時間に 8,192 回のリフレッシュ
+    parameter real T_INIT = 200000.0,   // 電源投入後の待ち時間
+    parameter real T_REF = 64000000.0   // この時間の間に 8,192 回のリフレッシュが必要
 ) (
     input wire clk,
     input wire cke,
@@ -114,7 +114,7 @@ module sdram_model #(
     reg [2:0]  cl;
     reg        single_write;
     reg        interleave;           // A3 = 1
-    reg        full_page;            // A2〜A0 = 111、順次
+    reg        full_page;            // A2〜A0 = 111、シーケンシャル
 
     // read burst in progress (as issued; data emerges cl edges later)
     reg        rd_act;
@@ -155,18 +155,18 @@ module sdram_model #(
     // -- タイミングの検査の状態 --------------------------------
     realtime t_act [0:3];        // ACT の時刻
     realtime t_pre [0:3];        // 内部のプリチャージが始まる時刻
-    integer  e_wr  [0:3];        // 最後に書いた語の縁の番号
+    integer  e_wr  [0:3];        // 最後に書き込んだワードのエッジの番号
     realtime t_ref, t_rise, t_fall, t_first, t_ref_deadline, period;
-    realtime t_wr_edge [0:1];     // byte ごとの、最後に取り込んだ縁
-    // 変化の時刻と、直前の縁でそのピンが有効だったか (= データシートの Truth Table)
+    realtime t_wr_edge [0:1];     // バイトごとの、最後に取り込んだエッジ
+    // 変化の時刻と、直前のエッジでそのピンが有効だったか (データシートの Truth Table)
     realtime t_cs_chg, t_rcw_chg, t_dqm_chg, t_a_chg, t_a10_chg, t_ba_chg;
     reg      hold_rcw, hold_dqm, hold_a, hold_a10, hold_ba;
     reg      v_a, v_a10, v_ba, dqm_on;
-    realtime t_dq_chg [0:1];      // byte ごとの、DQ が変わった時刻
-    realtime t_ref_ring [0:8191];   // 最近の 8,192 回のリフレッシュの時刻
+    realtime t_dq_chg [0:1];      // バイトごとの、DQ が変化した時刻
+    realtime t_ref_ring [0:8191];   // 直近 8,192 回のリフレッシュの時刻
     integer  edge_n, e_act, e_mrs, n_ref;
     reg      pre_all_done, ras_max_rep [0:3], ref_deadline_rep, first_cmd_seen;
-    // CKE は 1 クロック遅れて効く (= データシートの 7.20)。clk_run が 0 の縁では何も進まず、命令を無視する
+    // CKE は 1 クロック遅れて効く (データシートの 7.20)。clk_run が 0 のエッジでは何も進めず、コマンドを無視する
     reg      cke_prev, clk_run, cke_low_rep, pause_cke_rep;
     realtime t_cke_chg;
     reg      pause_dqm_rep, wr_ap_busy, rd_ap_busy, burst_busy;
@@ -179,7 +179,7 @@ module sdram_model #(
     end
     endtask
     
-    // 自動プリチャージが、今の縁から edges 個後に始まる
+    // オートプリチャージが、現在のエッジから edges 個後に始まる
     task auto_pre;
         input [1:0] b;
         input integer edges;
@@ -231,37 +231,37 @@ module sdram_model #(
         t_dq_chg[1] = $realtime;
     end
     
-    // 縁ごとの検査。命令で状態が変わる前に呼ぶ
+    // エッジごとの検査。コマンドで状態が変わる前に呼ぶ
     task check_edge;
     begin
         edge_n = edge_n + 1;
         if (edge_n == 1) t_first = $realtime;
         period = $realtime - t_rise;
         if (t_rise >= 0) begin
-            // モード設定の前は CL が決まっていないので、緩い側で見る
+            // モード設定の前は CL が決まっていないので、緩い方の値で検査する
             if (period < ((cl == 3 || !mode_set) ? T_CK_CL3 : T_CK_CL2)) err("tCK: clock too fast");
             if (mode_set && period > T_CK_MAX) err("tCK: clock too slow");
         end
         if (t_fall >= 0 && $realtime - t_fall < T_CL) err("tCL: clock low too short");
         t_rise = $realtime;
     
-        // 命令ごとに有効なピン (= Truth Table)。CS は常に、RAS、CAS、WE は CS が Low のときに見る
+        // コマンドごとに有効なピン (Truth Table)。CS は常に、RAS、CAS、WE は CS が Low のときに見る
         v_a   = clk_run && (cmd == CMD_ACT || cmd == CMD_READ || cmd == CMD_WRITE || cmd == CMD_MRS);
         v_a10 = v_a || (clk_run && cmd == CMD_PRE);
         v_ba  = v_a || (clk_run && cmd == CMD_PRE && addr[10] !== 1'b1);
-        // DQM はデータの動きがある間だけ意味を持つ (= Truth Table の Data Write/Output、10.3 の図)
+        // DQM はデータの転送がある間だけ意味を持つ (Truth Table の Data Write/Output、10.3 の図)
         dqm_on = rd_act || wr_act;
         for (i = 0; i < 4; i = i + 1) if (row_open[i]) dqm_on = 1'b1;
         for (i = 0; i < 8; i = i + 1) if (pipe_v[i]) dqm_on = 1'b1;
 
         if (cke === 1'bx) err("CKE is unknown");
         if ($realtime - t_cke_chg < T_CKS) err("tCKS: CKE setup");
-        // 待ちの間は CKE を High にする (= データシートの 7.1)
+        // 待ちの間は CKE を High にする (データシートの 7.1)
         if (!first_cmd_seen && !pause_cke_rep && cke !== 1'b1) begin
             err("CKE must be high during the power-up pause");
             pause_cke_rep = 1'b1;
         end
-        // 開いたバンクが無い間の CKE Low は Power Down か Self Refresh で、このモデルは再現しない
+        // 開いているバンクがない間の CKE Low は Power Down か Self Refresh で、このモデルは再現しない
         if (first_cmd_seen && cke === 1'b0 && !dqm_on) begin
             if (!cke_low_rep) err("CKE low with no active bank is not modelled");
             cke_low_rep = 1'b1;
@@ -302,7 +302,7 @@ module sdram_model #(
     end
     endtask
     
-    // 命令ごとの検査。続けている読み書きの処理の後、命令で状態が変わる前に呼ぶ
+    // コマンドごとの検査。継続中の読み書きの処理の後、コマンドで状態が変わる前に呼ぶ
     task check_cmd;
     begin
         if (cmd != CMD_NOP && !first_cmd_seen) begin
@@ -326,11 +326,11 @@ module sdram_model #(
             end
             CMD_READ, CMD_WRITE: begin
                 if ($realtime - t_act[ba] < T_RCD) err("tRCD: ACT to read or write");
-                // 読みを WRITE で打ち切るとき、WRITE の 1、2 クロック目に出る読みの値は DQM で止める
-                // (= データシートの 7.8)。rdqm_1 は 1 クロック目、rdqm_0 は 2 クロック目の値を止める DQM
+                // 読み出しを WRITE で打ち切るとき、WRITE の 1、2 クロック目に出る読み出しの値は DQM で止める
+                // (データシートの 7.8)。rdqm_1 は 1 クロック目、rdqm_0 は 2 クロック目の値を止める DQM
                 if (cmd == CMD_WRITE && ((dq_oe && rdqm_1 != 2'b11) || (pipe_v[0] && rdqm_0 != 2'b11)))
                     err("DQM must mask read data during a WRITE");
-                // Full Page に自動プリチャージは使えない (= データシートの 7.14)
+                // Full Page ではオートプリチャージを使えない (データシートの 7.14)
                 if (full_page && addr[10]) err("auto precharge with full page");
                 if ((rd_ap_busy && rd_bank == ba) || (wr_ap_busy && wr_bank == ba))
                     err("command during an auto precharge burst");
@@ -355,10 +355,10 @@ module sdram_model #(
                 t_ref = $realtime;
                 t_ref_ring[n_ref % 8192] = $realtime;
                 n_ref = n_ref + 1;
-                // 同じ行の次の更新は 8,192 回後なので、一番古い時刻から T_REF のうちに次のリフレッシュを出す
+                // 同じ行の次のリフレッシュは 8,192 回後なので、最も古い時刻から T_REF 以内に次のリフレッシュを出す
                 t_ref_deadline = t_ref_ring[(n_ref < 8192) ? 0 : n_ref % 8192] + T_REF;
             end
-            // BST は Full Page のバーストだけを止める (= データシートの 7.11、Truth Table)
+            // BST は Full Page のバーストだけを止める (データシートの 7.11、Truth Table)
             CMD_BST:
                 if (!(full_page && burst_busy)) err("BST outside a full page burst");
             CMD_MRS: begin
@@ -373,18 +373,18 @@ module sdram_model #(
     end
     endtask
     
-    // 書く語の検査。mem に入れる前に呼ぶ
+    // 書き込むワードの検査。mem に入れる前に呼ぶ
     task check_write_data;
         input [1:0] b;
     begin
-        // DQM が High の byte は取り込まない (= データシートの 5 章) ので、DQM が Low の byte だけを見る
+        // DQM が High のバイトは取り込まない (データシートの 5 章) ので、DQM が Low のバイトだけを見る
         for (i = 0; i < 2; i = i + 1)
             if (!dqm[i]) begin
                 if ($realtime - t_dq_chg[i] < T_DS) err("tDS: write data setup");
                 t_wr_edge[i] = $realtime;
             end
         if ((!dqm[0] && (^dq[7:0]) === 1'bx) || (!dqm[1] && (^dq[15:8]) === 1'bx)) err("write data is unknown");
-        // tWR は、1 byte でも書いた語から数える
+        // tWR は、1 バイトでも書き込んだワードから数える
         if (dqm != 2'b11) e_wr[b] = edge_n;
     end
     endtask
@@ -398,13 +398,13 @@ module sdram_model #(
     end
     endfunction
 
-    // sequential wrap inside a BL-aligned block。インターリーブは番地の下位をビットごとに反転して進む (= データシートの 7.13)
+    // sequential wrap inside a BL-aligned block。インターリーブでは、アドレスの下位をビットごとに反転して進む (データシートの 7.13)
     function [8:0] burst_col;
         input [8:0] c0;
         input [9:0] beat;
         input [3:0] len;
     begin
-        // Full Page は列の 512 語で一周する
+        // Full Page は列の 512 ワードで一周する
         if (full_page) burst_col = c0 + beat[8:0];
         else case (len)
             4'd2: burst_col = interleave ? { c0[8:1], c0[0]   ^ beat[0]   } : { c0[8:1], c0[0]   + beat[0]   };
@@ -466,16 +466,16 @@ module sdram_model #(
             end
             pipe_v[7] = 1'b0;
 
-            // 自動プリチャージの読み書きの途中か。続きの処理が rd_act、wr_act を消す前に控える
+            // オートプリチャージ付きの読み書きの途中か。後続の処理が rd_act と wr_act をクリアする前に保持する
             wr_ap_busy = wr_act && wr_ap;
             burst_busy = rd_act || wr_act;
             rd_ap_busy = rd_act && rd_ap;
 
-            // 同じバンクの PRE で読みを止める。すでに出す予定の値は残るので、PRE の CL - 1 個後の縁まで値が出る
+            // 同じバンクの PRE で読み出しを止める。すでに出力が決まった値は残るので、PRE の CL - 1 個後のエッジまで値が出る
             if (rd_act && cmd == CMD_PRE && (addr[10] || ba == rd_bank)) rd_act = 1'b0;
 
             // -- continue an in-flight write burst ----------------
-            // 別のバンクの ACT と PRE では書きを続ける (= バンクごとの動作、データシートの 11.5)
+            // 別のバンクの ACT と PRE では、書き込みを続ける (バンクごとの動作。データシートの 11.5)
             if (wr_act && (cmd == CMD_NOP || cmd == CMD_ACT ||
                            (cmd == CMD_PRE && !addr[10] && ba != wr_bank))) begin
                 col = burst_col(wr_col0, wr_beat, bl);
@@ -493,7 +493,7 @@ module sdram_model #(
                     if (wr_ap) begin row_open[wr_bank] = 1'b0; auto_pre(wr_bank, T_WR_CK); end
                 end
             end else if (wr_act) begin
-                wr_act = 1'b0;          // 残りの命令は書きを打ち切る
+                wr_act = 1'b0;          // 残りのコマンドは書き込みを打ち切る
             end
 
             // -- continue an in-flight read burst -----------------
@@ -533,7 +533,7 @@ module sdram_model #(
                     end
                     single_write = addr[9];
                     interleave = addr[3];
-                    // 予約のビットは 0 にする (= データシートの 10.4)
+                    // 予約ビットは 0 にする (データシートの 10.4)
                     if (addr[8:7] != 2'b00 || addr[12:10] != 3'b000 || ba != 2'b00) begin
                         $display("SDRAM ERROR @%0t: MRS reserved bit is set", $time);
                         errors = errors + 1;
@@ -625,8 +625,8 @@ module sdram_model #(
         end
 
         // -- drive DQ for the beat sampled at the NEXT edge -------
-        // clk_run が 0 の縁では DQ をそのまま保つ (= データシートの 10.3)
-        // tOH の後は、次の値が出る tAC か、Hi-Z になる最大の tHZ まで値が定まらない。Hi-Z の byte はそのまま
+        // clk_run が 0 のエッジでは DQ をそのまま保持する (データシートの 10.3)
+        // tOH の後は、次の値が出る tAC か、ハイインピーダンスになる tHZ の最大値まで値が定まらない。ハイインピーダンスのバイトはそのまま
         if (!clk_run) begin
         end else if (pipe_v[0] || dq_oe) begin
             if (pipe_v[0]) t_dly = (cl == 3) ? TAC_CL3 : TAC_CL2;
@@ -638,7 +638,7 @@ module sdram_model #(
             end
             #(t_dly - TOH);
             if (pipe_v[0]) begin
-                // DQM は byte ごとに効く (= データシートの 5 章)
+                // DQM はバイトごとに効く (データシートの 5 章)
                 dq_out[7:0]  = rdqm_1[0] ? 8'hzz : pipe_d[0][7:0];
                 dq_out[15:8] = rdqm_1[1] ? 8'hzz : pipe_d[0][15:8];
                 dq_oe = 1'b1;

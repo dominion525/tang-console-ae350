@@ -1,20 +1,20 @@
 // =============================================================
 // File:        tb/ahb_rom_model.v
 // Module:      ahb_rom_model
-// Role:        ROM_H* (= 32 bit、読み出し専用の AHB) の先に置く命令メモリのモデル (= 段 2、2026-11-08)。
-//              シミュレーション専用。中身は +rom=<hex> で与えた hex ファイル (= 1 行 1 word) から読む。
+// Role:        ROM_H* (32 ビット、読み出し専用の AHB) の先に置く命令メモリのモデル。
+//              シミュレーション専用。内容は +rom=<hex> で指定した hex ファイル (1 行 1 ワード) から読み込む。
 //
 // Ports:
 //   input  wire        clk / rst_n
-//   input  wire [31:0] haddr      下位 2 bit と、WORDS を超える上位のビットは見ない
+//   input  wire [31:0] haddr      下位 2 ビットと、WORDS を超える上位のビットは見ない
 //   input  wire [1:0]  htrans
-//   output wire [31:0] hrdata     データフェーズの間、受け付けたアドレスの word を出す
-//   output wire        hready     受け付けてから +rom_wait=<N> サイクルだけ 0 にする (= 既定 0)
-//   output wire        hresp      +rom_err=<16 進のアドレス> の 4 byte の読み出しにはエラー応答 (= 2 サイクル) を返す。それ以外は 0
+//   output wire [31:0] hrdata     データフェーズの間、受け付けたアドレスのワードを出力する
+//   output wire        hready     受け付けてから +rom_wait=<N> サイクルの間 0 にする (既定値 0)
+//   output wire        hresp      +rom_err=<16 進のアドレス> の 4 バイトの読み出しにはエラー応答 (2 サイクル) を返す。それ以外は 0
 //
 // Design Notes:
-//   - hready はレジスタだけから作る (= htrans に組み合わせ回路で依存しない)
-//   - 読み出しは組み合わせ回路 (= データフェーズの間、控えたアドレスで配列を引く)
+//   - hready はレジスタだけから作る (htrans に組み合わせ回路で依存しない)
+//   - 読み出しは組み合わせ回路 (データフェーズの間、保持したアドレスで配列を引く)
 // =============================================================
 
 `default_nettype none
@@ -36,10 +36,10 @@ module ahb_rom_model #(
     reg [31:0] mem [0:WORDS-1];
 
     reg [8*256-1:0] path;
-    integer    rand_max;      // 0 より大きければ、待ちを転送ごとに 0〜rand_max から選ぶ (= +rom_wait_rand)
-    integer    rand_seed;     // 乱数の種 (= +seed。ROM は seed)
+    integer    rand_max;      // 0 より大きければ、ウェイトを転送ごとに 0〜rand_max からランダムに選ぶ (+rom_wait_rand)
+    integer    rand_seed;     // 乱数の種 (+seed。ROM は seed をそのまま使う)
     reg [7:0]       wait_cycles;
-    reg [31:0]      err_addr;      // この 4 byte の読み出しにはエラー応答を返す (= +rom_err=<16 進>)
+    reg [31:0]      err_addr;      // この 4 バイトの読み出しにはエラー応答を返す (+rom_err=<16 進>)
     reg             err_en;
     integer         i;
 
@@ -66,7 +66,7 @@ module ahb_rom_model #(
 
     wire accept = htrans[1] && hready;
 
-    // 乱数の待ち (= $random は種を書き換えるので、呼ぶたびに次の値になる)
+    // ランダムなウェイト ($random は種を書き換えるので、呼ぶたびに次の値になる)
     function [7:0] next_wait(input [7:0] max);
         reg [31:0] r;
         /* verilator lint_off UNUSEDSIGNAL */
@@ -97,7 +97,7 @@ module ahb_rom_model #(
         end
     end
 
-    // エラー応答は待ちの後の 2 サイクル (= 1 サイクル目は HREADY = 0、2 サイクル目は HREADY = 1。どちらも HRESP = 1)
+    // エラー応答はウェイトの後の 2 サイクル (1 サイクル目は HREADY = 0、2 サイクル目は HREADY = 1。どちらも HRESP = 1)
     assign hready = (wait_left == 8'd0) && (!dph_err || err_second);
     assign hresp  = (wait_left == 8'd0) && dph_err;
     assign hrdata = mem[dph_idx];

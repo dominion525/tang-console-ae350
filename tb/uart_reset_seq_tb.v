@@ -1,20 +1,20 @@
 // =============================================================
 // File:        tb/uart_reset_seq_tb.v
 // Module:      uart_reset_seq_tb
-// Role:        uart_reset_seq (= UART の合図で AE350 をリセットする回路) の単体の TB (= 2026-11-12)。
-//              byte の並びを送り、rst_out_n のパルスの数と長さを数えて、期待と比べる。
+// Role:        uart_reset_seq (UART のリセットシーケンスで AE350 をリセットする回路) の単体テストベンチ。
+//              バイト列を送り、rst_out_n のパルスの数と長さを数えて、期待と比べる。
 //
-//   1 合図                                   パルス 1、長さ PULSE
-//   2 合図の頭の 7 byte                       パルス 0
-//   3 合図の 1 byte を 00 に替えたもの (= 8 か所) パルス 0
-//   4 1B 1B 1B + 残り 6 byte                  パルス 1 (= 後ろの 2 つを頭として数える)
-//   5 1B 1B 61 で切れて、続けて合図             パルス 1
-//   6 途中にストップビットが 0 の byte、続けて合図  途中の分は 0、その後の合図で 1
-//   7 合図を 2 回続けて                        パルス 2
-//   8 合図の途中で長く止まり、続きを送る          パルス 1 (= 時間で切らない)
-//   9 パルスの途中で rst_n                     すぐに 1 に戻り、その後パルスは出ない
-//  10 hold = 1 の間に合図                      パルス 0
-//  11 合図の 4 byte の後で hold を立てて下ろし、残りの 4 byte  パルス 0。その後の合図で 1
+//   1 シーケンス                                      パルス 1、長さ PULSE
+//   2 シーケンスの先頭 7 バイト                        パルス 0
+//   3 シーケンスの 1 バイトを 00 に替えたもの (8 通り)   パルス 0
+//   4 1B 1B 1B + 残りの 6 バイト                       パルス 1 (後ろの 2 つを先頭として数える)
+//   5 1B 1B 61 で途切れ、続けてシーケンス               パルス 1
+//   6 途中にストップビットが 0 のバイト、続けてシーケンス  途中の分は 0、その後のシーケンスで 1
+//   7 シーケンスを 2 回続けて                          パルス 2
+//   8 シーケンスの途中で長く止まり、続きを送る           パルス 1 (時間で区切らない)
+//   9 パルスの途中で rst_n                             すぐに 1 に戻り、その後パルスは出ない
+//  10 hold = 1 の間にシーケンス                        パルス 0
+//  11 シーケンスの 4 バイトの後で hold を 1 にして 0 に戻し、残りの 4 バイト  パルス 0。その後のシーケンスで 1
 // =============================================================
 
 `timescale 1ns/1ps
@@ -22,7 +22,7 @@
 
 module uart_reset_seq_tb;
 
-    localparam [15:0]  PRESCALE = 16'd2;    // 1 bit = 16 サイクル
+    localparam [15:0]  PRESCALE = 16'd2;    // 1 ビット = 16 サイクル
     localparam integer PULSE    = 20;
 
     reg clk;
@@ -47,7 +47,7 @@ module uart_reset_seq_tb;
         .rst_out_n (rst_out_n)
     );
 
-    // パルスの数と、最後のパルスの長さ (= rst_out_n が 0 だったサイクル数)。rst_n で 0 に戻る
+    // パルスの数と、最後のパルスの長さ (rst_out_n が 0 だったサイクル数)。rst_n で 0 に戻る
     integer pulses;
     integer width;
     integer cur;
@@ -86,7 +86,7 @@ module uart_reset_seq_tb;
 
     localparam [63:0] SEQ = 64'h1B1B_6165_3335_3021;
 
-    // 合図の i byte 目から j byte 目の手前までを送る
+    // シーケンスの i バイト目から、j バイト目の手前までを送る
     task send_seq(input integer from, input integer to);
         integer k;
         begin
@@ -94,7 +94,7 @@ module uart_reset_seq_tb;
         end
     endtask
 
-    // パルスが出きるまで待ってから、前回からの増え分を照らす
+    // パルスが出終わるまで待ってから、前回からの増加分を照合する
     integer base;
     task expect_pulses(input integer n, input [8*48-1:0] what);
         begin
@@ -146,7 +146,7 @@ module uart_reset_seq_tb;
 
         // 6
         send_seq(0, 4);
-        send_byte(SEQ[63 - 8 * 4 -: 8], 1'b1);   // 5 byte 目を、ストップビット 0 で
+        send_byte(SEQ[63 - 8 * 4 -: 8], 1'b1);   // 5 バイト目を、ストップビット 0 で送る
         send_seq(5, 8);
         expect_pulses(0, "6 ストップビット 0");
         send_seq(0, 8);
@@ -167,7 +167,7 @@ module uart_reset_seq_tb;
         expect_pulses(1, "8 途中で長く止まる");
         $display("8 途中で長く止まる: 合格");
 
-        // 9 (= 最後の 1 byte を送っている途中で、パルスが出るのを待ち、その 4 サイクル後に rst_n を入れる)
+        // 9 (最後の 1 バイトを送っている途中でパルスが出るのを待ち、その 4 サイクル後に rst_n をアサートする)
         send_seq(0, 7);
         fork
             send_seq(7, 8);
