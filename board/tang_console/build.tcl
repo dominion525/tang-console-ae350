@@ -18,8 +18,8 @@ add_file $ae/rtl/sdram_bridge.v
 add_file $ae/rtl/vendor/verilog-uart/uart_tx.v
 add_file $ae/rtl/vendor/verilog-uart/uart_rx.v
 add_file $ae/rtl/reset_gen.v
-# シミュレーションと同じ shell_top。AE350_SOC は、既定ではモック (= rtl/AE350_SOC.v) を読まないので、本物の部品になる。
-# CPU=hazard3 (= build.sh) のときは、モックと Hazard3 を FPGA のロジックで動かす
+# シミュレーションと同じ shell_top。AE350_SOC は、既定では Hazard3 の版 (= rtl/AE350_SOC.v) を読まないので、本物の部品になる。
+# CPU=hazard3 (= build.sh) のときは、Hazard3 の版を FPGA のロジックで動かす
 add_file $ae/tb/shell_top.v
 if {[info exists ::env(AE350_CPU)] && $::env(AE350_CPU) eq "hazard3"} {
     foreach f {AE350_SOC ae350_fabric ae350_reset_sync ae350_plic ae350_plmt} { add_file $ae/rtl/$f.v }

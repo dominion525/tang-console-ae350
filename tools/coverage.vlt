@@ -1,6 +1,6 @@
 `verilator_config
 
-// カバレッジを数えるのは、モック (= rtl/AE350_SOC.v、ae350_plic.v、ae350_plmt.v) と
+// カバレッジを数えるのは、Hazard3 の版 (= rtl/AE350_SOC.v、ae350_plic.v、ae350_plmt.v) と
 // FPGA のロジック側の RTL (= rtl/apb_*.v) と shell_top だけ。上流のコピーと TB は数えない
 coverage_off -file "*hazard3/hdl/*"
 coverage_off -file "*vendor/verilog-uart/*"

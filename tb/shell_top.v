@@ -4,7 +4,7 @@
 // Role:        AE350_SOC をインスタンス化した確認用のトップ (= 段 1、2026-11-08。段 2 で ROM_H* / DDR_H* を外に出した)。
 //              全ポートを名前で接続する。制御用の入力は、実機で使う値 (= Sipeed のデモの IP の出力と
 //              同じ値) を与える。
-//              シミュレーションではモック (rtl/AE350_SOC.v) とつながり、合成では本物の
+//              シミュレーションでは Hazard3 の版 (rtl/AE350_SOC.v) とつながり、合成では本物の
 //              プリミティブとつながる記述にしてある。
 //
 // Ports:
@@ -12,7 +12,7 @@
 //   input  wire ahb_clk    AHB_CLK (= 100 MHz)。ROM_H* と、AE350 の中の PLIC / PLMT のクロック
 //   input  wire apb_clk    APB_CLK (= 100 MHz)。APB_P* と、その先の UART / GP_INT のレジスタのクロック
 //   input  wire ddr_clk    DDR_CLK (= 50 MHz)。DDR_H* のクロック
-//   input  wire rtc_clk    RTC_CLK に与えるクロック (= 本物では内蔵の RTC が使う。モックは使わない。PLMT の mtime は AHB_CLK で進む)
+//   input  wire rtc_clk    RTC_CLK に与えるクロック (= 本物では内蔵の RTC が使う。Hazard3 の版は使わない。PLMT の mtime は AHB_CLK で進む)
 //   input  wire rst_n      HW_RSTN に与えるリセット (active low)。POR_N は 1 に固定する。UART の合図 (= rtl/uart_reset_seq.v)
 //                          でも HW_RSTN にリセットを入れる (= 固まったプログラムから ROM のローダーへ戻す。2026-11-12)
 //   output wire uart_tx    APB_P* の先の UART (= rtl/apb_uart.v、段 3) の送信。AE350 の UART2_TXD は使わない

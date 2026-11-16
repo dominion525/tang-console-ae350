@@ -1,13 +1,13 @@
-# AE350 のモックと、Tang Console での実機の構成
+# AE350 の Hazard3 の版と、Tang Console での実機の構成
 
 Gowin GW5AST-138 の中にある RISC-V のハードコア AE350 (= Andes A25) を扱うためのもの。2 つの部分からなる。
 
-- **モック** (= `rtl/AE350_SOC.v`): Gowin の部品 `AE350_SOC` と同じポートを持ち、中で Hazard3 を動かすシミュレーション用の回路。Gowin のシミュレーションのモデルはポートを並べただけで動かないので、その代わりに使う。バスの形、アドレスマップ、PLIC / PLMT、クロックごとの乗せ換えを、資料と実機に合わせてある
+- **Hazard3 の版** (= `rtl/AE350_SOC.v`): Gowin の部品 `AE350_SOC` と同じポートを持ち、中で Hazard3 を動かす回路。シミュレーションに使い、FPGA のロジックでも動かせる (= `CPU=hazard3`)。Gowin のシミュレーションのモデルはポートを並べただけで動かないので、その代わりに使う。バスの形、アドレスマップ、PLIC / PLMT、クロックごとの乗せ換えを、資料と実機に合わせてある
 - **実機の構成** (= `board/tang_console/`): Tang Console 138K の上で本物の AE350 を動かし、CPU のプログラムからレジスタの値を読んで UART に出す
 
 ## ディレクトリ
 
-    rtl/                 モック (= AE350_SOC.v、ae350_fabric.v、ae350_plic.v、ae350_plmt.v ほか) と、FPGA のロジック側の回路
+    rtl/                 Hazard3 の版 (= AE350_SOC.v、ae350_fabric.v、ae350_plic.v、ae350_plmt.v ほか) と、FPGA のロジック側の回路
                          (= apb_uart.v、apb_gpint.v、apb_paddr_probe.v、apb_reg_slice.v、ahb_reg_slice.v、ahb_sram.v、ahb_rom.v)
     tb/                  shell_top.v (= AE350_SOC と FPGA 側の回路をつないだトップ。シミュレーションでも実機でも使う)、TB
     sw/                  確認用のプログラム (= 段 2〜5)、読み出しプログラム probe.c、リンカスクリプト
@@ -23,7 +23,7 @@ Verilator 5.052、Icarus Verilog 13.0、riscv64-elf-gcc と newlib (= `NEWLIB` �
     make test           段 2〜5、PLIC と RAM の単体の TB、クロックの組み合わせ、途中のリセット、乱数の待ち
     make test-iverilog  段 2〜5 を 4 値で流す
     make coverage       カバレッジ
-    make run-probe      読み出しプログラムをモックで流す
+    make run-probe      読み出しプログラムを Hazard3 の版で流す
 
 ### newlib を作る (= 最初に 1 回)
 
@@ -68,7 +68,7 @@ CPU の文字が 0.1 秒以上途切れると、見張りの回路 (= `board/tan
     APB_P* の PADDR          0xF800_0000 からの全アドレス。1 / 2 byte の読み書きでも 4 byte に揃い、
                             PWDATA は書くバイトのレーンだけに値が入る
 
-モックはこれらに合わせてある。ただし、中の CPU は Hazard3 なので、次の点は本物と違う。
+Hazard3 の版はこれらに合わせてある。ただし、中の CPU は Hazard3 なので、次の点は本物と違う。
 
 - キャッシュ、F / D 拡張、S モードが無い (= misa は Hazard3 の値。PLIC のターゲット 1 の通知は CPU につながない)
 - Andes の CSR (= milmb、mdlmb、mcache_ctl、mmisc_ctl ほか) が無い (= 読むと不正命令の例外)

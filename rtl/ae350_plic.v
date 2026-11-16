@@ -1,7 +1,7 @@
 // =============================================================
 // File:        rtl/ae350_plic.v
 // Module:      ae350_plic
-// Role:        AE350 のモックの中の PLIC (= Andes NCEPLIC100 と同じ挙動、段 4、2026-11-10)。
+// Role:        AE350 の Hazard3 の版の中の PLIC (= Andes NCEPLIC100 と同じ挙動、段 4、2026-11-10)。
 //              シミュレーション専用。ターゲットは 0 (= hart 0 の M モード、meip) と 1 (= S モード、seip) [実機]。
 //
 // 出典 (2026-11-10 に確かめた):
@@ -11,7 +11,7 @@
 //   [1031] Gowin MUG1031 3.1 (= 「Number of interrupt priorities: 15」。実機は 3 だった)
 //   [実機] Tang Console 138K (= チップの版 B) で読んだ値と挙動 (= 2026-11-10。sw/probe.c)
 //
-// Registers (= モックが 0xE400_0000 からのオフセットで渡す。32 bit のアクセスだけを受ける):
+// Registers (= Hazard3 の版が 0xE400_0000 からのオフセットで渡す。32 bit のアクセスだけを受ける):
 //   0x00_0000          feature        R/W   bit0 PREEMPT、bit1 VECTORED。初期値 0 [AX45 18.4.1]
 //                                           VECTORED は読み書きできるだけ (= CPU との専用の信号は Hazard3 に無い)
 //   0x00_0000 + 4*id   priority[id]   R/W   id = 1〜NUM_SRC。初期値 1 [AX45 18.4.3]。下位 PRIO_BITS bit を持つ
@@ -55,7 +55,7 @@
 //   input  wire [3:0]    wstrb     書き込みは 4 byte 全部 (= wstrb が 4'hF) のときだけ受ける
 //   output reg  [31:0]   rdata     addr のレジスタの値 (= 組み合わせ回路)
 //   output wire          meip      ターゲット 0 への通知 (= 実機では mip の bit 11)
-//   output wire          seip      ターゲット 1 への通知 (= 実機では mip の bit 9。Hazard3 には S モードが無いので、モックでは使わない)
+//   output wire          seip      ターゲット 1 への通知 (= 実機では mip の bit 9。Hazard3 には S モードが無いので、Hazard3 の版では使わない)
 // =============================================================
 
 `default_nettype none
@@ -167,7 +167,7 @@ module ae350_plic #(
     end
 
     // 上で選んだ結果を、毎クロック、レジスタに受ける (= 2026-11-13。31 個から選ぶ回路が、claim と pending の消しと同じ
-    // クロックにあり、モックを FPGA のロジックで動かすと AHB_CLK の経路が長かった)。claim と割り込みの線はレジスタの値を
+    // クロックにあり、Hazard3 の版を FPGA のロジックで動かすと AHB_CLK の経路が長かった)。claim と割り込みの線はレジスタの値を
     // 使うので、pending や enable の変化が見えるのは 1 クロック後になる。claim があったクロックには、そのターゲットの
     // レジスタを 0 (= 割り込み無し) にする (= 消した番号が 1 クロック残って、続けて読んだ claim が同じ番号を返さないように)
     reg [5:0]           notify_id_q   [0:NT-1];

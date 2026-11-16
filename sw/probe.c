@@ -1,13 +1,13 @@
 /*
  * 実機の値を読むプログラム (= board/tang_console/ の構成で動かす。2026-11-10)。
  *
- * モックを作るときに資料で決めきれなかった値と、本物の AE350 の素性を読み、UART に 1 行ずつ出す。
+ * Hazard3 の版を作るときに資料で決めきれなかった値と、本物の AE350 の素性を読み、UART に 1 行ずつ出す。
  * 読むと例外になるもの (= 無い CSR、エラー応答のアドレス) は、mcause を「例外」として出す。
  * 出し終わったら、UART に何か 1 文字送るともう一度出す。
  *
  * 行の形: <名前> <値 (16 進 8 桁)>   か   <名前> 例外 <mcause>
  *
- * モックでも流せる (= make run-probe)。そのときは終わりに DDR の 0x0000_0000 に 0x600D を書き、
+ * Hazard3 の版でも流せる (= make run-probe)。そのときは終わりに DDR の 0x0000_0000 に 0x600D を書き、
  * TB を止める (= 実機の DDR_H* の先には何も無いので、書いても何も起きない)。
  */
 
@@ -48,7 +48,7 @@ static void put_line(const char *name, uint32_t v)
 
 #define CSR_LINE(name, num) put_line(name, READ_CSR(num))
 
-/* CSR のビットを立てる / 落とす。無い CSR (= モックの Hazard3) は例外になり、次の命令から再開する */
+/* CSR のビットを立てる / 落とす。無い CSR (= Hazard3) は例外になり、次の命令から再開する */
 #define SET_CSR(num, bits) __asm__ volatile("csrs " #num ", %0" : : "r"(bits) : "memory")
 #define CLEAR_CSR(num, bits) __asm__ volatile("csrc " #num ", %0" : : "r"(bits) : "memory")
 
@@ -516,7 +516,7 @@ static uint64_t mtime64(void)
 /*
  * mtime と mcycle の速さを壁時計と比べるための行を出す。mcycle で間を空けて 10 行出し、受ける側 (= Mac) が
  * 各行の届いた時刻を記録する。行の形: "tick <番号> mtime <16 進 16 桁> mcycle <16 進 16 桁>"
- * 実機では間を 8 億 mcycle (= CORE_CLK が 800 MHz なら 1 秒) にする。モック (= Andes の CSR が読めない) では短くする
+ * 実機では間を 8 億 mcycle (= CORE_CLK が 800 MHz なら 1 秒) にする。Hazard3 の版 (= Andes の CSR が読めない) では短くする
  */
 static void ticks(void)
 {
@@ -547,7 +547,7 @@ int main(void)
     report();
     ticks();
     /*
-     * モックの TB に終わりを知らせる。0 番地への書き込みは C で書くと GCC が消すので、命令で書く。実機 (= Andes の CSR が
+     * Hazard3 の版の TB に終わりを知らせる。0 番地への書き込みは C で書くと GCC が消すので、命令で書く。実機 (= Andes の CSR が
      * 読める) では書かない (= 0 番地は SDRAM で、データキャッシュに書いたまま残る)
      */
     (void)READ_CSR(0xFC2);

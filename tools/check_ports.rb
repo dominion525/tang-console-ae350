@@ -1,12 +1,12 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# AE350_SOC のモックと、Gowin のプリミティブ (prim_sim.v) のポートを比べる。
+# AE350_SOC の Hazard3 の版と、Gowin のプリミティブ (prim_sim.v) のポートを比べる。
 # 名前・向き・幅が 1 つでも違えば、違いを並べて 1 で終わる。
 #
 #   ruby tools/check_ports.rb <prim_sim.v> <AE350_SOC.v>
 #
-# prim_sim.v は非 ANSI 形式 (= `input [7:0] APB_CE;`)、モックは ANSI 形式
+# prim_sim.v は非 ANSI 形式 (= `input [7:0] APB_CE;`)、Hazard3 の版は ANSI 形式
 # (= `input wire [7:0] APB_CE,`) で宣言しているので、それぞれの形で読む。
 
 MODULE = 'AE350_SOC'
@@ -35,20 +35,20 @@ def ports(path)
   end
 end
 
-prim_path, mock_path = ARGV
-abort 'usage: check_ports.rb <prim_sim.v> <AE350_SOC.v>' unless prim_path && mock_path
+prim_path, hz3_path = ARGV
+abort 'usage: check_ports.rb <prim_sim.v> <AE350_SOC.v>' unless prim_path && hz3_path
 
 prim = ports(prim_path)
-mock = ports(mock_path)
+hz3 = ports(hz3_path)
 
 errors = []
-(prim.keys - mock.keys).each { |n| errors << "モックに無い: #{n} #{prim[n].join(' ')}" }
-(mock.keys - prim.keys).each { |n| errors << "プリミティブに無い: #{n} #{mock[n].join(' ')}" }
-(prim.keys & mock.keys).each do |n|
-  errors << "違う: #{n} プリミティブ #{prim[n].join(' ')} / モック #{mock[n].join(' ')}" if prim[n] != mock[n]
+(prim.keys - hz3.keys).each { |n| errors << "Hazard3 の版に無い: #{n} #{prim[n].join(' ')}" }
+(hz3.keys - prim.keys).each { |n| errors << "プリミティブに無い: #{n} #{hz3[n].join(' ')}" }
+(prim.keys & hz3.keys).each do |n|
+  errors << "違う: #{n} プリミティブ #{prim[n].join(' ')} / Hazard3 の版 #{hz3[n].join(' ')}" if prim[n] != hz3[n]
 end
 
-puts "プリミティブ #{prim.size} 本 / モック #{mock.size} 本"
+puts "プリミティブ #{prim.size} 本 / Hazard3 の版 #{hz3.size} 本"
 if errors.empty?
   puts 'ポートは一致した'
 else

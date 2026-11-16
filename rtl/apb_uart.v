@@ -2,7 +2,7 @@
 // File:        rtl/apb_uart.v
 // Module:      apb_uart
 // Role:        AE350 の APB_P* の先に置く UART (= 段 3 で送信、段 3b (2026-11-10) で受信を足した)。
-//              FPGA のロジック側の回路で、実機にもそのまま載る (= モックと違い、シミュレーション専用ではない)。
+//              FPGA のロジック側の回路で、実機にもそのまま載る (= 本物の AE350 を使う構成でも使う)。
 //              送信器と受信器は rtl/vendor/verilog-uart/ の uart_tx.v / uart_rx.v (= MIT、手を加えずに
 //              取り込んだもの) を使う。受信した文字は RX_DEPTH 文字の FIFO に溜める。
 //

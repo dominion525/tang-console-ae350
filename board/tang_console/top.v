@@ -96,7 +96,7 @@ module ae350_probe_top #(
     wire lock_all;
 
 `ifdef AE350_CPU_HAZARD3
-    // モックの Hazard3 を FPGA のロジックで動かす版: CORE_CLK 40 MHz、AHB_CLK 50 MHz (= 配置配線の Fmax は 41.6 / 53.1 MHz)
+    // Hazard3 の版を FPGA のロジックで動かすとき: CORE_CLK 40 MHz、AHB_CLK 50 MHz (= 配置配線の Fmax は 41.6 / 53.1 MHz)
     localparam integer CORE_DIV = 20;
     localparam integer AHB_DIV  = 16;
 `else

@@ -13,7 +13,7 @@
 //     SDRAM_CLK = VCO ÷ ODIV5 (40) = 20 MHz  (= DDR_H* の先の SDRAM の制御が使う)
 //
 // Parameters:
-//   CORE_DIV / AHB_DIV  CORE_CLK と AHB_CLK の分周 (= 既定は本物の AE350 の 800 / 100 MHz。モックの Hazard3 を FPGA のロジックで
+//   CORE_DIV / AHB_DIV  CORE_CLK と AHB_CLK の分周 (= 既定は本物の AE350 の 800 / 100 MHz。Hazard3 の版を FPGA のロジックで
 //                       動かす版 (= build.sh の CPU=hazard3) は、配置配線の Fmax に合わせて下げる)
 // =============================================================
 `default_nettype none
