@@ -1,4 +1,4 @@
-# ボードの回路 (= ae350/board/tang_console/) を lint にかけるための、Gowin の部品 PLL の中身の無いモジュールを作る
+# ボードの回路 (= board/tang_console/) を lint にかけるための、Gowin の部品 PLL の中身の無いモジュールを作る
 # (= 2026-11-12)。Gowin のシミュレーションのモデル (= simlib/gw5a/prim_sim.v) から、module PLL の頭 (= 口の並び) と、
 # 口とパラメータの宣言だけを取り出し、出力を 0 にしたモジュールを書く。Gowin のファイルから作るので、置き場は build/
 # (= コミットしない)。

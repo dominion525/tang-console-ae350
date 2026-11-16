@@ -1,9 +1,9 @@
-# ROM のローダー (= ae350/sw/loader.c) に、SDRAM で動かすプログラムを送って動かす (= macOS、2026-11-12)。
+# ROM のローダー (= sw/loader.c) に、SDRAM で動かすプログラムを送って動かす (= macOS、2026-11-12)。
 #
-#   ruby ae350/tools/ae350_load.rb <ポート> <.bin> [番地 (= 16 進。既定 00010000)]
+#   ruby tools/ae350_load.rb <ポート> <.bin> [番地 (= 16 進。既定 00010000)]
 #
 #   1. ポートを 1,250,000 bps で開く
-#   2. UART の合図 (= ESC ESC "ae350!"。ae350/rtl/uart_reset_seq.v) を送って AE350 をリセットし、ROM のローダーの
+#   2. UART の合図 (= ESC ESC "ae350!"。rtl/uart_reset_seq.v) を送って AE350 をリセットし、ROM のローダーの
 #      READY ae350 loader を待つ (= ボードがローダーで待っていても、プログラムが固まっていても、同じ手順で送れる)。
 #      1.5 秒来なければ合図を送り直す (= 3 回まで)
 #   3. load を送り、GO を待つ (= ERR ならその返事を出して終わる)
@@ -12,7 +12,7 @@
 #      戻る (= READY ae350 loader が来る) か、Ctrl-C で終わる
 #
 # macOS の stty は 230400 を超える速さを受けないので、115200 の生のモードにしてから IOSSIOSPEED で速さを設定し直す
-# (= Lapidary の tools/uart_speed.rb と同じ。IOSSIOSPEED は開いている間だけ効くので、同じ fd で送受信する)。
+# (= IOSSIOSPEED は開いている間だけ効くので、同じ fd で送受信する)。
 
 require 'zlib'
 
@@ -22,7 +22,7 @@ READY       = 'READY ae350 loader'
 RESET_SEQ   = [0x1B, 0x1B, 0x61, 0x65, 0x33, 0x35, 0x30, 0x21].pack('C*') # ESC ESC "ae350!"
 
 port, bin, at = ARGV
-abort '使い方: ruby ae350/tools/ae350_load.rb <ポート> <.bin> [番地]' if port.nil? || bin.nil?
+abort '使い方: ruby tools/ae350_load.rb <ポート> <.bin> [番地]' if port.nil? || bin.nil?
 data = File.binread(bin)
 addr = (at || '00010000').to_i(16)
 

@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/tb/plic_tb.v
+// File:        tb/plic_tb.v
 // Module:      plic_tb
 // Role:        ae350_plic の単体の TB (= 段 4 の後、2026-11-10)。モック全体の TB (tb_mem) は全ソースがレベルの構成
 //              なので、ここではエッジのソースを持つ構成と、claim がしきい値で絞らない構成 (= CLAIM_ABOVE_THRESHOLD = 0)
@@ -8,7 +8,7 @@
 //   u_edge   EDGE_TRIGGER = ソース 5 だけエッジ (= ソース 6 はレベル)
 //   u_nothr  CLAIM_ABOVE_THRESHOLD = 0
 //
-// 実行: make -C ae350 test-plic
+// 実行: make test-plic
 // =============================================================
 
 `default_nettype none

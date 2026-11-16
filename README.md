@@ -19,11 +19,11 @@ Gowin GW5AST-138 の中にある RISC-V のハードコア AE350 (= Andes A25) �
 
 Verilator 5.052、Icarus Verilog 13.0、riscv64-elf-gcc と newlib (= `NEWLIB` で場所を渡す。既定値は無い) を使う。
 
-    make -C ae350 check          部品とポートの比較、lint、iverilog での読み込み
-    make -C ae350 test           段 2〜5、PLIC と RAM の単体の TB、クロックの組み合わせ、途中のリセット、乱数の待ち
-    make -C ae350 test-iverilog  段 2〜5 を 4 値で流す
-    make -C ae350 coverage       カバレッジ
-    make -C ae350 run-probe      読み出しプログラムをモックで流す
+    make check          部品とポートの比較、lint、iverilog での読み込み
+    make test           段 2〜5、PLIC と RAM の単体の TB、クロックの組み合わせ、途中のリセット、乱数の待ち
+    make test-iverilog  段 2〜5 を 4 値で流す
+    make coverage       カバレッジ
+    make run-probe      読み出しプログラムをモックで流す
 
 ### newlib を作る (= 最初に 1 回)
 
@@ -39,8 +39,8 @@ newlib を使うプログラム (= 段 3〜5、hello、ddr3_check、mem_bench、
 
 ## 実機
 
-    sh ae350/board/tang_console/build.sh
-    openFPGALoader -b tangconsole ae350/build/board/ae350_probe/impl/pnr/ae350_probe.fs
+    sh board/tang_console/build.sh
+    openFPGALoader -b tangconsole build/board/ae350_probe/impl/pnr/ae350_probe.fs
 
 ビルドは Gowin EDA の Education 版 1.9.11.03、チップの版 B で通している。ROM はブロック RAM (= 中身は `sw/probe.c`)、データとスタックは AE350 の中の DLM で、DDR3 は使わない。出力は USB シリアルの 2 つ目 (= macOS では /dev/cu.usbserial-<番号>1) に 1,250,000 bps で出る (= macOS の stty は 230400 を超える速さを受けないので、ポートを開いたまま `IOSSIOSPEED` で設定する)。何か 1 文字送ると、もう一度出す。
 
@@ -78,10 +78,10 @@ CPU の文字が 0.1 秒以上途切れると、見張りの回路 (= `board/tan
 
 ROM にローダー (= `sw/loader.c`、2,001 byte) を置くと、16 KB の ROM に焼き込まずに、プログラムを UART で DDR_H* の先 (= SDRAM の版はベースボードの SDRAM0、32 MB。DDR3 の版は SOM の DDR3、1 GB) か ILM に送って動かせる。ビットストリームを作り直さずに、プログラムを何度でも上書きで送れる。
 
-    SDRAM=hs ROM=loader sh ae350/board/tang_console/build.sh ae350/build/board-loader
-    openFPGALoader -b tangconsole ae350/build/board-loader/ae350_probe/impl/pnr/ae350_probe.fs
-    make -C ae350 build/hello.bin
-    ruby ae350/tools/ae350_load.rb /dev/cu.usbserial-<番号>1 ae350/build/hello.bin
+    SDRAM=hs ROM=loader sh board/tang_console/build.sh build/board-loader
+    openFPGALoader -b tangconsole build/board-loader/ae350_probe/impl/pnr/ae350_probe.fs
+    make build/hello.bin
+    ruby tools/ae350_load.rb /dev/cu.usbserial-<番号>1 build/hello.bin
 
 `ae350_load.rb` は、UART の合図で AE350 をリセットしてローダーに戻し、プログラムを送って長さと CRC-32 を照らし、合えば動かす。その後は UART の出力を画面に出し、キーボードの入力を送る。プログラムが終わってローダーに戻るか、Ctrl-C で終わる。UART は 1,250,000 bps (= macOS では `IOSSIOSPEED` で設定する)。ROM がローダーのビルドでは、見張りの回路は外す。
 
@@ -112,10 +112,10 @@ UART に 8 byte の合図 `1B 1B 61 65 33 35 30 21` (= ESC ESC "ae350!") が続�
 
 ### テスト
 
-    make -C ae350 test-loader       断られる命令、GO、時間切れ、受信の誤り、CRC-32、合図を含む中身、止まらないプログラムから
-                                    合図で戻る、
-                                    hello を送って動かす (= 送る間隔は実機の 1.25 Mbps と同じ。数分かかる)
-    make -C ae350 test-uart-reset   合図の回路の単体の TB
+    make test-loader       断られる命令、GO、時間切れ、受信の誤り、CRC-32、合図を含む中身、止まらないプログラムから
+                           合図で戻る、
+                           hello を送って動かす (= 送る間隔は実機の 1.25 Mbps と同じ。数分かかる)
+    make test-uart-reset   合図の回路の単体の TB
 
 手順のファイルは `tools/loader_test.rb` が作り、TB の `+uart_script` で流す。どちらも `make test` に入っている。
 
@@ -126,7 +126,7 @@ UART に 8 byte の合図 `1B 1B 61 65 33 35 30 21` (= ESC ESC "ae350!") が続�
 
 ## DDR3 の版 (= DDR_H* の先を SOM の DDR3 にする)
 
-    MEM=ddr3 ROM=loader sh ae350/board/tang_console/build.sh ae350/build/board-ddr3
+    MEM=ddr3 ROM=loader sh board/tang_console/build.sh build/board-ddr3
 
 DDR_H* の先を、ベースボードの SDRAM の代わりに、SOM の DDR3 (= H5TQ4G63EFR が 2 個、DQ 32 bit、1 GB) にする。DDR3 の制御は Gowin の DDR3 Memory Interface の IP (= メモリのクロック 400 MHz、1:4) で、DDR_H* との間は `rtl/ahb_ddr3.v` がつなぐ。シミュレーションでは DDR_H* の先は SDRAM のままで、DDR3 の版は実機でだけ確かめる (= IP の本体が暗号化されていて、シミュレーションできない)。
 
@@ -176,7 +176,7 @@ IP の本体は Gowin のツールが作るファイルなので、リポジト�
 
 ## LiteDRAM の版 (= DDR3 の制御をオープンソースにする)
 
-    MEM=litedram ROM=loader sh ae350/board/tang_console/build.sh ae350/build/board-litedram
+    MEM=litedram ROM=loader sh board/tang_console/build.sh build/board-litedram
 
 DDR_H* の先は DDR3 の版と同じ SOM の DDR3 (= 2 個、DQ 32 bit、1 GB) で、制御を Gowin の IP の代わりに LiteDRAM (= BSD-2-Clause) にする。番地と容量は DDR3 の版と同じなので、`sw/ddr3_check.c` と `sw/mem_bench.c` はそのまま動く。Gowin の IP より遅いが、生成した Verilog も含めてオープンソースで、IP Core Generator で IP を作る手順が要らない。
 

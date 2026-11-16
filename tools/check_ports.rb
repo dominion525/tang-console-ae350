@@ -4,7 +4,7 @@
 # AE350_SOC のモックと、Gowin のプリミティブ (prim_sim.v) のポートを比べる。
 # 名前・向き・幅が 1 つでも違えば、違いを並べて 1 で終わる。
 #
-#   ruby ae350/tools/check_ports.rb <prim_sim.v> <AE350_SOC.v>
+#   ruby tools/check_ports.rb <prim_sim.v> <AE350_SOC.v>
 #
 # prim_sim.v は非 ANSI 形式 (= `input [7:0] APB_CE;`)、モックは ANSI 形式
 # (= `input wire [7:0] APB_CE,`) で宣言しているので、それぞれの形で読む。

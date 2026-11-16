@@ -1,7 +1,7 @@
 // =============================================================
 // File:        rtl/reset_gen.v
 // Module:      reset_gen
-// Role:        ボタンから Lapidary の rst_n を作る (= M10 項目 9、2026-10-23)。
+// Role:        ボタンから FPGA のロジック側の rst_n を作る (= 2026-10-23)。
 //              ボタンの整形 (= A) と reset synchronizer (= B) をつなぐ。
 //
 //              A  ボタンを FF 2 段でクロックに合わせて取り込み、押された状態が PRESS_CYCLES 続いたら
@@ -21,8 +21,8 @@
 //   input  wire clk
 //   input  wire btn_n    ボタン。押すと 0。クロックと関係なく変わり、ばたつく
 //   input  wire lock     PLL の LOCK (= 周波数が安定したら 1)。0 の間は、クロックを待たずに reset に入る
-//                        (= M10 新 3、2026-10-24)。PLL を使わないときは 1 に結ぶ
-//   output wire rst_n    Lapidary に渡す reset (= active low)。0 になるのはクロックを待たず、
+//                        (= 2026-10-24)。PLL を使わないときは 1 に結ぶ
+//   output wire rst_n    FPGA のロジック側に渡す reset (= active low)。0 になるのはクロックを待たず、
 //                        1 になるのはクロックの立ち上がりの直後
 //
 // Reset:       無し。FF はすべて初期値で始まる (= Gowin SUG949 3.2 節「FF には初期値を付ける」)
@@ -33,7 +33,7 @@
 //   make reset_gen
 //
 // Design Notes:
-//   - **B は A の要求と PLL の LOCK を合わせて受ける** (= M10 新 3)。PLL が外れるとクロックが止まりうるので、
+//   - **B は A の要求と PLL の LOCK を合わせて受ける。**PLL が外れるとクロックが止まりうるので、
 //     LOCK が 0 になったらクロックを待たずに reset に入る。LOCK が 1 に戻ったら、クロックの立ち上がり 2 回の後に解ける
 //   - **LOCK が外れても A は数え直さない。**A の要求がもう下りていれば、LOCK が戻って 2 cycle で解ける。
 //     電源投入では A が「押されている」から始まるので、LOCK が立った後に RELEASE_CYCLES を数えてから解ける

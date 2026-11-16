@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/rtl/apb_reg_slice.v
+// File:        rtl/apb_reg_slice.v
 // Module:      apb_reg_slice
 // Role:        APB の転送をレジスタで区切る回路 (= 2026-11-10)。AE350 の APB_P* と FPGA 側の周辺回路の間に置く。
 //              実機では AE350 が FPGA の端にあり、行きと帰りの配線だけで APB_CLK の周期の大半を使う。

@@ -1,5 +1,5 @@
 /*
- * 実機の値を読む構成 (= ae350/board/tang_console/) のリンカスクリプト (= 2026-11-10)。
+ * 実機の値を読む構成 (= board/tang_console/) のリンカスクリプト (= 2026-11-10)。
  *
  *   0x8000_0000〜  ROM (= ROM_H* の先のブロック RAM、16 KB)   .text、.rodata、.data の初期値
  *   0xA020_0000〜  DLM (= AE350 の中のメモリ、64 KB)          .result、.data、.bss、スタック

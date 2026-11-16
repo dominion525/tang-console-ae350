@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/tb/sdram_hs_path.v
+// File:        tb/sdram_hs_path.v
 // Module:      sdram_hs_path
 // Role:        シミュレーション用の、SDRAM の制御の 166.7 MHz 版の経路 (= 2026-11-11)。
 //              sdram_ctrl_hs → sdram_io (= TB 用の Gowin の IO の部品) → ボードの遅れ → SDRAM のモデル。

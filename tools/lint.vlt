@@ -1,12 +1,12 @@
 `verilator_config
 
 // 上流のコピーで中身を変えないファイルは lint の対象にしない
-//   ae350/hazard3/hdl/        Hazard3
-//   rtl/vendor/verilog-uart/  UART の送信器 (= Lapidary が取り込んだもの)
+//   hazard3/hdl/              Hazard3
+//   rtl/vendor/verilog-uart/  UART の送信器と受信器
 lint_off -file "*hazard3/hdl/*"
 lint_off -file "*vendor/verilog-uart/*"
 
-// 流用したファイル (= DDR_H* の先の SDRAM の経路)。sdram_bridge は Lapidary の書き方 (= FF の初期値) のまま、
+// 流用したファイル (= DDR_H* の先の SDRAM の経路)。sdram_bridge は流用した書き方 (= FF の初期値) のまま、
 // SDRAM のモデルは上流のコピー
 lint_off -rule PROCASSINIT -file "*rtl/sdram_bridge.v"
 lint_off -file "*zeitlos/sdram_model.v"

@@ -1,7 +1,6 @@
-// 実機の値を読む構成 (= ae350/board/tang_console/top.v) のピンの割り当て。
-// Lapidary の SDRAM 版 (= synth/tang_console_sdram.cst) の発振器、ボタン、UART と同じピン。
+// 実機の値を読む構成 (= board/tang_console/top.v) のピンの割り当て。
 
-// 50 MHz の発振器。V22 はクロック専用のピンではないので、配置配線で PR1014 が出る (= Lapidary と同じ)
+// 50 MHz の発振器。V22 はクロック専用のピンではないので、配置配線で PR1014 が出る
 IO_LOC  "clk50" V22;
 IO_PORT "clk50" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
 
@@ -26,7 +25,7 @@ INS_LOC "u_pll/u_pll_s8" PLL_R[0];
 GROUP exts_slice = { "u_top/u_exts_slice/*" };
 GRP_LOC exts_slice R[1:10]C[145:160];
 
-// ベースボードの SDRAM0 (= W9825G6KH、32 MB)。Lapidary の SDRAM 版 (= synth/tang_console_sdram.cst) と同じピン。CKE のピンは無い
+// ベースボードの SDRAM0 (= W9825G6KH、32 MB)。CKE のピンは無い
 IO_LOC  "sdram_dq[0]" E14;
 IO_PORT "sdram_dq[0]" IO_TYPE=LVCMOS33;
 IO_LOC  "sdram_dq[1]" E13;

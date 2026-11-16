@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/rtl/ae350_plmt.v
+// File:        rtl/ae350_plmt.v
 // Module:      ae350_plmt
 // Role:        AE350 のモックの中の PLMT (= Platform Level Machine Timer、段 4、2026-11-10)。
 //              シミュレーション専用。レジスタの配置は MUG1029 表 15-1 に合わせる (= hart 0 だけ)。

@@ -1,5 +1,5 @@
 # 実機の値を読む構成を、Tang Console 138K 向けに配置配線してビットストリームを作る。build.sh から gw_sh で実行する。
-# チップの版は B (= 手元のボード。tasks/_shared/tang-console-facts.md)
+# チップの版は B
 set here [file dirname [file normalize [info script]]]
 set ae   [file normalize $here/../..]
 set out  $::env(AE350_BOARD_BUILD)
@@ -18,7 +18,7 @@ add_file $ae/rtl/sdram_bridge.v
 add_file $ae/rtl/vendor/verilog-uart/uart_tx.v
 add_file $ae/rtl/vendor/verilog-uart/uart_rx.v
 add_file $ae/rtl/reset_gen.v
-# シミュレーションと同じ shell_top。AE350_SOC は、既定ではモック (= ae350/rtl/AE350_SOC.v) を読まないので、本物の部品になる。
+# シミュレーションと同じ shell_top。AE350_SOC は、既定ではモック (= rtl/AE350_SOC.v) を読まないので、本物の部品になる。
 # CPU=hazard3 (= build.sh) のときは、モックと Hazard3 を FPGA のロジックで動かす
 add_file $ae/tb/shell_top.v
 if {[info exists ::env(AE350_CPU)] && $::env(AE350_CPU) eq "hazard3"} {

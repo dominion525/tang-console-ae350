@@ -1,7 +1,7 @@
 // =============================================================
-// File:        ae350/rtl/sdram_ctrl_hs.v
+// File:        rtl/sdram_ctrl_hs.v
 // Module:      sdram_ctrl_hs
-// Role:        SDR SDRAM (= W9825G6KH-6) の制御の 166.7 MHz 版 (= 2026-11-11)。Lapidary の rtl/sdram_bridge.v (= 20 MHz 版) を
+// Role:        SDR SDRAM (= W9825G6KH-6) の制御の 166.7 MHz 版 (= 2026-11-11)。rtl/sdram_bridge.v (= 20 MHz 版) を
 //              写して元にし、166.7 MHz で動くように変えたもの。上の側の口 (= fill_* / we / waddr / wdata / wready /
 //              init_done) は sdram_bridge と同じなので、ahb_sdram からはどちらも同じに使える。
 //              行の読みは 8 語のバースト、書きは 1 語。どちらも auto precharge。初期化とリフレッシュもここで行う。

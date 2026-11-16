@@ -1,5 +1,5 @@
 /*
- * 実機の値を読むプログラム (= ae350/board/tang_console/ の構成で動かす。2026-11-10)。
+ * 実機の値を読むプログラム (= board/tang_console/ の構成で動かす。2026-11-10)。
  *
  * モックを作るときに資料で決めきれなかった値と、本物の AE350 の素性を読み、UART に 1 行ずつ出す。
  * 読むと例外になるもの (= 無い CSR、エラー応答のアドレス) は、mcause を「例外」として出す。
@@ -7,7 +7,7 @@
  *
  * 行の形: <名前> <値 (16 進 8 桁)>   か   <名前> 例外 <mcause>
  *
- * モックでも流せる (= make -C ae350 run-probe)。そのときは終わりに DDR の 0x0000_0000 に 0x600D を書き、
+ * モックでも流せる (= make run-probe)。そのときは終わりに DDR の 0x0000_0000 に 0x600D を書き、
  * TB を止める (= 実機の DDR_H* の先には何も無いので、書いても何も起きない)。
  */
 
@@ -304,7 +304,7 @@ static void sdram_stat_lines(const char *what, const uint32_t *a, const uint32_t
 }
 
 /*
- * DDR_H* の先の SDRAM (= 0x0000_0000〜、32 MB。ae350/rtl/ahb_sdram.v → Lapidary の rtl/sdram_bridge.v)。
+ * DDR_H* の先の SDRAM (= 0x0000_0000〜、32 MB。rtl/ahb_sdram.v → rtl/sdram_bridge.v)。
  * 32 / 16 / 8 bit の読み書き、32 MB の一番上、32 MB の外のエラー応答、4 KB の読み書きの照合、読み書きのサイクル数を見る
  */
 static void sdram_check(void)

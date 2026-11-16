@@ -1,9 +1,9 @@
 /*
  * 段 3 の確認用プログラム (2026-11-09)。
  * APB_P* の先の UART に、newlib の printf と、UART のレジスタへの直接の書き込みで文字を出す。
- * 出る文字は sw/stage3_expected.txt と比べる (= ae350/Makefile)。
+ * 出る文字は sw/stage3_expected.txt と比べる (= Makefile)。
  *
- * 戻り値は start.S が 0x0000_0000 に書き、TB (= ae350/tb/tb_mem.v) が表示する。
+ * 戻り値は start.S が 0x0000_0000 に書き、TB (= tb/tb_mem.v) が表示する。
  *   0x600D  全部通った
  *   1〜     最初に失敗した確認の番号 (= 下の check の番号)
  */
@@ -82,7 +82,7 @@ int main(void)
     printf("getchar %c %c\n", c1, c2);
 
     /*
-     * 行 6: FIFO (= 256 文字。ae350/rtl/apb_uart.v の RX_DEPTH) を超えて送られると、あふれた分を落とし、STATUS の bit 3 が立つ。
+     * 行 6: FIFO (= 256 文字。rtl/apb_uart.v の RX_DEPTH) を超えて送られると、あふれた分を落とし、STATUS の bit 3 が立つ。
      * TB は 257 文字送る (= あふれた後に届く文字は無いので、取り出す文字数が決まる)。数と、頭の 16 文字と最後の 1 文字を出す
      */
     printf("READY fifo\n");

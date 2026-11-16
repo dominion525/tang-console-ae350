@@ -5,7 +5,7 @@
 #   ruby tools/loader_test.rb hello <hello.bin> <hello.dis> <手順> <期待>
 #
 # cmds: 断られる命令、GO、時間切れ、受信の誤り、16 byte の OK と CRC-32、止まらないプログラムの run と UART の合図による
-#       ローダーへの戻り (= ae350/rtl/uart_reset_seq.v)、小さなプログラムの run (= 0x600D で終わる)
+#       ローダーへの戻り (= rtl/uart_reset_seq.v)、小さなプログラムの run (= 0x600D で終わる)
 # hello: hello (= newlib を使う 48 KB) を送って run し、出力を比べる
 # どちらも、送るときは byte ごとに APB_CLK 640 サイクル待つ (= 1 byte 800 サイクル = 8 µs。実機の 1.25 Mbps と同じ間隔)
 # 時間切れの確認の待ち (= P 100000、1 ms) は、シミュレーション用のローダーの時間切れ (= 200,000 mcycle = 250 µs) より長い

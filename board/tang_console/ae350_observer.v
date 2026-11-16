@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/board/tang_console/ae350_observer.v
+// File:        board/tang_console/ae350_observer.v
 // Module:      ae350_observer
 // Role:        実機で AE350 が動いているかを、CPU を通さずに見る回路 (= 2026-11-10)。
 //              50 MHz で動き、約 1 秒ごとに UART へ 1 行出す。

@@ -1,7 +1,7 @@
 // =============================================================
-// File:        ae350/rtl/ahb_sdram.v
+// File:        rtl/ahb_sdram.v
 // Module:      ahb_sdram
-// Role:        AE350 の DDR_H* (= 64 bit の AHB) を、Lapidary の SDRAM の制御 (= rtl/sdram_bridge.v) につなぐ回路
+// Role:        AE350 の DDR_H* (= 64 bit の AHB) を、SDRAM の制御 (= rtl/sdram_bridge.v) につなぐ回路
 //              (= 2026-11-11)。FPGA のロジック側の回路で、シミュレーションでも実機でも使う。
 //
 //   hclk (= DDR_CLK) の側                           sclk (= SDRAM のクロック) の側
@@ -40,11 +40,11 @@
 //     STAT_BASE + 0x1000          書くと記録を始める (= 数を 0 に戻す。256 個で止まる)。読むと、たまった数
 //     STAT_BASE + 0x2000 + 8 * i  i 番目の記録。下位 32 bit は HADDR。上位 32 bit は bit 0 HWRITE、bit 3〜1 HSIZE、
 //                                 bit 5〜4 HTRANS、bit 31〜8 DDR_CLK で数えた時刻
-//   使い方: ae350/board/tang_console/build.sh に TRACE=1 を付けて作る。CPU のプログラムから STAT_BASE + 0x1000 に書いて
+//   使い方: board/tang_console/build.sh に TRACE=1 を付けて作る。CPU のプログラムから STAT_BASE + 0x1000 に書いて
 //   始め、見たい処理の後で数と記録を読む。記録の回路が無いビルドでは、この番地はエラー応答になる
 //   使った例: 2026-11-12、カウンタの書きの転送の数が 2〜3 個ずれた件。記録で、AE350 の出す転送がすべて 32 bit の NONSEQ
 //   (= まとめた書き込みもバーストも無い) と分かり、ずれは N25F の書き込みのバッファをカウンタの読み出しが追い越した
-//   ため (= ae350/sw/probe.c の sdram_stat の fence) と切り分けた
+//   ため (= sw/probe.c の sdram_stat の fence) と切り分けた
 // =============================================================
 
 `default_nettype none

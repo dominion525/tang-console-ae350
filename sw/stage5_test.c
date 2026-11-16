@@ -1,13 +1,13 @@
 /*
  * 段 5 の確認用プログラム (2026-11-10)。
  * EXTS_H* (= CPU から FPGA 側の回路へ) と、ILM / DLM (= AE350 の中のメモリ) を確かめる。
- * UART に出す行は sw/stage5_expected.txt と比べる (= ae350/Makefile)。
+ * UART に出す行は sw/stage5_expected.txt と比べる (= Makefile)。
  *
- *   EXTS_H*   0xE800_0000〜0xE800_0FFF に FPGA 側の 4 KB の RAM (= ae350/rtl/ahb_sram.v)。その外はエラー応答
+ *   EXTS_H*   0xE800_0000〜0xE800_0FFF に FPGA 側の 4 KB の RAM (= rtl/ahb_sram.v)。その外はエラー応答
  *   ILM       0xA000_0000〜 (64 KB)。関数を写して実行する
  *   DLM       0xA020_0000〜 (64 KB)
  *
- * 戻り値は start.S が 0x0000_0000 に書き、TB (= ae350/tb/tb_mem.v) が表示する。
+ * 戻り値は start.S が 0x0000_0000 に書き、TB (= tb/tb_mem.v) が表示する。
  *   0x600D  全部通った
  *   1〜     最初に失敗した確認の番号 (= 下の check の番号)
  */

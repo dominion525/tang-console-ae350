@@ -1,16 +1,15 @@
 // =============================================================
-// File:        ae350/rtl/ae350_plic.v
+// File:        rtl/ae350_plic.v
 // Module:      ae350_plic
 // Role:        AE350 のモックの中の PLIC (= Andes NCEPLIC100 と同じ挙動、段 4、2026-11-10)。
 //              シミュレーション専用。ターゲットは 0 (= hart 0 の M モード、meip) と 1 (= S モード、seip) [実機]。
 //
-// 出典 (2026-11-10 に確かめた。資料の写しと行の索引は tasks/_shared/refs/ae350/README.md):
+// 出典 (2026-11-10 に確かめた):
 //   [AX45] AndesCore AX45MP-1C Processor Reference Manual (UM248) 18 章 NCEPLIC100
 //          (= Gowin の IPUG528 (AE250) 21 章も同じ文面)
 //   [BSP]  Gowin の AE350 の BSP (plic.h、ae350.h、ae350.c)
 //   [1031] Gowin MUG1031 3.1 (= 「Number of interrupt priorities: 15」。実機は 3 だった)
-//   [実機] Tang Console 138K (= チップの版 B) で読んだ値と挙動 (= 2026-11-10。ae350/sw/probe.c、記録は
-//          tasks/_shared/refs/ae350/measured/)
+//   [実機] Tang Console 138K (= チップの版 B) で読んだ値と挙動 (= 2026-11-10。sw/probe.c)
 //
 // Registers (= モックが 0xE400_0000 からのオフセットで渡す。32 bit のアクセスだけを受ける):
 //   0x00_0000          feature        R/W   bit0 PREEMPT、bit1 VECTORED。初期値 0 [AX45 18.4.1]
@@ -45,7 +44,7 @@
 //   0x1100 = 0x0002_001F (= ターゲット 2、ソース 31)、0x1104 = 0x0003_0001 (= 最大優先度 3、版 1)、0x1080 = 0、
 //   priority と threshold は下位 2 bit だけを持つ、claim はしきい値で絞る (= CLAIM_ABOVE_THRESHOLD = 1)、
 //   PREEMPT の claim / complete と PPS はこの作りどおり、PPS が空のときの complete は threshold を変えない。
-//   GP_INT[0] はソース 4、GP_INT[1〜15] はソース 11〜25 (= ae350/rtl/AE350_SOC.v の plic_src)
+//   GP_INT[0] はソース 4、GP_INT[1〜15] はソース 11〜25 (= rtl/AE350_SOC.v の plic_src)
 //
 // Ports:
 //   input  wire          clk / rst_n

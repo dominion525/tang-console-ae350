@@ -3,7 +3,7 @@
  *
  *   PLMT   0xE600_0000  MUG1029 表 15-1 の配置 (= hart 0)
  *   PLIC   0xE400_0000  Andes NCEPLIC100 (= RISC-V の PLIC の標準の配置 + Andes の拡張、ターゲット 0)
- *   GPINT  0xF800_1000  FPGA のロジック側のレジスタ (= ae350/rtl/apb_gpint.v)。下位 16 bit が GP_INT[15:0]
+ *   GPINT  0xF800_1000  FPGA のロジック側のレジスタ (= rtl/apb_gpint.v)。下位 16 bit が GP_INT[15:0]
  */
 
 #ifndef AE350_IRQ_H

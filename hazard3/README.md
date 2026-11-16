@@ -1,6 +1,6 @@
 # Hazard3 (コピー)
 
-AE350 のシミュレーション用モック (`ae350/rtl/AE350_SOC.v`) の中で CPU として使う。
+AE350 のシミュレーション用モック (`rtl/AE350_SOC.v`) の中で CPU として使う。
 実機には載らない。
 
 - 出どころ: https://github.com/Wren6991/Hazard3
@@ -21,4 +21,4 @@ hdl/hazard3_config_inst.vh  上の 3 つを渡す
 hdl/hazard3_csr.v        marchid と mimpid を、上のパラメータから返すようにした
 ```
 
-上流と比べるときは `git diff --no-index <上流の hdl> ae350/hazard3/hdl` で確かめる。
+上流と比べるときは `git diff --no-index <上流の hdl> hazard3/hdl` で確かめる。

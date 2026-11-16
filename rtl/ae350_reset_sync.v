@@ -1,5 +1,5 @@
 // =============================================================
-// File:        ae350/rtl/ae350_reset_sync.v
+// File:        rtl/ae350_reset_sync.v
 // Module:      ae350_reset_sync
 // Role:        リセットの同期 (= 段 4 の後、2026-11-10)。かかるのは非同期、解けるのは clk に同期 (= 2 段)。
 //              AE350 のモックで、クロックごとのリセット (= HRESETN / PRESETN / DDR_RSTN と CPU のリセット) を作る。

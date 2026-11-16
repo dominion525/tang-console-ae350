@@ -1,7 +1,7 @@
 # Hazard3 の版 (= build.sh の CPU=hazard3) のクロックの指定を、元の指定 (= top.sdc か、make_sdc_hs.rb が作ったもの) から作る。
 #   ruby make_sdc_hazard3.rb <元の指定> <書き出す先>
 #
-# モック (= ae350/rtl/AE350_SOC.v) は RTC_CLK を使わない (= PLMT は AHB_CLK で進む) ので、合成で rtc_clk の線が消える。
+# モック (= rtl/AE350_SOC.v) は RTC_CLK を使わない (= PLMT は AHB_CLK で進む) ので、合成で rtc_clk の線が消える。
 # rtc_clk の指定と、非同期のグループの rtc_clk を外す。CORE_CLK と AHB_CLK は、Hazard3 の版の 40 MHz と 50 MHz にする
 # (= top.v の AE350_CPU_HAZARD3)
 
