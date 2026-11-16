@@ -1,7 +1,7 @@
-# ボードの回路 (= board/tang_console/) を lint にかけるための、Gowin の部品 PLL の中身の無いモジュールを作る
-# (= 2026-11-12)。Gowin のシミュレーションのモデル (= simlib/gw5a/prim_sim.v) から、module PLL の頭 (= 口の並び) と、
-# 口とパラメータの宣言だけを取り出し、出力を 0 にしたモジュールを書く。Gowin のファイルから作るので、置き場は build/
-# (= コミットしない)。
+# ボードの回路 (board/tang_console/) を lint にかけるために、Gowin のプリミティブ PLL の空のモジュール (スタブ) を作る。
+# Gowin のシミュレーションモデル (simlib/gw5a/prim_sim.v) から、module PLL の先頭 (ポートの並び) と、
+# ポートとパラメータの宣言だけを取り出し、出力を 0 にしたモジュールを書き出す。Gowin のファイルから作るので、出力先は build/
+# (コミットしない)。
 #
 #   ruby tools/gowin_pll_stub.rb <prim_sim.v> <出力>
 

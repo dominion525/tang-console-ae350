@@ -1,4 +1,4 @@
-# Tang Console の AE350 の UART を、端末から読み書きする道具（macOS 専用）。
+# Tang Console の AE350 の UART を、端末から読み書きするスクリプト（macOS 専用）。
 #   ruby tools/ae350_uart.rb <ポート> [秒数]
 #
 # 受信したデータを標準出力に出し、標準入力から読んだデータを送信する。

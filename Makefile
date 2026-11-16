@@ -1,17 +1,18 @@
-# AE350 の Hazard3 の版 (= rtl/AE350_SOC.v) のシミュレーションと、プログラムのビルド
+# AE350 の Hazard3 版 (rtl/AE350_SOC.v) のシミュレーションと、プログラムのビルド
 #
-#   make check    下の 3 つを続けて流す
-#   make ports    Hazard3 の版とプリミティブのポートを比べる
-#   make lint     Verilator の lint (-Wall。Hazard3 と取り込んだ UART のファイルは対象にしない)
-#   make iverilog Icarus Verilog で読めるか (-g2001)
+#   make check    下の 3 つを続けて実行する
+#   make ports    Hazard3 版とプリミティブのポートを比べる
+#   make lint     Verilator の lint (-Wall。取り込んだ Hazard3 と UART のファイルは対象にしない)
+#   make iverilog Icarus Verilog で読み込めるか (-g2001)
 #
-#   make test     段 2〜4 の確認用プログラムを、待ちのサイクル数を変えて 2 回ずつ流す。
-#                 段 3 は sw/stage3_input.txt を UART に送り、段 3 と段 4 は UART に出た文字を
+#   make test     テストプログラム (stage2〜stage5) を、ウェイトサイクル数を変えて 2 回ずつ実行し、単体テストベンチ、
+#                 クロックの組み合わせ、途中のリセット、ランダムなウェイト、SDRAM の経路、ローダーなどのテストも実行する。
+#                 stage3 は sw/stage3_input.txt を UART に送り、stage3〜stage5 は UART に出力された文字を
 #                 sw/stage*_expected.txt と比べる
 
 GOWIN_PRIM ?= /Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/IDE/simlib/gw5a/prim_sim.v
 
-# newlib の場所は NEWLIB で渡す (= 既定値は持たない。作り方は README)。newlib を使うプログラムを作るときだけ、場所を確かめる
+# newlib の場所は NEWLIB で指定する (既定値は持たない。作り方は README)。newlib を使うプログラムをビルドするときだけ、場所を確かめる
 NEWLIB_CHECK = $(if $(wildcard $(NEWLIB)/include/stdio.h),,$(error NEWLIB に newlib の場所を指定する (= <場所>/include と <場所>/lib/rv32imac/ilp32 があるところ。作り方は README)))
 
 HZ3_SOC      := rtl/AE350_SOC.v
@@ -37,7 +38,7 @@ BUILD := build
 SIM   := $(BUILD)/tb_mem/Vtb_mem
 PLL_STUB   := $(BUILD)/gowin_pll_stub.v
 
-# DDR_H* の先を、実機と同じ SDRAM の経路にしたシミュレータ (= ahb_sdram → sdram_bridge → SDRAM のモデル)
+# DDR_H* の先を、実機と同じ SDRAM の経路にしたシミュレータ (ahb_sdram → sdram_bridge → SDRAM のモデル)
 SDRAM_SRCS  := rtl/ahb_sdram.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v
 SDRAM_FLAGS := -DTB_SDRAM
 SIM_SDRAM   := $(BUILD)/tb_sdram/Vtb_mem
@@ -46,9 +47,9 @@ SIM_SDRAM   := $(BUILD)/tb_sdram/Vtb_mem
 RISCV_PREFIX ?= riscv64-elf-
 SW_ARCH    := -march=rv32imac_zicsr_zifencei -mabi=ilp32
 SW_LDFLAGS := -nostdlib -nostartfiles -T sw/ae350.ld -Wl,--no-warn-rwx-segments
-# 段 2: C ライブラリを使わない
+# stage2: C ライブラリを使わない
 SW2_CFLAGS := $(SW_ARCH) -O2 -Wall -Wextra -ffreestanding
-# 段 3: newlib を使う
+# stage3 以降: newlib を使う
 SW3_CFLAGS = $(NEWLIB_CHECK)$(SW_ARCH) -O2 -Wall -Wextra -isystem $(NEWLIB)/include
 SW3_LIBS   = -L$(NEWLIB)/lib/rv32imac/ilp32 -Wl,--start-group -lc -lgcc -Wl,--end-group
 
@@ -64,14 +65,14 @@ lint: $(PLL_STUB)
 	verilator --lint-only $(VERILATOR_FLAGS) --timing --no-sched-zero-delay --top-module tb_mem $(RTL_SRCS) $(TB_SRCS)
 	verilator --lint-only $(VERILATOR_FLAGS) --top-module ae350_probe_top $(BOARD_SRCS)
 	verilator --lint-only $(VERILATOR_FLAGS) +define+SDRAM_HS +define+AE350_NO_OBSERVER +define+AHB_SDRAM_TRACE --top-module ae350_probe_top $(BOARD_SRCS)
-	@# ahb_ddr3 は DDR3 の IP (= 暗号化されていて Verilator では読めない) とつなぐので、単体で流す。頂点の口になるので、
-	@# 使わない htrans[0] (= ahb_sdram と同じく NONSEQ と SEQ を区別しない) の警告だけを外す
+	@# ahb_ddr3 は DDR3 の IP (暗号化されていて Verilator では読めない) につなぐので、単体で lint にかける。トップのポートになるので、
+	@# 使わない htrans[0] (ahb_sdram と同じく NONSEQ と SEQ を区別しない) の警告だけを外す
 	verilator --lint-only $(VERILATOR_FLAGS) -Wno-UNUSEDSIGNAL --top-module ahb_ddr3 rtl/ahb_ddr3.v
 	verilator --lint-only $(VERILATOR_FLAGS) -Wno-UNUSEDSIGNAL --top-module ahb_litedram rtl/ahb_litedram.v
 
-# ボードの回路 (= board/tang_console/top.v) の lint。Gowin の部品のうち PLL は、Gowin のモデルから作った中身の無いモジュール、
-# IO の部品 (= sdram_io.v の ODDR / IDDR / IOBUF / IODELAY) は TB のモデルで置き換える。定義で回路が変わるので、既定 (= probe、
-# 20 MHz 版、観測の回路あり) と全部入り (= 166.7 MHz 版、観測の回路なし、転送の記録あり) の 2 通りで流す
+# ボードの回路 (board/tang_console/top.v) の lint。Gowin のプリミティブのうち PLL は、Gowin のモデルから作った空のモジュールに、
+# IO のプリミティブ (sdram_io.v の ODDR、IDDR、IOBUF、IODELAY) はテストベンチ用のモデルに置き換える。マクロで回路が変わるので、
+# 既定の構成 (probe、20 MHz 版、監視回路あり) と、すべてを入れた構成 (166.7 MHz 版、監視回路なし、転送の記録あり) の 2 通りで実行する
 BOARD_SRCS := $(RTL_SRCS) rtl/ahb_rom.v rtl/ahb_sdram.v rtl/sdram_ctrl_hs.v rtl/sdram_io.v rtl/sdram_bridge.v rtl/reset_gen.v \
               tb/gowin_io_models.v $(PLL_STUB) board/tang_console/ae350_pll.v board/tang_console/sdram_pll.v \
               board/tang_console/ae350_observer.v board/tang_console/top.v
@@ -103,24 +104,24 @@ $(BUILD)/stage5.elf: $(SW_COMMON) sw/stage5_test.c sw/syscalls.c sw/uart.h sw/ir
 	mkdir -p $(BUILD)
 	$(RISCV_PREFIX)gcc $(SW3_CFLAGS) $(SW_COMMON) sw/stage5_test.c sw/syscalls.c $(SW_LDFLAGS) $(SW3_LIBS) -o $@
 
-# 転送の種類ごとの 1 回あたりのサイクル数を測る (= バスの組み直しの前後で比べる)
+# 転送の種類ごとに、1 回あたりのサイクル数を測る (バスの構成を変える前後で比べるため)
 $(BUILD)/bench.elf: $(SW_COMMON) sw/bench.c sw/syscalls.c sw/uart.h sw/irq.h sw/ae350.ld
 	mkdir -p $(BUILD)
 	$(RISCV_PREFIX)gcc $(SW3_CFLAGS) $(SW_COMMON) sw/bench.c sw/syscalls.c $(SW_LDFLAGS) $(SW3_LIBS) -o $@
 
-# 実機の値を読むプログラム (= board/tang_console/ の構成。ROM はブロック RAM、データは DLM)
+# 実機の値を読むプログラム (board/tang_console/ の構成。ROM はブロック RAM、データは DLM)
 $(BUILD)/probe.elf: sw/start.S sw/trap.c sw/probe.c sw/uart.h sw/trap.h sw/board.ld
 	mkdir -p $(BUILD)
 	$(RISCV_PREFIX)gcc $(SW2_CFLAGS) $(SW_COMMON) sw/probe.c -nostdlib -nostartfiles -T sw/board.ld -Wl,--no-warn-rwx-segments -lgcc -o $@
 
-# ROM に置くローダー (= UART でプログラムを受けて SDRAM に書き、別の命令でそこへ飛ぶ。ROM と DLM の置き方は probe と同じ)
+# ROM に置くローダー (UART でプログラムを受信して外部メモリに書き込み、別のコマンドでそこへジャンプする。ROM と DLM の配置は probe と同じ)
 $(BUILD)/loader.elf: sw/start.S sw/trap.c sw/loader.c sw/uart.h sw/board.ld
 	mkdir -p $(BUILD)
 	$(RISCV_PREFIX)gcc $(SW2_CFLAGS) $(SW_COMMON) sw/loader.c -nostdlib -nostartfiles -T sw/board.ld -Wl,--no-warn-rwx-segments -lgcc -o $@
 
-# SDRAM で動かすプログラム (= ROM のローダーで送る。sw/sdram.ld。main から戻るとローダーへ戻る)。送る中身は .bin
+# 外部メモリで実行するプログラム (ROM のローダーで送る。sw/sdram.ld。main から戻るとローダーに戻る)。送るのは .bin
 SDRAM_PROG_LDFLAGS := -DSTART_RETURN_TO_ROM -nostdlib -nostartfiles -T sw/sdram.ld -Wl,--no-warn-rwx-segments
-# ILM で動かすプログラム (= sw/ilm.ld。命令とデータを CPU のそばのメモリに置く)
+# ILM で実行するプログラム (sw/ilm.ld。命令とデータを CPU の近くのメモリに置く)
 ILM_PROG_LDFLAGS   := -DSTART_RETURN_TO_ROM -nostdlib -nostartfiles -T sw/ilm.ld -Wl,--no-warn-rwx-segments
 $(BUILD)/hello.elf: $(SW_COMMON) sw/hello.c sw/syscalls.c sw/uart.h sw/sdram.ld
 	mkdir -p $(BUILD)
@@ -141,14 +142,14 @@ $(SIM): $(RTL_SRCS) $(TB_SRCS) tools/lint.vlt
 	mkdir -p $(BUILD)
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) --top-module tb_mem -Mdir $(BUILD)/tb_mem $(RTL_SRCS) $(TB_SRCS)
 
-# 1 回流す: $(1) = プログラム名、$(2) = ROM の待ち、$(3) = DDR の待ち、$(4) = ほかの plusarg。
+# 1 回実行する: $(1) = プログラム名、$(2) = ROM のウェイト、$(3) = DDR のウェイト、$(4) = その他の plusarg。
 # 出力は $(BUILD)/<名前>_w<ROM><DDR>.log
 define run_sim
 	$(SIM) +rom=$(BUILD)/$(1).hex +rom_wait=$(2) +ddr_wait=$(3) $(4) > $(BUILD)/$(1)_w$(2)$(3).log 2>&1; \
 	status=$$?; cat $(BUILD)/$(1)_w$(2)$(3).log; exit $$status
 endef
 
-# 1 回流して出力を比べる: $(1) = プログラム名、$(2) = ログの名前、$(3) = plusarg
+# 1 回実行して出力を比べる: $(1) = プログラム名、$(2) = ログの名前、$(3) = plusarg
 define run_cmp
 	$(SIM) +rom=$(BUILD)/$(1).hex $(3) > $(BUILD)/$(2).log 2>&1; status=$$?; cat $(BUILD)/$(2).log; exit $$status
 	sed -n 's/^UART: //p' $(BUILD)/$(2).log | diff sw/$(1)_expected.txt -
@@ -156,8 +157,8 @@ endef
 
 test: test-plic test-sram test-sdram-unit test-sdram-io test-sdram-pll test-sdram-hs-unit test-stage2 test-stage3 test-stage4 test-stage5 test-clocks test-reset test-random test-sdram test-sdram-hs test-loader test-uart-reset test-uart-tool
 
-# ROM のローダーのテスト (= tools/loader_test.rb が手順と期待を作る)。シミュレーション用のローダーは、時間切れを
-# 200,000 mcycle (= 250 µs) にする (= 実機は 1 秒)。送るのは実機の 1.25 Mbps と同じ間隔なので、hello は数分かかる
+# ROM のローダーのテスト (tools/loader_test.rb が手順と期待の出力を作る)。シミュレーション用のローダーは、タイムアウトを
+# 200,000 mcycle (250 µs) にする (実機は 1 秒)。送信は実機の 1.25 Mbps と同じ間隔で行うので、hello は数分かかる
 $(BUILD)/loader_sim.elf: sw/start.S sw/trap.c sw/loader.c sw/uart.h sw/board.ld
 	mkdir -p $(BUILD)
 	$(RISCV_PREFIX)gcc $(SW2_CFLAGS) -DLOADER_TIMEOUT_MCYCLE=200000 $(SW_COMMON) sw/loader.c -nostdlib -nostartfiles -T sw/board.ld -Wl,--no-warn-rwx-segments -lgcc -o $@
@@ -169,7 +170,7 @@ $(BUILD)/sdram_min.elf: $(SW_COMMON) sw/sdram_min.c sw/sdram.ld
 $(BUILD)/sdram_min.bin: $(BUILD)/sdram_min.elf
 	$(RISCV_PREFIX)objcopy -O binary $< $@
 
-# 同じプログラムを ILM に置いたもの (= ローダーが ILM に書いて run できることを確かめる)
+# 同じプログラムを ILM に置いたもの (ローダーが ILM に書き込んで run できることを確かめる)
 $(BUILD)/ilm_min.elf: $(SW_COMMON) sw/sdram_min.c sw/ilm.ld
 	mkdir -p $(BUILD)
 	$(RISCV_PREFIX)gcc $(SW2_CFLAGS) $(SW_COMMON) sw/sdram_min.c $(ILM_PROG_LDFLAGS) -lgcc -o $@
@@ -177,12 +178,12 @@ $(BUILD)/ilm_min.elf: $(SW_COMMON) sw/sdram_min.c sw/ilm.ld
 $(BUILD)/ilm_min.bin: $(BUILD)/ilm_min.elf
 	$(RISCV_PREFIX)objcopy -O binary $< $@
 
-# 命令の読み出しとデータの読み出しに何クロックかかるかを測る (= ILM に置く。実機でローダーで送る)
+# 命令フェッチとデータの読み出しに何クロックかかるかを測る (ILM に置く。実機ではローダーで送る)
 $(BUILD)/fetch_probe.elf: $(SW_COMMON) sw/fetch_probe.c sw/syscalls.c sw/ilm.ld
 	mkdir -p $(BUILD)
 	$(RISCV_PREFIX)gcc $(SW3_CFLAGS) $(SW_COMMON) sw/fetch_probe.c sw/syscalls.c $(ILM_PROG_LDFLAGS) $(SW3_LIBS) -o $@
 
-# DDR_H* の先の DDR3 (= board/tang_console/build.sh の MEM=ddr3) に書いて読み返す (= ILM に置く。実機でローダーで送る)
+# DDR_H* の先の DDR3 (board/tang_console/build.sh の MEM=ddr3) に書き込んで読み返す (ILM に置く。実機ではローダーで送る)
 $(BUILD)/ddr3_check.elf: $(SW_COMMON) sw/ddr3_check.c sw/syscalls.c sw/trap.h sw/ilm.ld
 	mkdir -p $(BUILD)
 	$(RISCV_PREFIX)gcc $(SW3_CFLAGS) $(SW_COMMON) sw/ddr3_check.c sw/syscalls.c $(ILM_PROG_LDFLAGS) $(SW3_LIBS) -o $@
@@ -190,7 +191,7 @@ $(BUILD)/ddr3_check.elf: $(SW_COMMON) sw/ddr3_check.c sw/syscalls.c sw/trap.h sw
 $(BUILD)/ddr3_check.bin: $(BUILD)/ddr3_check.elf
 	$(RISCV_PREFIX)objcopy -O binary $< $@
 
-# 同じものを 512 MB (= LiteDRAM の版、build.sh の MEM=litedram) に合わせたもの
+# 同じものを、DDR3 1 個 (512 MB) の構成に合わせたもの
 $(BUILD)/ddr3_check_512.elf: $(SW_COMMON) sw/ddr3_check.c sw/syscalls.c sw/trap.h sw/ilm.ld
 	mkdir -p $(BUILD)
 	$(RISCV_PREFIX)gcc $(SW3_CFLAGS) -DDDR3_BITS=29 $(SW_COMMON) sw/ddr3_check.c sw/syscalls.c $(ILM_PROG_LDFLAGS) $(SW3_LIBS) -o $@
@@ -198,7 +199,7 @@ $(BUILD)/ddr3_check_512.elf: $(SW_COMMON) sw/ddr3_check.c sw/syscalls.c sw/trap.
 $(BUILD)/ddr3_check_512.bin: $(BUILD)/ddr3_check_512.elf
 	$(RISCV_PREFIX)objcopy -O binary $< $@
 
-# DDR_H* の先のメモリ (= SDRAM か DDR3) への 1 回の読み書きのクロック数を測る (= ILM に置く。実機でローダーで送る)
+# DDR_H* の先のメモリ (SDRAM か DDR3) への 1 回の読み書きにかかるクロック数を測る (ILM に置く。実機ではローダーで送る)
 $(BUILD)/mem_bench.elf: $(SW_COMMON) sw/mem_bench.c sw/syscalls.c sw/trap.h sw/uart.h sw/ilm.ld
 	mkdir -p $(BUILD)
 	$(RISCV_PREFIX)gcc $(SW3_CFLAGS) $(SW_COMMON) sw/mem_bench.c sw/syscalls.c $(ILM_PROG_LDFLAGS) $(SW3_LIBS) -o $@
@@ -210,7 +211,7 @@ $(BUILD)/time_probe.elf: $(SW_COMMON) sw/time_probe.c sw/syscalls.c sw/trap.h sw
 	mkdir -p $(BUILD)
 	$(RISCV_PREFIX)gcc $(SW3_CFLAGS) $(SW_COMMON) sw/time_probe.c sw/syscalls.c $(ILM_PROG_LDFLAGS) $(SW3_LIBS) -o $@
 
-# mcycle と mtime の差が、キャッシュを入れると短い間隔でだけ合わなくなる件を調べる (= ILM に置く。実機でローダーで送る)
+# キャッシュを有効にすると、短い間隔でだけ mcycle と mtime の差が合わなくなる現象を調べる (ILM に置く。実機ではローダーで送る)
 $(BUILD)/time_probe.bin: $(BUILD)/time_probe.elf
 	$(RISCV_PREFIX)objcopy -O binary $< $@
 
@@ -225,10 +226,10 @@ $(BUILD)/sdram_hang.elf: $(SW_COMMON) sw/sdram_hang.c sw/sdram.ld
 $(BUILD)/sdram_hang.bin: $(BUILD)/sdram_hang.elf
 	$(RISCV_PREFIX)objcopy -O binary $< $@
 
-# CoreMark (= EEMBC。ソースは Apache-2.0、名前は EEMBC の取り決め。リポジトリには取り込まず、決めたコミットを build/ に
-# 取ってきて、チェックサムで照らしてから使う。一度取ってきたら使い回す)。この構成に合わせる部分は sw/coremark/
-#   build/coremark_sim.hex  シミュレーション用。ROM に置き (= sw/ae350.ld)、くり返しは 1 回 (= 結果が正しいかだけを見る)
-#   build/coremark.bin      実機用。SDRAM に置き (= sw/sdram.ld、ローダーで送る)、くり返しは自動 (= 10 秒以上になる回数)
+# CoreMark (EEMBC。ソースは Apache-2.0、名前の使用は EEMBC の規定に従う。リポジトリには含めず、決めたコミットを build/ に
+# 取得し、チェックサムで照合してから使う。一度取得したものは再利用する)。この構成に合わせる部分は sw/coremark/
+#   build/coremark_sim.hex  シミュレーション用。ROM に置き (sw/ae350.ld)、繰り返しは 1 回 (結果が正しいかだけを見る)
+#   build/coremark.bin      実機用。外部メモリに置き (sw/sdram.ld。ローダーで送る)、繰り返しは自動 (10 秒以上になる回数)
 COREMARK_SHA  := 1f483d5b8316753a742cbf5590caf5bd0a4e4777
 COREMARK_SUM  := 4067e7f260218df13f2875d8f821a8ff32a84153c6e0759d7c89f96c0a8bf987
 COREMARK_DIR  := $(BUILD)/coremark-$(COREMARK_SHA)
@@ -259,11 +260,11 @@ $(BUILD)/coremark_ilm.elf: $(COREMARK_DIR)/core_main.c sw/coremark/core_portme.c
 $(BUILD)/coremark_ilm.bin: $(BUILD)/coremark_ilm.elf
 	$(RISCV_PREFIX)objcopy -O binary $< $@
 
-# 公表値 (= Hazard3 の README の RP2350 の値) と同じ速さのための指定で作った ILM の CoreMark (= 2026-11-13)。C 拡張を使わない
-# (= rv32ima) ので、libgcc は C 拡張を使う版 (= rv32imac。測る区間の外の、整数の割り算などで使う) を名指しで使う。コードが
-# 大きくなり newlib の printf と合わせると ILM に収まらないので、CoreMark の小さい printf (= barebones/ee_printf.c) を使い、小数も
-# 使わない (= HAS_FLOAT=0。秒と 1 秒あたりの回数は整数で出る。点数は mcycle とくり返しの回数から出す)。
-# ee_printf.c の uart_send_char は「ここに書け」という #error だけなので、core_portme.c の ae350_uart_putc を呼ぶ形に差し替えて写す
+# 公表値 (Hazard3 の README にある RP2350 の値) と同じオプションでビルドした、ILM に置く CoreMark。C 拡張を使わない
+# (rv32ima) ので、libgcc は C 拡張を使う版 (rv32imac。計測区間の外の、整数の割り算などで使う) を明示して使う。コードが
+# 大きくなり、newlib の printf と合わせると ILM に収まらないので、CoreMark の簡易 printf (barebones/ee_printf.c) を使い、浮動小数点も
+# 使わない (HAS_FLOAT=0。秒と 1 秒あたりの回数は整数で出力される。スコアは mcycle と繰り返しの回数から出す)。
+# ee_printf.c の uart_send_char は「ここに実装を書く」という #error だけなので、core_portme.c の ae350_uart_putc を呼ぶ形に書き換えてコピーする
 PUB_OPT     := -O3 -mbranch-cost=1 -funroll-all-loops --param max-inline-insns-auto=200 -finline-limit=10000 \
                -fno-code-hoisting -fno-if-conversion2 -falign-functions=4 -falign-jumps=4 -falign-loops=4
 PUB_ARCH    := -march=rv32ima_zicsr_zifencei -mabi=ilp32
@@ -290,10 +291,10 @@ $(BUILD)/coremark.bin: $(BUILD)/coremark.elf
 	$(RISCV_PREFIX)objdump -d -h $< > $(BUILD)/coremark.dis
 	$(RISCV_PREFIX)objcopy -O binary $< $@
 
-# CoreMark をシミュレーションの Hazard3 の版で 1 回くり返し、結果が正しいかを見る。10 秒より短いと CoreMark は
-# 「Errors detected」を出す (= 時間の決まりで誤りの数に 1 を足す) ので、3 つの CRC が 2K performance run の正しい値
-# (= core_main.c の表の 3 番目) であることと、CRC の誤りの行が無いことで見る。main の戻り値は 0 なので、TB は
-# 「失敗」で終わる (= 終了コードは見ない)。CoreMark を取ってくるのにネットが要るので、make test には入れない
+# CoreMark をシミュレーションの Hazard3 版で 1 回繰り返し、結果が正しいかを確かめる。実行時間が 10 秒より短いと、CoreMark は
+# 「Errors detected」を出力する (実行時間の規定を満たさないとエラー数に 1 を加える) ので、3 つの CRC が 2K performance run の正しい値
+# (core_main.c の表の 3 番目) であることと、CRC のエラーの行がないことで判定する。main の戻り値は 0 なので、テストベンチは
+# 「失敗」で終わる (終了コードは見ない)。CoreMark の取得にネットワークが必要なので、make test には含めない
 .PHONY: coremark-sim
 coremark-sim: $(SIM) $(BUILD)/coremark_sim.hex
 	-$(SIM) +rom=$(BUILD)/coremark_sim.hex +max_cycles=200000000 > $(BUILD)/coremark_sim.log 2>&1
@@ -313,18 +314,18 @@ test-loader: $(SIM_SDRAM) $(BUILD)/loader_sim.hex $(BUILD)/ilm_min.bin $(BUILD)/
 	$(SIM_SDRAM) +rom=$(BUILD)/loader_sim.hex +uart_script=$(BUILD)/loader_hello.txt +max_cycles=80000000 > $(BUILD)/loader_hello.log 2>&1; status=$$?; cat $(BUILD)/loader_hello.log; exit $$status
 	sed -n 's/^UART: //p' $(BUILD)/loader_hello.log | tr -d '\r' | diff $(BUILD)/loader_hello_expected.txt -
 
-# 待ちを転送ごとに乱数で決めて (= ROM / DDR とも 0〜3 サイクル)、種を 3 つ変えて段 2〜5 を流す
+# ウェイトを転送ごとにランダムに決め (ROM と DDR とも 0〜3 サイクル)、乱数の種を 3 つ変えて stage2〜stage5 を実行する
 RAND := +rom_wait_rand=3 +ddr_wait_rand=3
 
-# DDR_H* の先を SDRAM の経路にして、段 3〜5 を流す (= SDRAM は 1 回の転送が遅いので、打ち切りのサイクル数を広げる)。
-# 段 2 は、TB の DDR のモデルにエラーを返させる確認 (= +ddr_err) を含むので流さない
+# DDR_H* の先を SDRAM の経路にして、stage3〜stage5 を実行する (SDRAM は 1 回の転送が遅いので、打ち切りのサイクル数を増やす)。
+# stage2 は、テストベンチの DDR のモデルにエラーを返させる確認 (+ddr_err) を含むので実行しない
 $(SIM_SDRAM): $(RTL_SRCS) $(TB_SRCS) $(SDRAM_SRCS) tools/lint.vlt
 	mkdir -p $(BUILD)
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(SDRAM_FLAGS) --top-module tb_mem -Mdir $(BUILD)/tb_sdram $(RTL_SRCS) $(TB_SRCS) $(SDRAM_SRCS)
 
 SDRAM_RUN := +max_cycles=20000000
 
-# ahb_sdram の単体の TB (= ahb_sdram → sdram_bridge → SDRAM のモデル)
+# ahb_sdram の単体テストベンチ (ahb_sdram → sdram_bridge → SDRAM のモデル)
 SIM_SDRAM_UNIT := $(BUILD)/sdram_tb/Vsdram_tb
 
 $(SIM_SDRAM_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v tools/lint.vlt
@@ -332,14 +333,14 @@ $(SIM_SDRAM_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v rtl/sdram_bridge.v tb/vendor/ze
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) --top-module sdram_tb -Mdir $(BUILD)/sdram_tb \
 		rtl/ahb_sdram.v tb/sdram_tb.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v
 
-# sdram_io (= SDRAM のピンまわり、166.7 MHz 版の部品) の単体の TB。Gowin の IO の部品は TB 用のモデル
+# sdram_io (SDRAM のピン周りの回路。166.7 MHz 版で使う) の単体テストベンチ。Gowin の IO プリミティブはテストベンチ用のモデル
 SIM_SDRAM_IO := $(BUILD)/sdram_io_tb/Vsdram_io_tb
 
 $(SIM_SDRAM_IO): rtl/sdram_io.v tb/sdram_io_tb.v tb/gowin_io_models.v tools/lint.vlt
 	mkdir -p $(BUILD)
 	verilator --binary --timing $(VERILATOR_FLAGS) --top-module sdram_io_tb -Mdir $(BUILD)/sdram_io_tb rtl/sdram_io.v tb/sdram_io_tb.v tb/gowin_io_models.v
 
-# uart_reset_seq (= UART の合図で AE350 をリセットする回路) の単体の TB
+# uart_reset_seq (UART のリセットシーケンスで AE350 をリセットする回路) の単体テストベンチ
 SIM_UART_RESET := $(BUILD)/uart_reset_seq_tb/Vuart_reset_seq_tb
 $(SIM_UART_RESET): rtl/uart_reset_seq.v tb/uart_reset_seq_tb.v rtl/vendor/verilog-uart/uart_rx.v tools/lint.vlt
 	mkdir -p $(BUILD)
@@ -349,7 +350,7 @@ $(SIM_UART_RESET): rtl/uart_reset_seq.v tb/uart_reset_seq_tb.v rtl/vendor/verilo
 test-uart-reset: $(SIM_UART_RESET)
 	$(SIM_UART_RESET)
 
-# tools/ae350_uart.rb のテスト (= シリアルポートの代わりに UNIX ドメインソケットを使う。速度の設定は実機でしか確かめられない)
+# tools/ae350_uart.rb のテスト (シリアルポートの代わりに UNIX ドメインソケットを使う。速度の設定は実機でしか確かめられない)
 .PHONY: test-uart-tool
 test-uart-tool:
 	ruby tools/test_ae350_uart.rb
@@ -358,8 +359,8 @@ test-uart-tool:
 test-sdram-io: $(SIM_SDRAM_IO)
 	$(SIM_SDRAM_IO)
 
-# sdram_pll (= 2 つ目の PLL) を Gowin の PLL のモデルで確かめる (= iverilog。モデルは tools/prim_sim_gw5a.rb で
-# 静的な位相の指定を直したものを build/ に作る。Gowin のファイルなのでコミットしない)
+# sdram_pll (2 つ目の PLL) を Gowin の PLL のモデルで確かめる (iverilog。モデルは、tools/prim_sim_gw5a.rb で
+# 固定の位相の設定を直したものを build/ に作る。Gowin のファイルなのでコミットしない)
 GOWIN_SIMLIB ?= /Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/IDE/simlib
 PRIM_SIM_GW5A := $(BUILD)/prim_sim_gw5a.v
 
@@ -375,8 +376,8 @@ $(BUILD)/sdram_pll_tb.vvp: board/tang_console/sdram_pll.v tb/sdram_pll_tb.v $(PR
 test-sdram-pll: $(BUILD)/sdram_pll_tb.vvp
 	vvp -n $(BUILD)/sdram_pll_tb.vvp
 
-# 166.7 MHz 版の経路 (= sdram_ctrl_hs → sdram_io → ボードの遅れ → SDRAM のモデル) で、ahb_sdram の単体の TB を流す
-# +cap_phase=<0〜47> (= c_clk の位相、0.125 ns 刻み)、+board_ps=<ps> (= ボードの片道の遅れ)
+# 166.7 MHz 版の経路 (sdram_ctrl_hs → sdram_io → ボード上の遅延 → SDRAM のモデル) で、ahb_sdram の単体テストベンチを実行する
+# +cap_phase=<0〜47> (c_clk の位相、0.125 ns ステップ)、+board_ps=<ps> (ボード上の片道の遅延)
 HS_SRCS            := rtl/sdram_ctrl_hs.v rtl/sdram_io.v tb/gowin_io_models.v tb/sdram_hs_path.v tb/vendor/zeitlos/sdram_model.v
 SIM_SDRAM_HS_UNIT  := $(BUILD)/sdram_hs_tb/Vsdram_tb
 
@@ -385,7 +386,7 @@ $(SIM_SDRAM_HS_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v $(HS_SRCS) tools/lint.vlt
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) -DSDRAM_HS --top-module sdram_tb -Mdir $(BUILD)/sdram_hs_tb \
 		rtl/ahb_sdram.v tb/sdram_tb.v $(HS_SRCS)
 
-# 166.7 MHz 版の経路で、段 3〜5 を流す
+# 166.7 MHz 版の経路で、stage3〜stage5 を実行する
 SIM_SDRAM_HS := $(BUILD)/tb_sdram_hs/Vtb_mem
 
 $(SIM_SDRAM_HS): $(RTL_SRCS) $(TB_SRCS) rtl/ahb_sdram.v $(HS_SRCS) tools/lint.vlt
@@ -435,8 +436,8 @@ test-random: $(SIM) $(BUILD)/stage2.hex $(BUILD)/stage3.hex $(BUILD)/stage4.hex 
 		echo "種 $$seed: 段 2〜5 合格"; \
 	done
 
-# 実機の値を読むプログラムをシミュレーションで流す (= 出力の形を、実機に載せる前に確かめる)。実機の構成と同じく、
-# DDR_H* の先を SDRAM の経路にしたシミュレータで流す
+# 実機の値を読むプログラムをシミュレーションで実行する (出力の形式を、実機で動かす前に確かめるため)。実機の構成と同じく、
+# DDR_H* の先を SDRAM の経路にしたシミュレータで実行する
 .PHONY: run-probe
 run-probe: $(SIM_SDRAM) $(BUILD)/probe.hex
 	$(SIM_SDRAM) +rom=$(BUILD)/probe.hex $(SDRAM_RUN) > $(BUILD)/probe.log 2>&1; status=$$?; grep '^UART: \|^結果\|Fatal' $(BUILD)/probe.log; exit $$status
@@ -445,17 +446,17 @@ run-probe: $(SIM_SDRAM) $(BUILD)/probe.hex
 bench: $(SIM) $(BUILD)/bench.hex
 	$(SIM) +rom=$(BUILD)/bench.hex > $(BUILD)/bench.log 2>&1; status=$$?; grep '^UART: \|^結果' $(BUILD)/bench.log; exit $$status
 
-# 動作の途中でリセットをかけ、リセットの後に段 4 が最初から正しく動くことを見る (= 「途中のリセット」の行より後の
-# UART の出力を比べる)。AHB_CLK 200000 サイクル目は、段 4 の PLIC の確認の途中
+# 動作の途中でリセットをかけ、リセットの後に stage4 が最初から正しく動くことを確かめる (「途中のリセット」の行より後の
+# UART の出力を比べる)。AHB_CLK の 200000 サイクル目は、stage4 の PLIC の確認の途中
 .PHONY: test-reset
 test-reset: $(SIM) $(BUILD)/stage4.hex sw/stage4_expected.txt
 	$(SIM) +rom=$(BUILD)/stage4.hex +reset_at=200000 > $(BUILD)/stage4_reset.log 2>&1; status=$$?; cat $(BUILD)/stage4_reset.log; exit $$status
 	grep -q '^途中のリセット' $(BUILD)/stage4_reset.log
 	sed -n '/^途中のリセット/,$$p' $(BUILD)/stage4_reset.log | sed -n 's/^UART: //p' | diff sw/stage4_expected.txt -
 
-# クロックの組み合わせを変えて流す (= 既定のリファレンスの周波数のほかに、乗せ換えがどの比でも動くことを見る)
-#   same   全部 100 MHz
-#   odd    CORE 50 (= バスより遅い)、AHB 100、APB 33、DDR 133 MHz
+# クロックの組み合わせを変えて実行する (既定のリファレンスデザインの周波数のほかに、クロック乗せ換えがどの比でも動くことを確かめる)
+#   same   すべて 100 MHz
+#   odd    CORE 50 MHz (バスより遅い)、AHB 100 MHz、APB 33 MHz、DDR 133 MHz
 CLK_SAME := +core_hp=5000 +ahb_hp=5000 +apb_hp=5000 +ddr_hp=5000
 CLK_ODD  := +core_hp=10000 +ahb_hp=5000 +apb_hp=15151 +ddr_hp=3759
 
@@ -468,7 +469,7 @@ test-clocks: $(SIM) $(BUILD)/stage3.hex $(BUILD)/stage4.hex $(BUILD)/stage5.hex 
 	$(call run_cmp,stage5,stage5_same,$(CLK_SAME) +rom_wait=1 +ddr_wait=2 $(STAGE5_EXTM))
 	$(call run_cmp,stage5,stage5_odd,$(CLK_ODD) +rom_wait=1 +ddr_wait=2 $(STAGE5_EXTM))
 
-# PLIC の単体の TB (= エッジのソースと、claim がしきい値で絞らない構成)
+# PLIC の単体テストベンチ (エッジのソースと、claim をしきい値で絞らない構成)
 SIM_PLIC := $(BUILD)/plic_tb/Vplic_tb
 
 $(SIM_PLIC): rtl/ae350_plic.v tb/plic_tb.v tools/lint.vlt
@@ -479,7 +480,7 @@ $(SIM_PLIC): rtl/ae350_plic.v tb/plic_tb.v tools/lint.vlt
 test-plic: $(SIM_PLIC)
 	$(SIM_PLIC)
 
-# EXTS_H* の先の RAM の単体の TB (= AHB のパイプラインで、書いた直後に同じ word を読む)
+# EXTS_H* の先の RAM の単体テストベンチ (AHB のパイプラインで、書き込んだ直後に同じワードを読む)
 SIM_SRAM := $(BUILD)/sram_tb/Vsram_tb
 
 $(SIM_SRAM): rtl/ahb_sram.v tb/sram_tb.v tools/lint.vlt
@@ -490,7 +491,7 @@ $(SIM_SRAM): rtl/ahb_sram.v tb/sram_tb.v tools/lint.vlt
 test-sram: $(SIM_SRAM)
 	$(SIM_SRAM)
 
-# 段 2 のプログラムは、メモリのエラー応答を確かめる (= sw/stage2_test.c の 15〜17)
+# stage2 は、メモリのエラー応答を確かめる (sw/stage2_test.c の 15〜17)
 STAGE2_ERR := +rom_err=8000F000 +ddr_err=00008000
 
 test-stage2: $(SIM) $(BUILD)/stage2.hex
@@ -510,8 +511,8 @@ test-stage4: $(SIM) $(BUILD)/stage4.hex sw/stage4_expected.txt
 	sed -n 's/^UART: //p' $(BUILD)/stage4_w12.log | diff sw/stage4_expected.txt -
 
 # --- 4 値のシミュレーション (iverilog) ---
-# 不定値 (X / Z) を扱うシミュレータで同じ TB を流し、TB の不定値の検査 (= バスの信号、割り込み、TXD) と、
-# 初期化されていない値が結果に効かないことを確かめる。iverilog は Verilator より遅いので、別のターゲットにする
+# 不定値 (X、Z) を扱うシミュレータで同じテストベンチを実行し、テストベンチの不定値の検査 (バスの信号、割り込み、TXD) と、
+# 初期化されていない値が結果に影響しないことを確かめる。iverilog は Verilator より遅いので、別のターゲットにする
 SIM_IV := $(BUILD)/tb_iv.vvp
 
 $(SIM_IV): $(RTL_SRCS) $(TB_SRCS)
@@ -530,7 +531,7 @@ test-iverilog: $(SIM_IV) $(BUILD)/stage2.hex $(BUILD)/stage3.hex $(BUILD)/stage4
 	sed -n 's/^UART: //p' $(BUILD)/stage5_iv.log | diff sw/stage5_expected.txt -
 
 .PHONY: test-stage5
-# 段 5 は、EXTM_H* の手順 (= sw/stage5_extm.txt) と背景の転送を TB のマスタのモデルで流す
+# stage5 は、EXTM_H* の手順 (sw/stage5_extm.txt) と背景の転送を、テストベンチのマスタのモデルで実行する
 STAGE5_EXTM := +extm_cmd=sw/stage5_extm.txt +extm_bg=1
 
 test-stage5: $(SIM) $(BUILD)/stage5.hex sw/stage5_expected.txt sw/stage5_extm.txt
@@ -540,10 +541,10 @@ test-stage5: $(SIM) $(BUILD)/stage5.hex sw/stage5_expected.txt sw/stage5_extm.tx
 	sed -n 's/^UART: //p' $(BUILD)/stage5_w12.log | diff sw/stage5_expected.txt -
 
 # --- カバレッジ (Verilator の行とトグル) ---
-# test と同じ範囲 (= 段 2〜4 の固定の待ち、クロックの組み合わせ、途中のリセット、乱数の待ち、PLIC の単体の TB) を、
-# カバレッジを数える形で作った TB で流し、まとめる。数える対象は tools/coverage.vlt。
-#   $(BUILD)/cov/all.dat           全部の実行をまとめたもの
-#   $(BUILD)/cov/annotated/        ソースに回数を書き込んだもの (= 1 回も通っていない点のある行に % か ~ の印が付く)
+# test と同じ範囲 (stage2〜stage4 の固定のウェイト、クロックの組み合わせ、途中のリセット、ランダムなウェイト、PLIC の単体テストベンチ) を、
+# カバレッジを数えるようにビルドしたテストベンチで実行し、集計する。数える対象は tools/coverage.vlt で決める。
+#   $(BUILD)/cov/all.dat           すべての実行を集計したもの
+#   $(BUILD)/cov/annotated/        ソースに実行回数を書き込んだもの (一度も通っていない点のある行に % か ~ の印が付く)
 SIM_COV      := $(BUILD)/tb_cov/Vtb_mem
 SIM_COV_PLIC := $(BUILD)/plic_cov/Vplic_tb
 SIM_COV_SRAM := $(BUILD)/sram_cov/Vsram_tb
@@ -589,7 +590,7 @@ $(SIM_COV_PLIC): rtl/ae350_plic.v tb/plic_tb.v tools/lint.vlt tools/coverage.vlt
 	verilator --binary --timing $(VERILATOR_FLAGS) $(COV_FLAGS) --top-module plic_tb -Mdir $(BUILD)/plic_cov \
 		rtl/ae350_plic.v tb/plic_tb.v
 
-# 1 回流す: $(1) = プログラム名、$(2) = 出力の名前、$(3) = plusarg
+# 1 回実行する: $(1) = プログラム名、$(2) = 出力の名前、$(3) = plusarg
 define run_cov
 	$(SIM_COV) +rom=$(BUILD)/$(1).hex $(3) +verilator+coverage+file+$(COV)/$(2).dat > $(COV)/$(2).log 2>&1 \
 		|| (cat $(COV)/$(2).log; exit 1)

@@ -1,18 +1,18 @@
-# ROM のローダー (= sw/loader.c) に、SDRAM で動かすプログラムを送って動かす (= macOS、2026-11-12)。
+# ROM のローダー (sw/loader.c) に、外部メモリか ILM で実行するプログラムを送って実行する (macOS 専用)。
 #
-#   ruby tools/ae350_load.rb <ポート> <.bin> [番地 (= 16 進。既定 00010000)]
+#   ruby tools/ae350_load.rb <ポート> <.bin> [アドレス (16 進。既定値 00010000)]
 #
 #   1. ポートを 1,250,000 bps で開く
-#   2. UART の合図 (= ESC ESC "ae350!"。rtl/uart_reset_seq.v) を送って AE350 をリセットし、ROM のローダーの
-#      READY ae350 loader を待つ (= ボードがローダーで待っていても、プログラムが固まっていても、同じ手順で送れる)。
-#      1.5 秒来なければ合図を送り直す (= 3 回まで)
-#   3. load を送り、GO を待つ (= ERR ならその返事を出して終わる)
-#   4. 中身を送り、OK の長さと CRC-32 を、送ったものと照らす (= 合わなければ run しない)
-#   5. run を送り、その後は UART の出力を画面に出し、キーボードの入力を UART に送る。プログラムが終わってローダーに
-#      戻る (= READY ae350 loader が来る) か、Ctrl-C で終わる
+#   2. UART のリセットシーケンス (ESC ESC "ae350!"。rtl/uart_reset_seq.v) を送って AE350 をリセットし、ROM のローダーの
+#      READY ae350 loader を待つ (ボードがローダーで待機していても、プログラムが固まっていても、同じ手順で送れる)。
+#      1.5 秒以内に届かなければ、シーケンスを送り直す (3 回まで)
+#   3. load を送り、GO を待つ (ERR ならその応答を出力して終了する)
+#   4. データを送り、OK の長さと CRC-32 を、送ったデータと照合する (一致しなければ run しない)
+#   5. run を送り、その後は UART の出力を画面に出し、キーボードの入力を UART に送る。プログラムが終了してローダーに
+#      戻る (READY ae350 loader が届く) か、Ctrl-C で終了する
 #
-# macOS の stty は 230400 を超える速さを受けないので、115200 の生のモードにしてから IOSSIOSPEED で速さを設定し直す
-# (= IOSSIOSPEED は開いている間だけ効くので、同じ fd で送受信する)。
+# macOS の stty は 230400 bps を超える速度を受け付けないので、115200 bps の raw モードにしてから IOSSIOSPEED で速度を設定し直す
+# (IOSSIOSPEED はポートを開いている間だけ有効なので、同じファイルディスクリプタで送受信する)。
 
 require 'zlib'
 
@@ -31,7 +31,7 @@ system("stty -f #{port} 115200 cs8 -cstopb -parenb raw -echo -crtscts clocal") o
 sp.ioctl(IOSSIOSPEED, [BAUD].pack('Q'))
 sp.sync = true
 
-# 受けた byte を溜める (= 行を待つ処理と、run の後の画面への出力が読む)
+# 受信したバイトを溜める (行を待つ処理と、run の後の画面への出力が読む)
 got = ''.b
 m = Mutex.new
 Thread.new do
@@ -43,7 +43,7 @@ Thread.new do
   end
 end
 
-# 1 行を待って返す (= \r\n を落とす)。sec 秒たっても来なければ nil
+# 1 行を待って返す (\r\n を除く)。sec 秒たっても届かなければ nil
 next_line = lambda do |sec|
   t = Time.now
   loop do
@@ -58,8 +58,8 @@ next_line = lambda do |sec|
   end
 end
 
-# want で始まる行を、全体で sec 秒まで待つ (= それ以外の行は読み飛ばす。行が続けて来ても、締め切りは延びない)。
-# 来れば行、来なければ nil。ERR で始まる行が来たら、その返事を出して終わる
+# want で始まる行を、全体で sec 秒まで待つ (それ以外の行は読み飛ばす。行が続けて届いても、締め切りは延びない)。
+# 届けばその行を、届かなければ nil を返す。ERR で始まる行が届いたら、その応答を出力して終了する
 wait_for = lambda do |want, sec|
   deadline = Time.now + sec
   loop do
@@ -78,8 +78,8 @@ expect = lambda do |want, sec|
   wait_for.call(want, sec) or abort "ローダーが応えない (= #{want} を #{sec} 秒待った)"
 end
 
-# 合図を送って READY を待つ。速さを設定した直後や、ビットストリームを書き込んだ直後は、USB シリアルの機器 (= BL616) が
-# 落ち着かず合図が落ちることがあった (= 2026-11-12) ので、少し待ってから送り、READY が来なければ送り直す (= 3 回まで)
+# リセットシーケンスを送って READY を待つ。速度を設定した直後や、ビットストリームを書き込んだ直後は、USB シリアルの変換チップ (BL616) が
+# 安定せずシーケンスが欠けることがあったので、少し待ってから送り、READY が届かなければ送り直す (3 回まで)
 ready = ->(sec) { !wait_for.call(READY, sec).nil? }
 sleep 0.1
 got_ready = (1..3).any? do |n|
@@ -92,7 +92,7 @@ sp.write(format("load %08x %08x\n", addr, data.bytesize))
 expect.call('GO', 2)
 t0 = Time.now
 sp.write(data)
-# 送る時間 (= 1 byte 10 bit) と、読み直しの時間に余裕を見る
+# 送信にかかる時間 (1 バイト 10 ビット) と、読み直しにかかる時間に余裕を見る
 ok = expect.call('OK', data.bytesize * 10.0 / BAUD + 5)
 len, crc = ok.split[1, 2].map { |x| x.to_i(16) }
 abort format('長さが合わない (= 送った %d byte、ローダー %d byte)', data.bytesize, len) if len != data.bytesize
@@ -109,7 +109,7 @@ Thread.new do
   end
 end
 
-# UART の出力を画面に出す。ローダーに戻ったら終わる
+# UART の出力を画面に出す。ローダーに戻ったら終了する
 begin
   pending = ''.b
   loop do

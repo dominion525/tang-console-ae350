@@ -1,13 +1,13 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# AE350_SOC の Hazard3 の版と、Gowin のプリミティブ (prim_sim.v) のポートを比べる。
-# 名前・向き・幅が 1 つでも違えば、違いを並べて 1 で終わる。
+# AE350_SOC の Hazard3 版と、Gowin のプリミティブ (prim_sim.v) のポートを比べる。
+# 名前、方向、幅が 1 つでも異なれば、違いを列挙して終了コード 1 で終わる。
 #
 #   ruby tools/check_ports.rb <prim_sim.v> <AE350_SOC.v>
 #
-# prim_sim.v は非 ANSI 形式 (= `input [7:0] APB_CE;`)、Hazard3 の版は ANSI 形式
-# (= `input wire [7:0] APB_CE,`) で宣言しているので、それぞれの形で読む。
+# prim_sim.v は非 ANSI 形式 (`input [7:0] APB_CE;`)、Hazard3 版は ANSI 形式
+# (`input wire [7:0] APB_CE,`) で宣言しているので、それぞれの形式で読む。
 
 MODULE = 'AE350_SOC'
 
@@ -24,7 +24,7 @@ def normalize_width(width)
   width.to_s.delete(' ')
 end
 
-# 宣言の行から { 名前 => [向き, 幅] } を作る
+# 宣言の行から { 名前 => [方向, 幅] } を作る
 def ports(path)
   decl = %r{^\s*(input|output|inout)\s+(?:wire\s+|reg\s+)?(\[[^\]]*\])?\s*(\w+)\s*[;,]?\s*(?://.*)?$}
   module_body(path).each_with_object({}) do |line, h|
