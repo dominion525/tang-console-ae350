@@ -122,7 +122,9 @@ int main(void)
      * 45: mcycle は CORE_CLK、mtime は AHB_CLK で進むので、進み方の比は 2 つのクロックの周波数の比になる
      * (= リファレンスデザインでは 800 / 100 = 8)。TB が比 × 256 を 0x0000_0008 に置く。差は 2% まで
      */
-    uint32_t want256 = *(volatile uint32_t *)0x00000008u;
+    /* 0 番地に近い定数の番地を C で読むと、GCC が中身の無い場所の読み出しとみなして -Warray-bounds を出すので、命令で読む */
+    uint32_t want256;
+    __asm__ volatile("lw %0, 8(zero)" : "=r"(want256) : : "memory");
     uint32_t mt_a  = PLMT_MTIME_LO;
     uint32_t cyc_a = csr_read(mcycle);
     for (volatile int i = 0; i < 2000; i++) {
