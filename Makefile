@@ -154,7 +154,7 @@ define run_cmp
 	sed -n 's/^UART: //p' $(BUILD)/$(2).log | diff sw/$(1)_expected.txt -
 endef
 
-test: test-plic test-sram test-sdram-unit test-sdram-io test-sdram-pll test-sdram-hs-unit test-stage2 test-stage3 test-stage4 test-stage5 test-clocks test-reset test-random test-sdram test-sdram-hs test-loader test-uart-reset
+test: test-plic test-sram test-sdram-unit test-sdram-io test-sdram-pll test-sdram-hs-unit test-stage2 test-stage3 test-stage4 test-stage5 test-clocks test-reset test-random test-sdram test-sdram-hs test-loader test-uart-reset test-uart-tool
 
 # ROM のローダーのテスト (= tools/loader_test.rb が手順と期待を作る)。シミュレーション用のローダーは、時間切れを
 # 200,000 mcycle (= 250 µs) にする (= 実機は 1 秒)。送るのは実機の 1.25 Mbps と同じ間隔なので、hello は数分かかる
@@ -348,6 +348,11 @@ $(SIM_UART_RESET): rtl/uart_reset_seq.v tb/uart_reset_seq_tb.v rtl/vendor/verilo
 .PHONY: test-uart-reset
 test-uart-reset: $(SIM_UART_RESET)
 	$(SIM_UART_RESET)
+
+# tools/ae350_uart.rb のテスト (= シリアルポートの代わりに UNIX ドメインソケットを使う。速度の設定は実機でしか確かめられない)
+.PHONY: test-uart-tool
+test-uart-tool:
+	ruby tools/test_ae350_uart.rb
 
 .PHONY: test-sdram-io
 test-sdram-io: $(SIM_SDRAM_IO)
