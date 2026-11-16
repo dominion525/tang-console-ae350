@@ -1,33 +1,34 @@
 // =============================================================
 // File:        rtl/sdram_io.v
 // Module:      sdram_io
-// Role:        SDR SDRAM (= W9825G6KH) のピンまわり (= 2026-11-11、166.7 MHz 版の制御のための部品)。
-//              すべてのピンを IO の中のレジスタ (= Gowin の ODDR / IDDR) から出し入れし、ピンでの時刻をそろえる。
-//              1 本のピンの ODDR と IDDR は同じクロックでなければならないので (= 合成の CK0012)、どちらも s_clk で動かし、
-//              読んだデータを取る位置は、IO の中の遅れの部品 (= IODELAY) と、取る縁 (= 立ち上がりか立ち下がり) で決める。
+// Role:        SDR SDRAM (W9825G6KH) のピン周りの回路。166.7 MHz 版の SDRAM コントローラで使う。
+//              すべてのピンを IO 内のレジスタ (Gowin の ODDR と IDDR) で入出力し、ピンでのタイミングを揃える。
+//              1 本のピンの ODDR と IDDR は同じクロックで動かす必要がある (合成の CK0012) ので、どちらも s_clk で動かす。
+//              読み出しデータを取り込むタイミングは、IO 内の遅延素子 (IODELAY) と、取り込むエッジ (立ち上がりか立ち下がりか) で決める。
 //
-//   命令、番地、DQM     ODDR (= D0 = D1) で s_clk の立ち上がりから出す
-//   DQ の出力と許可      ODDR の Q0 (= 値) と Q1 (= IOBUF の OEN、1 で出さない) で、同じ遅れで出す
-//   DQ の入力           ピン → IODELAY (= IN_DLY × 約 12.5 ps) → IDDR。CAP_EDGE が 0 なら立ち上がりで取った Q0、1 なら
-//                      立ち下がりで取った Q1 を、s_clk でもう 1 段受けて dq_in に出す
-//   SDRAM のクロック     ODDR (= D0 = 0、D1 = 1) で s_clk を反転して出す。命令が変わる縁の半周期後に、SDRAM が受ける
+//   コマンド、アドレス、DQM  ODDR (D0 = D1) で、s_clk の立ち上がりから出力する
+//   DQ の出力と出力許可      ODDR の Q0 (値) と Q1 (IOBUF の OEN。1 で出力しない) で、同じ遅延で出力する
+//   DQ の入力                ピン → IODELAY (IN_DLY × 約 12.5 ps) → IDDR。CAP_EDGE が 0 なら立ち上がりで取り込んだ Q0、
+//                           1 なら立ち下がりで取り込んだ Q1 を、s_clk でもう 1 段受けて dq_in に出力する
+//   SDRAM のクロック         ODDR (D0 = 0、D1 = 1) で s_clk を反転して出力する。SDRAM は、コマンドが変わるエッジの
+//                           半周期後にコマンドを取り込む
 //
-//   遅れ (= Gowin の部品のモデルのとおり。tb/gowin_io_models.v):
-//     出力: s_clk の縁 n で入れた値が、縁 n + 2 からピンに出る (= 命令も DQ もそろって 2 サイクル)
-//     入力: 立ち上がり m で取った値は縁 m + 3 の後に、立ち下がり m - 0.5 で取った値は縁 m + 2 の後に dq_in に出る
-//           (= IDDR の中で、立ち下がりの側は 1 段短い)
+//   遅延 (Gowin のプリミティブのモデルに従う。tb/gowin_io_models.v):
+//     出力: s_clk のエッジ n で入れた値が、エッジ n + 2 からピンに出る (コマンドも DQ も同じ 2 サイクル)
+//     入力: 立ち上がり m で取り込んだ値はエッジ m + 3 の後に、立ち下がり m - 0.5 で取り込んだ値はエッジ m + 2 の後に
+//           dq_in に出る (IDDR の内部で、立ち下がり側は 1 段短い)
 //
 // Parameters:
-//   IN_DLY     DQ の入力の遅れの刻み (= 0〜255、1 刻み約 12.5 ps。UG304 4.4.1。範囲は Gowin のモデルの C_STATIC_DLY に合わせた)
-//   CAP_EDGE   0 = 立ち上がりで取る、1 = 立ち下がりで取る
+//   IN_DLY     DQ の入力遅延のステップ数 (0〜255、1 ステップ約 12.5 ps。UG304 4.4.1。範囲は Gowin のモデルの C_STATIC_DLY に合わせた)
+//   CAP_EDGE   0 = 立ち上がりで取り込む、1 = 立ち下がりで取り込む
 //
 // Ports:
 //   input  wire        s_clk
 //   input  wire [3:0]  cmd           {cs_n, ras_n, cas_n, we_n}
 //   input  wire [12:0] addr / [1:0] ba / [1:0] dqm
-//   input  wire [15:0] dq_out / dq_oe   書く値と、出す (= 1) か
+//   input  wire [15:0] dq_out / dq_oe   書き込む値と、出力するか (1 で出力)
 //   output reg  [15:0] dq_in
-//   SDRAM のピン
+// SDRAM のピン
 // =============================================================
 
 `default_nettype none
@@ -56,7 +57,7 @@ module sdram_io #(
     output wire [1:0]  sdram_dqm
 );
 
-    // 出力だけのピン (= 命令 4 本、番地 13 本、バンク 2 本、DQM 2 本)
+    // 出力専用のピン (コマンド 4 本、アドレス 13 本、バンク 2 本、DQM 2 本)
     wire [20:0] o_d = {cmd, addr, ba, dqm};
     wire [20:0] o_q;
     /* verilator lint_off PINCONNECTEMPTY */
@@ -68,10 +69,10 @@ module sdram_io #(
     endgenerate
     assign {sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n, sdram_addr, sdram_ba, sdram_dqm} = o_q;
 
-    // SDRAM のクロック (= s_clk の反転)
+    // SDRAM のクロック (s_clk の反転)
     ODDR u_oddr_clk (.D0 (1'b0), .D1 (1'b1), .TX (1'b0), .CLK (s_clk), .Q0 (sdram_clk), .Q1 ());
 
-    // DQ (= 出力は ODDR、入力は IODELAY → IDDR。どちらも s_clk)
+    // DQ (出力は ODDR、入力は IODELAY → IDDR。どちらも s_clk)
     wire [15:0] dq_q, dq_oen, dq_pin, dq_dly, dq_rise, dq_fall;
     generate
         for (g = 0; g < 16; g = g + 1) begin : dq

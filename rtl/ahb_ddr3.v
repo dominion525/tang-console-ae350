@@ -1,50 +1,51 @@
 // =============================================================
 // File:        rtl/ahb_ddr3.v
 // Module:      ahb_ddr3
-// Role:        AE350 の DDR_H* (= 64 bit の AHB) を、Gowin の DDR3 Memory Interface の IP (= 利用者の側の口) につなぐ回路
-//              (= 2026-11-13)。FPGA のロジック側の回路で、ボードの DDR3 の版 (= board/tang_console/build.sh の MEM=ddr3)
-//              で使う。シミュレーションでは DDR_H* の先を SDRAM のまま使うので、この回路は使わない。
+// Role:        AE350 の DDR_H* (64 ビット AHB) を、Gowin の DDR3 Memory Interface IP (ユーザー側のポート) につなぐブリッジ。
+//              ファブリック側の回路で、ボードの DDR3 版 (board/tang_console/build.sh の MEM=ddr3) で使う。
+//              シミュレーションでは DDR_H* の先は SDRAM のままなので、この回路は使わない。
 //
-//   hclk (= DDR_CLK) の側                           cclk (= IP の利用者の側のクロック、clk_out) の側
-//   AE350 の転送を受け、控えて、トグルで渡す ───▶  読み: 番地を含む 32 byte (= 1 回の命令の 256 bit) を読み、
-//                                                       番地の bit 4〜3 で 8 byte を選ぶ
-//                                                  書き: 256 bit のうち、HSIZE と番地で決まる byte だけを書く
-//                                                       (= ほかの byte はマスクする。1 回の命令)
-//   応答を受けて AE350 に返す              ◀───  終わったらトグルで返す
+//   hclk (DDR_CLK) 側                               cclk (IP のユーザー側のクロック、clk_out) 側
+//   AE350 の転送を受け付けて保持し、トグルで渡す ───▶  読み出し: アドレスを含む 32 バイト (1 コマンド分の 256 ビット) を読み、
+//                                                       アドレスのビット 4〜3 で 8 バイトを選ぶ
+//                                                  書き込み: 256 ビットのうち、HSIZE とアドレスで決まるバイトだけを書き込む
+//                                                       (他のバイトはマスクする。1 コマンド)
+//   応答を受けて AE350 に返す              ◀───  完了したらトグルで返す
 //
-//   - IP の設定 (= board/tang_console/ddr3/ddr3_memory_interface.ipc) は DQ 32 bit、1:4。1 回の命令で 8 回の転送
-//     (= 32 byte) をまとめて読み書きし、利用者の側では 256 bit を 1 サイクルで渡す
-//   - IP に命令を出す順は、Sipeed の DDR3 の試験 (= TangMega-138K-example の ddrtest.v、実機で動いた) と同じ:
-//     書きは cmd_ready と wr_data_rdy がそろったサイクルに、命令 (= 0)、番地、データ、マスク、wr_data_en / wr_data_end を
-//     同時に出す。読みは cmd_ready のサイクルに命令 (= 1) と番地を出し、rd_data_valid で 256 bit を受ける。
-//     cmd_en は受けられた (= cmd_ready が 1 の) サイクルまで出し続ける
-//   - 番地: IP の番地は 4 byte 単位 (= 列が DQ 32 bit の 1 回の転送。ddrtest.v は 1 回の命令ごとに列を 8 進める)。
-//     byte の番地の bit 29〜2 を IP の番地の bit 27〜0 にする (= 1 GB の全部。IP の番地の bit 28 はランクで、使わない)
-//   - 書き込みのマスクは 1 の byte を書かない。256 bit の中の並びは、byte の番地の小さい方が下位 (= Gowin の
+//   - IP の設定 (board/tang_console/ddr3/ddr3_memory_interface.ipc) は DQ 32 ビット、1:4。1 コマンドで 8 ビート
+//     (32 バイト) をまとめて読み書きし、ユーザー側では 256 ビットを 1 サイクルで受け渡す
+//   - IP へのコマンドの出し方は、Sipeed の DDR3 のテスト (TangMega-138K-example の ddrtest.v。実機で動作したもの) と同じ:
+//     書き込みは、cmd_ready と wr_data_rdy が揃ったサイクルに、コマンド (0)、アドレス、データ、マスク、wr_data_en と
+//     wr_data_end を同時に出す。読み出しは、cmd_ready のサイクルにコマンド (1) とアドレスを出し、rd_data_valid で 256 ビットを
+//     受ける。cmd_en は、受け付けられた (cmd_ready が 1 の) サイクルまで出し続ける
+//   - アドレス: IP のアドレスは 4 バイト単位 (列が DQ 32 ビットの 1 ビート。ddrtest.v は 1 コマンドごとに列を 8 進める)。
+//     バイトアドレスのビット 29〜2 を IP のアドレスのビット 27〜0 にする (1 GB 全体。IP のアドレスのビット 28 はランクで、使わない)
+//   - 書き込みマスクは、1 のバイトを書き込まない。256 ビットの中の並びは、バイトアドレスの小さい方が下位 (Gowin の
 //     gw_ahb_ddr3.v と同じ)
-//   - IP の初期化と調整 (= init_calib_complete) が済むまで、cclk の側は転送を受けない (= AE350 は待たされるだけ)
-//   - リフレッシュは IP が自分で出す設定 (= USER_REFRESH が無効) なので、この回路では出さない
-//   - AE350 に返す HREADYOUT / HRDATA / HRESP はレジスタの出力 (= ahb_sdram.v と同じ理由)。転送は 1 つずつ
-//   - 直前に IP から読んだ 32 byte を覚えておき (= line_*)、同じ 32 byte の読みは IP に行かずに返す。同じ 32 byte への書きは、
-//     覚えている値も書き換えてから IP に書く (= 2026-11-13)
-//   - DDR3 の範囲 (= 1 GB) の外の番地には、IP に行かずにエラー応答 (= 2 サイクル) を返す。ただし STAT_BASE からの 32 byte は、
-//     読み書きにかかった時間を数えるカウンタ (= 下の表。読むと値、書いても何もしない。2026-11-13、DDR3 の読みが SDRAM より遅い
-//     件の内訳を見るため)。カウンタは消さない (= 読む側が前後の差を取る)。IP のクロックの側のカウンタは、転送の無い間は
-//     変わらないので (= 転送は 1 つずつ、カウンタを読む転送は IP に行かない)、c_rdata と同じく DDR_CLK の側でそのまま読む
+//   - IP の初期化とキャリブレーション (init_calib_complete) が終わるまで、cclk 側は転送を受け付けない (AE350 は待たされるだけ)
+//   - リフレッシュは IP が自動で出す設定 (USER_REFRESH が無効) なので、この回路では出さない
+//   - AE350 に返す HREADYOUT、HRDATA、HRESP はレジスタ出力 (ahb_sdram.v と同じ理由)。転送は 1 つずつ処理する
+//   - 直前に IP から読み出した 32 バイトを保持し (line_*)、同じ 32 バイトの読み出しは IP にアクセスせずに返す。同じ 32 バイトへの
+//     書き込みでは、保持した値も更新してから IP に書き込む
+//   - DDR3 の範囲 (1 GB) 外のアドレスには、IP にアクセスせずにエラー応答 (2 サイクル) を返す。ただし STAT_BASE からの 32 バイトは、
+//     読み書きにかかった時間を数えるカウンタ (下の表。読み出すと値を返し、書き込みは無視する。DDR3 の読み出しが SDRAM より
+//     遅い原因の内訳を調べるために置いた)。カウンタはクリアしない (読む側が前後の差を取る)。IP のクロック側のカウンタは、
+//     転送がない間は変わらない (転送は 1 つずつで、カウンタを読む転送は IP にアクセスしない) ので、c_rdata と同じく DDR_CLK 側で
+//     そのまま読む
 //
-//     +0x00 読みの転送の数                          +0x04 読みで HREADYOUT = 0 だった DDR_CLK のサイクル数の合計
-//     +0x08 書きの転送の数                          +0x0C 書きで HREADYOUT = 0 だった DDR_CLK のサイクル数の合計
-//     +0x10 読みの命令を出してから受けられるまでの      +0x14 読みの命令を受けられてから読んだ値が来るまでの
-//           IP のクロックのサイクル数の合計                IP のクロックのサイクル数の合計
-//     +0x18 書きの命令を出してから受けられるまでの      +0x1C 覚えている 32 byte から返した読みの数
-//           IP のクロックのサイクル数の合計
+//     +0x00 読み出し転送の数                          +0x04 読み出しで HREADYOUT = 0 だった DDR_CLK のサイクル数の合計
+//     +0x08 書き込み転送の数                          +0x0C 書き込みで HREADYOUT = 0 だった DDR_CLK のサイクル数の合計
+//     +0x10 読み出しコマンドを出してから受け付けられる  +0x14 読み出しコマンドが受け付けられてから読み出しデータが
+//           までの IP クロックのサイクル数の合計            届くまでの IP クロックのサイクル数の合計
+//     +0x18 書き込みコマンドを出してから受け付けられる  +0x1C 保持した 32 バイトから返した読み出しの数
+//           までの IP クロックのサイクル数の合計
 //
 // Ports:
-//   input  wire hclk / hresetn            DDR_CLK と、AE350 が出す DDR_RSTN
-//   AHB のスレーブ (= DDR_H*。hready は AE350 の DDR_HREADY と同じ、この回路の hreadyout)
-//   input  wire cclk                      IP の clk_out (= 100 MHz)
-//   input  wire calib_done                IP の init_calib_complete (= cclk に同期)。0 の間、cclk の側はリセットされたまま
-//   IP の利用者の側の口 (= cmd_* / addr / wr_data_* / rd_data_*)
+//   input  wire hclk / hresetn            DDR_CLK と、AE350 が出力する DDR_RSTN
+//   AHB スレーブ (DDR_H*。hready は AE350 の DDR_HREADY で、この回路の hreadyout と同じ)
+//   input  wire cclk                      IP の clk_out (100 MHz)
+//   input  wire calib_done                IP の init_calib_complete (cclk に同期)。0 の間、cclk 側はリセットされたまま
+//   IP のユーザー側のポート (cmd_*、addr、wr_data_*、rd_data_*)
 // =============================================================
 
 `default_nettype none
@@ -52,7 +53,7 @@
 module ahb_ddr3 #(
     parameter [31:0] STAT_BASE = 32'h7F00_0000
 ) (
-    // DDR_CLK の側
+    // DDR_CLK 側
     input  wire         hclk,
     input  wire         hresetn,
     input  wire [31:0]  haddr,
@@ -64,7 +65,7 @@ module ahb_ddr3 #(
     output reg          hreadyout,
     output reg          hresp,
 
-    // IP の利用者の側
+    // IP のユーザー側
     input  wire         cclk,
     input  wire         calib_done,
     input  wire         cmd_ready,
@@ -80,11 +81,11 @@ module ahb_ddr3 #(
 );
 
     // ---------------------------------------------------------
-    // DDR_CLK の側: 受けて、控えて、渡す (= ahb_sdram.v と同じ形)
+    // DDR_CLK 側: 受け付けて保持し、cclk 側に渡す (ahb_sdram.v と同じ構成)
     // ---------------------------------------------------------
-    localparam [1:0] H_RDY  = 2'd0;   // HREADYOUT = 1。アドレスフェーズを受けられる
-    localparam [1:0] H_DATA = 2'd1;   // データフェーズの 1 サイクル目 (= 書く値を控える)
-    localparam [1:0] H_WAIT = 2'd2;   // IP の側の応答を待つ
+    localparam [1:0] H_RDY  = 2'd0;   // HREADYOUT = 1。アドレスフェーズを受け付けられる
+    localparam [1:0] H_DATA = 2'd1;   // データフェーズの 1 サイクル目 (書き込む値を保持する)
+    localparam [1:0] H_WAIT = 2'd2;   // IP 側の応答を待つ
     localparam [1:0] H_ERR1 = 2'd3;   // エラー応答の 1 サイクル目
 
     reg [1:0]  h_st;
@@ -93,27 +94,27 @@ module ahb_ddr3 #(
     reg [2:0]  q_size;
     reg [63:0] q_wdata;
     reg        req_t;                 // 渡すたびに反転する
-    reg [1:0]  ack_s;                 // cclk の側の ack_t を 2 段で受ける
+    reg [1:0]  ack_s;                 // cclk 側の ack_t を 2 段の FF で受ける
     reg        ack_seen;              // 最後に受けた ack_t
     reg        ack_t;
-    reg [63:0] c_rdata;               // cclk の側が読んだ値 (= 次の要求まで変わらないので、ack を受けてから hclk で読む)
+    reg [63:0] c_rdata;               // cclk 側が読み出した値 (次の要求まで変わらないので、ack を受けてから hclk で読む)
 
     wire in_range = (q_addr[31:30] == 2'b00);
     wire ack_new  = (ack_s[1] != ack_seen);
     wire in_stat  = (q_addr[31:5] == STAT_BASE[31:5]);
 
-    // カウンタ (= DDR_CLK の側と、IP のクロックの側)
+    // カウンタ (DDR_CLK 側と IP のクロック側)
     reg [31:0] st_rd_n, st_rd_cyc, st_wr_n, st_wr_cyc;
     reg [31:0] st_c_rwait, st_c_rlat, st_c_wwait;
     wire h_busy = !hreadyout && ((h_st == H_DATA && in_range) || h_st == H_WAIT);
 
-    // 直前に IP から読んだ 32 byte (= 2026-11-13。DDR3 の IP は 1 回の命令で 32 byte を読むが、AE350 の転送は 1 回 4 byte なので、
-    // 続けて読むと同じ 32 byte を何度も読み直していた)。同じ 32 byte の読みは IP に行かずに返し、書きは覚えている値も書き換える
-    // (= DDR3 の中身と食い違わない。DDR_H* の先に行く道はこの回路だけ)
+    // 直前に IP から読み出した 32 バイト (DDR3 の IP は 1 コマンドで 32 バイトを読むが、AE350 の転送は 1 回 4 バイトなので、
+    // 連続して読むと同じ 32 バイトを何度も読み直していた)。同じ 32 バイトの読み出しは IP にアクセスせずに返し、書き込みでは
+    // 保持した値も更新する (DDR3 の内容と食い違わない。DDR_H* の先へのアクセスは、すべてこの回路を通るため)
     reg         line_valid;
-    reg [24:0]  line_tag;              // byte の番地の bit 29〜5
+    reg [24:0]  line_tag;              // バイトアドレスのビット 29〜5
     reg [255:0] line_data;
-    reg [255:0] c_rline;               // cclk の側が読んだ 32 byte (= c_rdata と同じく、ack を受けてから hclk で読む)
+    reg [255:0] c_rline;               // cclk 側が読み出した 32 バイト (c_rdata と同じく、ack を受けてから hclk で読む)
     reg [31:0]  st_hit;
     wire        line_hit = line_valid && (line_tag == q_addr[29:5]);
 
@@ -126,7 +127,7 @@ module ahb_ddr3 #(
         endcase
     endfunction
 
-    // HSIZE と番地の下位から、書く byte を決める (= 64 bit のバスの byte のレーン)
+    // HSIZE とアドレスの下位から、書き込むバイトを決める (64 ビットバスのバイトレーン)
     function [7:0] lanes(input [2:0] a, input [2:0] size);
         case (size)
             3'd0:    lanes = 8'b0000_0001 << a;
@@ -136,7 +137,7 @@ module ahb_ddr3 #(
         endcase
     endfunction
 
-    // 覚えている 32 byte に、書く値を重ねたもの (= 書く byte だけ hwdata にする)
+    // 保持した 32 バイトに、書き込む値を重ねたもの (書き込むバイトだけを hwdata にする)
     wire [7:0] h_lanes = lanes(q_addr[2:0], q_size);
     reg [255:0] line_merged;
     integer     k;
@@ -188,7 +189,7 @@ module ahb_ddr3 #(
                 H_DATA: begin
                     q_wdata <= hwdata;
                     if (in_range && !q_write && line_hit) begin
-                        // 覚えている 32 byte から返す (= IP に行かない)
+                        // 保持した 32 バイトから返す (IP にアクセスしない)
                         hrdata    <= line_data[{q_addr[4:3], 6'd0} +: 64];
                         hreadyout <= 1'b1;
                         h_st      <= H_RDY;
@@ -198,9 +199,9 @@ module ahb_ddr3 #(
                         h_st  <= H_WAIT;
                         if (q_write) st_wr_n <= st_wr_n + 32'd1;
                         else         st_rd_n <= st_rd_n + 32'd1;
-                        if (q_write && line_hit) line_data <= line_merged;   // 覚えている値も書き換える
+                        if (q_write && line_hit) line_data <= line_merged;   // 保持した値も更新する
                     end else if (in_stat) begin
-                        // カウンタ: 読むと値、書いても何もしない (= どちらも OKAY)
+                        // カウンタ: 読み出すと値を返し、書き込みは無視する (どちらも OKAY)
                         hrdata    <= stat_word(q_addr[4:3]);
                         hreadyout <= 1'b1;
                         h_st      <= H_RDY;
@@ -216,7 +217,7 @@ module ahb_ddr3 #(
                         hreadyout <= 1'b1;
                         h_st      <= H_RDY;
                         if (!q_write) begin
-                            // 読んだ 32 byte を覚える
+                            // 読み出した 32 バイトを保持する
                             line_valid <= 1'b1;
                             line_tag   <= q_addr[29:5];
                             line_data  <= c_rline;
@@ -224,7 +225,7 @@ module ahb_ddr3 #(
                     end
                 end
                 default: begin
-                    // エラー応答の 2 サイクル目 (= HRESP = 1 のまま HREADYOUT = 1)
+                    // エラー応答の 2 サイクル目 (HRESP = 1 のまま HREADYOUT = 1)
                     hreadyout <= 1'b1;
                     h_st      <= H_RDY;
                 end
@@ -233,24 +234,24 @@ module ahb_ddr3 #(
     end
 
     // ---------------------------------------------------------
-    // IP の側 (= cclk): 1 つの転送を、IP の命令 1 回にする
+    // IP 側 (cclk): 1 つの転送を、IP のコマンド 1 回にする
     // ---------------------------------------------------------
     localparam [1:0] C_IDLE  = 2'd0;
-    localparam [1:0] C_WRITE = 2'd1;  // 書きの命令を出している (= 受けられるまで)
-    localparam [1:0] C_READ  = 2'd2;  // 読みの命令を出している (= 受けられるまで)
-    localparam [1:0] C_RDATA = 2'd3;  // 読んだ値を待つ
+    localparam [1:0] C_WRITE = 2'd1;  // 書き込みコマンドを出している (受け付けられるまで)
+    localparam [1:0] C_READ  = 2'd2;  // 読み出しコマンドを出している (受け付けられるまで)
+    localparam [1:0] C_RDATA = 2'd3;  // 読み出しデータを待つ
 
     reg [1:0]  c_st;
-    reg [1:0]  req_s;                 // hclk の側の req_t を 2 段で受ける
+    reg [1:0]  req_s;                 // hclk 側の req_t を 2 段の FF で受ける
     reg        req_seen;
-    reg [27:0] c_word;                // IP の番地 (= byte の番地の bit 29〜2。下位 3 bit は 0)
-    reg [1:0]  c_lane;                // 32 byte のうちの 8 byte の位置 (= byte の番地の bit 4〜3)
+    reg [27:0] c_word;                // IP のアドレス (バイトアドレスのビット 29〜2。下位 3 ビットは 0)
+    reg [1:0]  c_lane;                // 32 バイトのうちの 8 バイトの位置 (バイトアドレスのビット 4〜3)
 
     wire req_new = (req_s[1] != req_seen);
 
     assign addr = {1'b0, c_word};
 
-    // q_addr / q_write / q_size / q_wdata は、req を受けてから ack を返すまで hclk の側で変わらないので、cclk で読む
+    // q_addr、q_write、q_size、q_wdata は、req を受けてから ack を返すまで hclk 側で変わらないので、cclk で読んでよい
     wire [31:0] w_mask  = ~({24'd0, h_lanes} << {q_addr[4:3], 3'b000});
 
     always @(posedge cclk or negedge calib_done) begin
@@ -297,7 +298,7 @@ module ahb_ddr3 #(
                     end
                 end
                 C_WRITE: begin
-                    // 命令とデータは、cmd_ready と wr_data_rdy がそろったサイクルに受けられる
+                    // コマンドとデータは、cmd_ready と wr_data_rdy が揃ったサイクルに受け付けられる
                     if (cmd_ready && wr_data_rdy) begin
                         cmd_en     <= 1'b0;
                         wr_data_en <= 1'b0;

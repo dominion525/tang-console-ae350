@@ -1,69 +1,64 @@
 // =============================================================
 // File:        rtl/AE350_SOC.v
 // Module:      AE350_SOC
-// Role:        GW5AST に内蔵された RISC-V ハードコア AE350 の Hazard3 の版 (= 同じポートを持ち、中の CPU を Hazard3 にしたもの)。
-//              Gowin の AE350_SOC プリミティブ (= simlib/gw5a/prim_sim.v) とポートの名前・向き・幅が同じ。
-//              シミュレーションでは prim_sim.v の代わりにこのファイルを読み、トップモジュールは
-//              シミュレーションでも合成でも同じ記述で AE350_SOC をインスタンス化する。
-//              実機には載らない (= 合成では本物のプリミティブが使われる)。
+// Role:        GW5AST に内蔵された RISC-V ハードコア AE350 の Hazard3 版 (同じポートを持ち、内部の CPU を Hazard3 にしたもの)。
+//              Gowin の AE350_SOC プリミティブ (simlib/gw5a/prim_sim.v) と、ポートの名前、向き、幅が同じ。
+//              シミュレーションでは prim_sim.v の代わりにこのファイルを読み込む。トップモジュールは、シミュレーションでも
+//              合成でも同じ記述で AE350_SOC をインスタンス化する。
+//              本物の AE350 を使うビルドでは、合成時に本物のプリミティブが使われ、このファイルは使わない。
+//              CPU=hazard3 のビルドでは、このファイルを合成してファブリック上で動かす。
 //
-//              段 1 (= 2026-11-08): ポートだけを持ち、出力は固定値。
-//              段 2 (= 2026-11-08): Hazard3 (1port 版) とアドレスデコーダを入れ、ROM_H* と DDR_H* に転送を出す。
-//              段 3 (= 2026-11-09): AHB-APB ブリッジを入れ、APB_P* に転送を出す。
-//              段 4 (= 2026-11-10): PLMT と PLIC を入れ、Hazard3 のタイマ割り込みと外部割り込みにつなぐ。
-//              段 4 の後 (= 2026-11-10): クロックを本物と同じ関係にした (= CPU は CORE_CLK、各ポートはそのクロック)。
-//
-// Ports:       prim_sim.v の AE350_SOC と同じ (= tools/check_ports.rb で比べる)。
+// Ports:       prim_sim.v の AE350_SOC と同じ (tools/check_ports.rb で比較する)。
 //              主なもの:
-//   input  POR_N / HW_RSTN            リセット (= どちらも active low)
-//   input  CORE_CLK                   CPU (= Hazard3) のクロック
+//   input  POR_N / HW_RSTN            リセット (どちらもアクティブ Low)
+//   input  CORE_CLK                   CPU (Hazard3) のクロック
 //   input  AHB_CLK                    ROM_H*、PLIC、PLMT のクロック
 //   input  APB_CLK                    APB_P* のクロック
 //   input  DDR_CLK                    DDR_H* のクロック
-//   output ROM_H*   (32 bit)          命令メモリへの AHB。読み出し専用で HSIZE / HBURST / HWDATA が無い
-//   output DDR_H*   (64 bit)          データメモリへの AHB
-//   output EXTS_H*  (32 bit)          FPGA のロジック側の周辺回路への AHB (= 0xE800_0000〜)
-//   output APB_P*   (32 bit)          FPGA のロジック側の周辺回路への APB (= 0xF800_0000〜)
-//   input  EXTM_H*  (64 bit)          FPGA のロジック側から AE350 のアドレス空間 (= DDR、ILM / DLM ほか) への AHB
-//   input  GP_INT   (16 本)           ユーザーの割り込み
+//   output ROM_H*   (32 ビット)       命令メモリへの AHB。読み出し専用で、HSIZE、HBURST、HWDATA がない
+//   output DDR_H*   (64 ビット)       データメモリへの AHB
+//   output EXTS_H*  (32 ビット)       ファブリック側の周辺回路への AHB (0xE800_0000〜)
+//   output APB_P*   (32 ビット)       ファブリック側の周辺回路への APB (0xF800_0000〜)
+//   input  EXTM_H*  (64 ビット)       ファブリック側から AE350 のアドレス空間 (DDR、ILM、DLM など) への AHB
+//   input  GP_INT   (16 本)           ユーザー割り込み
 //
-// Reset:       POR_N と HW_RSTN の AND を、クロックごとに同期させる (= かかるのは非同期、解けるのは同期。
-//              rtl/ae350_reset_sync.v)。HRESETN は AHB_CLK、PRESETN は APB_CLK、DDR_RSTN は DDR_CLK に同期した
-//              もの。Hazard3 は CORE_CLK に同期したリセットを使う
-// Clock:       CORE_CLK / AHB_CLK / APB_CLK / DDR_CLK は互いに非同期として扱い、どの比でも動く
-//              (= リファレンスデザインは CORE 800、AHB 100、APB 100、DDR 50 MHz を 1 つの PLL から出し、SDC では
-//              互いに非同期として扱う。周波数比の制約は資料に無い)
+// Reset:       POR_N と HW_RSTN の AND を、クロックごとに同期化する (アサートは非同期、解除は同期。
+//              rtl/ae350_reset_sync.v)。HRESETN は AHB_CLK、PRESETN は APB_CLK、DDR_RSTN は DDR_CLK に同期させた
+//              もの。Hazard3 は CORE_CLK に同期させたリセットを使う
+// Clock:       CORE_CLK、AHB_CLK、APB_CLK、DDR_CLK は互いに非同期として扱い、どのクロック比でも動く
+//              (リファレンスデザインは CORE 800 MHz、AHB 100 MHz、APB 100 MHz、DDR 50 MHz を 1 つの PLL から生成し、
+//              SDC では互いに非同期として扱う。周波数比の制約は資料に記載がない)
 //
 // Testbench:
-//   tb/shell_top.v   AE350_SOC をインスタンス化した確認用のトップ (= lint 用)
-//   tb/tb_mem.v      ROM と DDR のメモリモデルをつなぎ、プログラムを流す TB
+//   tb/shell_top.v   AE350_SOC をインスタンス化した確認用のトップ (lint 用)
+//   tb/tb_mem.v      ROM と DDR のメモリモデルをつなぎ、プログラムを実行するテストベンチ
 //   make check / make test
 //
 // Design Notes:
-//   - バス (= rtl/ae350_fabric.v): Hazard3 の AHB を受け、アドレスで行き先を決めて、行き先のクロックの
-//     側で転送する。転送は同時に 1 つだけで、クロックの間はトグルのハンドシェイクで乗せ換える
-//       0x8000_0000〜0x8FFF_FFFF の読み出し → ROM_H* (= AHB_CLK)
-//       0x0000_0000〜0x7FFF_FFFF            → DDR_H* (= DDR_CLK)
-//       0xF800_0000〜0xFBFF_FFFF            → APB_P* (= APB_CLK)
-//       0xE400_0000〜0xE5FF_FFFF            → Hazard3 の版の中の PLIC (= AHB_CLK。Andes NCEPLIC100 と同じ挙動。rtl/ae350_plic.v)
-//       0xE600_0000〜0xE60F_FFFF            → Hazard3 の版の中の PLMT (= AHB_CLK。rtl/ae350_plmt.v)
-//       それ以外、ROM の範囲への書き込み     → バスの入口でエラー応答 (= 2 サイクルの HRESP = 1)
-//   - ROM_H*: HADDR は Hazard3 のアドレスをそのまま出す (= 下位 2 bit も)。読み出しは常に 32 bit。ROM_HWRITE は常に 0
-//   - DDR_H*: 書き込みは 32 bit の値を上下の 32 bit に同じように並べる。読み出しは HADDR[2] で上下を選ぶ。
-//     HSIZE / HPROT はそのまま、HBURST は SINGLE
-//   - APB_P*: SETUP の次から ACCESS を出し、PREADY を待つ。PSLVERR = 1 は AHB のエラー応答に変える。
-//     PADDR はアドレスをそのまま出す (= 本物が上位のビットを落とすかは資料に無い。FPGA 側の回路は上位を見ない形にしてある)。
-//     PSTRB は HSIZE と HADDR[1:0] から作り、読み出しでは 0
-//   - 割り込み: PLMT の mtip と PLIC の meip を CORE_CLK に 2 段で同期させ、Hazard3 の timer_irq と irq (= mip.MEIP)
-//     につなぐ。PLMT の mtime は AHB_CLK で 1 サイクルごとに進む (= Gowin の BSP とデモは、mtime がバスの
-//     クロック (= 100 MHz) で進む前提)。RTC_CLK は使わない。GP_INT は AHB_CLK に 2 段で同期させ、GP0 → ソース 4、
-//     GP1〜GP15 → ソース 11〜25 (= MUG1029 表 4-2) に入れる。PLIC-SWINT (= ソフトウェア割り込み) は入れない
-//   - EXTS_H*: 0xE800_0000〜0xEFFF_FFFF を AHB_CLK の 32 bit の AHB として出す (= 段 5)。HADDR はフルアドレス
-//     (= 第三者の設計 2 件が 0xE800_xxxx と比べている)。HREADYIN はスレーブの HREADYOUT
-//   - ILM / DLM: 0xA000_0000 と 0xA020_0000 に 64 KB ずつ (= 段 5、Hazard3 の版の中のメモリ)
-//   - EXTM_H*: AHB_CLK の 64 bit のスレーブとして受け、中央のバスに乗せる (= 段 5)。行き先は CPU と同じアドレス空間
-//     全体で、中央のバスが CPU と交互に 1 つずつ処理する。HBURST は見ない
-//   - UART は Hazard3 の版に入れない (= FPGA のロジック側に作る)。UART2_TXD は 1 (= アイドル) に固定する
+//   - バス (rtl/ae350_fabric.v): Hazard3 の AHB を受け、アドレスで転送先を決めて、転送先のクロック側で
+//     転送する。同時に処理する転送は 1 つだけで、クロック間はトグルのハンドシェイクで乗せ換える
+//       0x8000_0000〜0x8FFF_FFFF の読み出し → ROM_H* (AHB_CLK)
+//       0x0000_0000〜0x7FFF_FFFF            → DDR_H* (DDR_CLK)
+//       0xF800_0000〜0xFBFF_FFFF            → APB_P* (APB_CLK)
+//       0xE400_0000〜0xE5FF_FFFF            → Hazard3 版の PLIC (AHB_CLK。Andes NCEPLIC100 と同じ動作。rtl/ae350_plic.v)
+//       0xE600_0000〜0xE60F_FFFF            → Hazard3 版の PLMT (AHB_CLK。rtl/ae350_plmt.v)
+//       上記以外と、ROM の範囲への書き込み   → バスの入口でエラー応答 (2 サイクルの HRESP = 1)
+//   - ROM_H*: HADDR には Hazard3 のアドレスをそのまま出す (下位 2 ビットも)。読み出しは常に 32 ビット。ROM_HWRITE は常に 0
+//   - DDR_H*: 書き込みでは、32 ビットの値を上下の 32 ビットに同じように並べる。読み出しでは HADDR[2] で上下を選ぶ。
+//     HSIZE と HPROT はそのまま出し、HBURST は SINGLE
+//   - APB_P*: SETUP の次のサイクルから ACCESS にし、PREADY を待つ。PSLVERR = 1 は AHB のエラー応答に変換する。
+//     PADDR にはアドレスをそのまま出す (本物が上位のビットを落とすかは資料に記載がない。ファブリック側の回路は上位を見ない
+//     作りにしてある)。PSTRB は HSIZE と HADDR[1:0] から作り、読み出しでは 0
+//   - 割り込み: PLMT の mtip と PLIC の meip を CORE_CLK に 2 段の FF で同期化し、Hazard3 の timer_irq と irq (mip.MEIP)
+//     につなぐ。PLMT の mtime は AHB_CLK の 1 サイクルごとに進む (Gowin の BSP とデモは、mtime がバスのクロック
+//     (100 MHz) で進むことを前提にしている)。RTC_CLK は使わない。GP_INT は AHB_CLK に 2 段の FF で同期化し、GP0 をソース 4、
+//     GP1〜GP15 をソース 11〜25 (MUG1029 の表 4-2) に入れる。PLIC-SWINT (ソフトウェア割り込み) は実装しない
+//   - EXTS_H*: 0xE800_0000〜0xEFFF_FFFF を、AHB_CLK の 32 ビット AHB として出す。HADDR はフルアドレス
+//     (第三者の設計 2 件が 0xE800_xxxx と比較している)。HREADYIN はスレーブの HREADYOUT
+//   - ILM と DLM: 0xA000_0000 と 0xA020_0000 に 64 KB ずつ置く (Hazard3 版の内蔵メモリ)
+//   - EXTM_H*: AHB_CLK の 64 ビットのスレーブとして受け、中央バスに乗せる。転送先は CPU と同じアドレス空間
+//     全体で、中央バスが CPU と交互に 1 つずつ処理する。HBURST は見ない
+//   - UART は Hazard3 版には入れない (ファブリック側に置く)。UART2_TXD は 1 (アイドル) に固定する
 //   - 使わない入力は lint_off UNUSEDSIGNAL で囲む
 // =============================================================
 
@@ -101,7 +96,7 @@ module AE350_SOC (
     input  wire        TEST_MODE,
     input  wire        TEST_RSTN,
 
-    // 命令メモリへの AHB (= 読み出し専用)
+    // 命令メモリへの AHB (読み出し専用)
     output wire [31:0] ROM_HADDR,
     input  wire [31:0] ROM_HRDATA,
     input  wire        ROM_HREADY,
@@ -109,7 +104,7 @@ module AE350_SOC (
     output wire [1:0]  ROM_HTRANS,
     output wire        ROM_HWRITE,
 
-    // FPGA のロジック側への APB
+    // ファブリック側への APB
     output wire [31:0] APB_PADDR,
     output wire        APB_PENABLE,
     input  wire [31:0] APB_PRDATA,
@@ -121,7 +116,7 @@ module AE350_SOC (
     output wire [2:0]  APB_PPROT,
     output wire [3:0]  APB_PSTRB,
 
-    // FPGA のロジック側への AHB (= AE350 がマスタ)
+    // ファブリック側への AHB (AE350 がマスタ)
     input  wire [31:0] EXTS_HRDATA,
     input  wire        EXTS_HREADYIN,
     input  wire        EXTS_HRESP,
@@ -134,7 +129,7 @@ module AE350_SOC (
     output wire [31:0] EXTS_HWDATA,
     output wire        EXTS_HWRITE,
 
-    // FPGA のロジック側から AE350 のアドレス空間への AHB (= AE350 がスレーブ)
+    // ファブリック側から AE350 のアドレス空間への AHB (AE350 がスレーブ)
     input  wire [31:0] EXTM_HADDR,
     input  wire [2:0]  EXTM_HBURST,
     input  wire [3:0]  EXTM_HPROT,
@@ -252,7 +247,7 @@ module AE350_SOC (
 );
 
     // ---------------------------------------------------------
-    // リセット: クロックごとに、かかるのは非同期・解けるのはクロックに同期 (= 2 段)
+    // リセット: クロックごとに、アサートは非同期、解除はクロックに同期 (2 段の FF)
     // ---------------------------------------------------------
     wire rst_n = POR_N & HW_RSTN;
 
@@ -271,7 +266,7 @@ module AE350_SOC (
     assign DDR_RSTN = ddr_rst_n;
 
     // ---------------------------------------------------------
-    // CPU (= Hazard3、1port 版、CORE_CLK)
+    // CPU (Hazard3、1 ポート版、CORE_CLK)
     // ---------------------------------------------------------
     wire [31:0] haddr;
     wire        hwrite;
@@ -287,7 +282,7 @@ module AE350_SOC (
     wire        pwrup_req;
     wire        unblock_out;
 
-    // 割り込み (= AHB_CLK の PLMT / PLIC から来るので、CORE_CLK に 2 段で同期させる)
+    // 割り込み (AHB_CLK の PLMT と PLIC から来るので、CORE_CLK に 2 段の FF で同期化する)
     wire        mtip;
     wire        meip;
     reg  [1:0]  mtip_s;
@@ -310,16 +305,16 @@ module AE350_SOC (
         .EXTENSION_C        (1),
         .EXTENSION_M        (1),
         .EXTENSION_ZIFENCEI (1),
-        .CSR_COUNTER        (1),     // mcycle / minstret (= A25 も持つ標準のカウンタ)
+        .CSR_COUNTER        (1),     // mcycle と minstret (A25 も持つ標準のカウンタ)
 `ifdef AE350_HAZARD3_FAST
-        // 最適化した版 (= 2026-11-13。FPGA のロジックで動かす版で、Hazard3 の速さの選択肢を入れて比べるため。build.sh の
-        // CPU=hazard3-fast。Zb* の拡張は、MEM=ddr3 で core_clk の違反が増えるので入れない (= 2026-11-17)。命令は A25 と同じ)
+        // 高速化した構成 (build.sh の CPU=hazard3-fast。ファブリック上で動かす Hazard3 版で、Hazard3 の高速化オプションを
+        // 入れて比較するためのもの)。Zb* 拡張は、MEM=ddr3 で core_clk のタイミング違反が増えるので入れない。命令セットは A25 と同じ
         .BRANCH_PREDICTOR   (1),
         .MUL_FAST           (1),
         .MUL_FASTER         (1),
         .MULH_FAST          (1),
 `endif
-        // 識別子は実機の A25 と同じ値 (= Tang Console で読んだ。2026-11-10)。misa は Hazard3 のまま (= F / D は無い)
+        // 識別子は実機の A25 と同じ値 (Tang Console で読み出した値)。misa は Hazard3 の値のまま (F と D はない)
         .MVENDORID_VAL      (32'h0000_031E),
         .MARCHID_VAL        (32'h8000_0A25),
         .MIMPID_OVERRIDE    (1),
@@ -387,7 +382,7 @@ module AE350_SOC (
     /* verilator lint_on PINCONNECTEMPTY */
 
     // ---------------------------------------------------------
-    // バス (= ae350_fabric): 行き先ごとのクロックで転送する
+    // バス (ae350_fabric): 転送先ごとのクロックで転送する
     // ---------------------------------------------------------
     wire        plic_wen;
     wire        plic_ren;
@@ -475,10 +470,10 @@ module AE350_SOC (
     );
 
     assign ROM_HWRITE = 1'b0;
-    assign DDR_HBURST = 3'b000;      // SINGLE (= Hazard3 も SINGLE しか出さない)
+    assign DDR_HBURST = 3'b000;      // SINGLE (Hazard3 も SINGLE しか出さない)
 
     // ---------------------------------------------------------
-    // PLMT と PLIC (= AHB_CLK)
+    // PLMT と PLIC (AHB_CLK)
     // ---------------------------------------------------------
     ae350_plmt u_plmt (
         .clk     (AHB_CLK),
@@ -491,8 +486,8 @@ module AE350_SOC (
         .mtip    (mtip)
     );
 
-    // GP_INT は FPGA のロジック側から来るので、AHB_CLK に 2 段で同期させる。
-    // GP0 → ソース 4、GP1〜GP15 → ソース 11〜25 (= MUG1029 表 4-2)。ほかのソースは使わない
+    // GP_INT はファブリック側から来るので、AHB_CLK に 2 段の FF で同期化する。
+    // GP0 をソース 4、GP1〜GP15 をソース 11〜25 に入れる (MUG1029 の表 4-2)。他のソースは使わない
     reg  [15:0] gp_int_s1;
     reg  [15:0] gp_int_s2;
     always @(posedge AHB_CLK or negedge ahb_rst_n) begin
@@ -522,10 +517,10 @@ module AE350_SOC (
         .wstrb (reg_wstrb),
         .rdata (plic_rdata),
         .meip  (meip),
-        .seip  (plic_seip)     // S モードへの通知 (= Hazard3 に S モードが無いので使わない)
+        .seip  (plic_seip)     // S モードへの割り込み通知 (Hazard3 には S モードがないので使わない)
     );
 
-    assign EXTS_HBURST = 3'b000;      // SINGLE (= Hazard3 も SINGLE しか出さない)
+    assign EXTS_HBURST = 3'b000;      // SINGLE (Hazard3 も SINGLE しか出さない)
 
 
     // ---------------------------------------------------------
@@ -560,7 +555,7 @@ module AE350_SOC (
     assign UART1_OUT1N = 1'b0;
     assign UART1_OUT2N = 1'b0;
 
-    // UART2 は Hazard3 の版に入れない。TXD はアイドルの 1 に固定する
+    // UART2 は Hazard3 版には入れない。TXD はアイドルの 1 に固定する
     assign UART2_TXD   = 1'b1;
     assign UART2_RTSN  = 1'b0;
     assign UART2_DTRN  = 1'b0;

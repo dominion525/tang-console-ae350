@@ -1,35 +1,35 @@
 // =============================================================
 // File:        rtl/sdram_bridge.v
 // Module:      sdram_bridge
-// Role:        上位の回路 (= rtl/ahb_sdram.v) からの行のポートと書きのポートを、SDR SDRAM
-//              (= W9825G6KH-6) の命令に直す。行の読みは 8 語のバースト、書きは 1 語。どちらも auto precharge。
-//              SDRAM の初期化とリフレッシュもここで行う。クロックは clk 1 本。
+// Role:        上位の回路 (rtl/ahb_sdram.v) からのライン読み出しポートと書き込みポートを、SDR SDRAM
+//              (W9825G6KH-6) のコマンドに変換する。ライン読み出しは 8 ワードのバースト、書き込みは 1 ワード。どちらも
+//              オートプリチャージ付き。SDRAM の初期化とリフレッシュもここで行う。クロックは clk 1 本。
 //
-//              SDRAM のクロックは clk の逆相 (= 上位のトップが ~clk を出す)。命令は clk の立ち上がりで変わり、SDRAM は
-//              半 cycle 後の立ち上がりで受ける。CL = 2 なので、読みの最初の語は、受けた 1 cycle 後の SDRAM の立ち上がりから
-//              tAC (= 6 ns) で出て、次の立ち上がりの tOH (= 3 ns) まで保たれる。READ を出した clk の縁の 2 つ後の縁で取る。
-//              20 MHz なら、ピンまでのクロックの遅れが 19 ns ほどまで取れる。
+//              SDRAM のクロックは clk の逆相 (上位のトップが ~clk を出力する)。コマンドは clk の立ち上がりで変わり、SDRAM は
+//              半サイクル後の立ち上がりで取り込む。CL = 2 なので、読み出しの最初のワードは、取り込んだ 1 サイクル後の SDRAM
+//              の立ち上がりから tAC (6 ns) で出力され、次の立ち上がりの tOH (3 ns) まで保持される。READ を出した clk の
+//              エッジから 2 つ後のエッジで取り込む。20 MHz なら、ピンまでのクロックの遅延が 19 ns 程度まで許容できる。
 //
 // Parameters:
-//   ADDR_WIDTH     = 25                   byte 番地の幅 (= 32 MB。W9825G6KH の大きさ)
-//   INIT_CYCLES    = 4000                 電源投入の後の待ち (= 200 us、20 MHz)
-//   REFRESH_CYCLES = 152                  リフレッシュの間隔 (= 7.6 us、20 MHz)
+//   ADDR_WIDTH     = 25                   バイトアドレスの幅 (32 MB。W9825G6KH の容量)
+//   INIT_CYCLES    = 4000                 電源投入後の待ち時間 (200 us、20 MHz)
+//   REFRESH_CYCLES = 152                  リフレッシュの間隔 (7.6 us、20 MHz)
 //
 // Ports:
-//   (上位の回路の側)
+//   (上位の回路側)
 //   input  wire clk, rst_n
-//   input  wire                   fill_valid    行を読んでほしい間 1
-//   input  wire [ADDR_WIDTH-5:0]  fill_line     行の番地 (= byte 番地の上位。16 byte 境界)
-//   output reg                    fill_ready    行が出た cycle に 1
-//   output reg  [127:0]           fill_data     行の 16 byte。番地の小さい byte が下位
-//   input  wire                   we            書いてほしい間 1
+//   input  wire                   fill_valid    ラインを読み出してほしい間 1
+//   input  wire [ADDR_WIDTH-5:0]  fill_line     ラインのアドレス (バイトアドレスの上位。16 バイト境界)
+//   output reg                    fill_ready    ラインを出力したサイクルに 1
+//   output reg  [127:0]           fill_data     ラインの 16 バイト。アドレスの小さいバイトが下位
+//   input  wire                   we            書き込んでほしい間 1
 //   input  wire [ADDR_WIDTH-1:0]  waddr
 //   input  wire [7:0]             wdata
-//   output reg                    wready        受け付けた次の cycle に 1
-//   output reg                    init_done     SDRAM の初期化が終わった。一度立ったら下りない。上位の非同期 reset に
-//                                               つながるので、state から組み合わせ回路で作らない (= 一瞬の 0 が reset になる)
+//   output reg                    wready        受け付けた次のサイクルに 1
+//   output reg                    init_done     SDRAM の初期化が終わった。一度 1 になったら 0 に戻らない。上位の非同期リセットに
+//                                               つながるので、state から組み合わせ回路で作らない (一瞬の 0 がリセットになるため)
 //
-//   (SDRAM の側)
+//   (SDRAM 側)
 //   inout  wire [15:0] sdram_dq
 //   output reg  [12:0] sdram_addr
 //   output reg  [1:0]  sdram_ba
@@ -37,26 +37,26 @@
 //   output reg  [1:0]  sdram_dqm
 //
 // Contract:
-//   - 行の読み 1 回は、fill_valid が立ってから fill_ready の cycle まで。fill_valid が途中で下りたら、
-//     その読みは捨てる (= 下りた後にまた立っても、それは新しい読み)
-//   - 書き 1 回は、we が立ってから wready の cycle まで
-//   - 受け付けた書き込みは、次の読みから見える
-//   - 行の読みと書きが同じ cycle に立っていたら、読みを先に受ける
+//   - 1 回のライン読み出しは、fill_valid が 1 になってから fill_ready のサイクルまで。fill_valid が途中で 0 になったら、
+//     その読み出しは破棄する (0 になった後にまた 1 になっても、それは新しい読み出し)
+//   - 1 回の書き込みは、we が 1 になってから wready のサイクルまで
+//   - 受け付けた書き込みは、次の読み出しから見える
+//   - ライン読み出しと書き込みが同じサイクルに要求されたら、読み出しを先に受け付ける
 //
-// Reset:       rst_n は上位の reset。受け付けている読みの結果を捨てる。SDRAM の初期化はやり直さない
-//              (= 電源投入のときだけ。FF の初期値で始める)
+// Reset:       rst_n は上位のリセット。受け付けている読み出しの結果を破棄する。SDRAM の初期化はやり直さない
+//              (初期化は電源投入時だけ。FF の初期値から始める)
 // Clock:       posedge clk
 //
 // Dependencies:
 //   なし
 //
 // Testbench:
-//   tb/sdram_tb.v   ahb_sdram と SDRAM のモデルとつないで確かめる
+//   tb/sdram_tb.v   ahb_sdram と SDRAM のモデルにつないで確かめる
 //
 // Design Notes:
-//   - **番地の割り当ては {行, バンク, 列}。**列 9 bit、バンク 2 bit、残りが行。
-//   - **モードは、読みが 8 語のバースト、書きが 1 語** (= MR の A9)。byte の書き分けは DQM で行う。
-//   - **待ちの cycle は 20 MHz (= 50 ns) の値。**W9825G6KH-6 は tRCD / tRP 15 ns、tRC 60 ns、tRAS 42 ns、tWR 2 tCK。
+//   - **アドレスの割り当ては {行, バンク, 列}。**列 9 ビット、バンク 2 ビット、残りが行。
+//   - **モードは、読み出しが 8 ワードのバースト、書き込みが 1 ワード** (MR の A9)。バイト単位の書き込みは DQM で行う。
+//   - **待ちのサイクル数は 20 MHz (50 ns) での値。**W9825G6KH-6 は tRCD と tRP が 15 ns、tRC 60 ns、tRAS 42 ns、tWR 2 tCK。
 // =============================================================
 
 `default_nettype none
@@ -98,16 +98,16 @@ module sdram_bridge #(
     reg [3:0]  init_refs = 4'd0;
     reg [8:0]  refresh_timer = 9'd0;
     reg        refresh_due = 1'b0;
-    reg        rd_keep = 1'b0;      // この読みの結果を返すか (= fill_valid が途中で下りたら 0)
+    reg        rd_keep = 1'b0;      // この読み出しの結果を返すか (fill_valid が途中で 0 になったら 0)
     reg [15:0] dq_out = 16'd0;
     reg        dq_oe = 1'b0;
 
-    // 語番地 (= byte 番地の上位) を {行, バンク, 列} に分ける
+    // ワードアドレス (バイトアドレスの上位) を {行, バンク, 列} に分ける
     wire [ADDR_WIDTH-2:0] w_word = waddr[ADDR_WIDTH-1:1];
     wire [ADDR_WIDTH-2:0] r_word = {fill_line, 3'b000};
     localparam ROW_BITS = ADDR_WIDTH - 1 - 11;
-    // 行の番地を 13 bit に詰める (= ADDR_WIDTH が 25 のとき ROW_BITS が 13 になり、0 回の繰り返しは書けないので、
-    // 0 にしてから下位に入れる)
+    // 行アドレスを 13 ビットに詰める (ADDR_WIDTH が 25 のときは ROW_BITS が 13 になり、0 回の繰り返しは書けないので、
+    // いったん 0 にしてから下位に入れる)
     function [12:0] pad_row(input [ROW_BITS-1:0] r);
         begin
             pad_row = 13'd0;
@@ -156,11 +156,11 @@ module sdram_bridge #(
             S_PRE_ALL: begin
                 sdram_dqm <= 2'b11;
                 cmd(CMD_PRE);
-                sdram_addr[10] <= 1'b1;     // 全部のバンク
+                sdram_addr[10] <= 1'b1;     // 全バンク
                 state <= S_INIT_REF;
                 cnt <= 13'd0;
             end
-            // 待ちを含めて 3 cycle に 1 回 (= tRP、tRFC は 1 cycle の 50 ns を 2 つで足りる)
+            // 待ちを含めて 3 サイクルに 1 回 (tRP と tRFC は、1 サイクル 50 ns が 2 つで足りる)
             S_INIT_REF: begin
                 sdram_dqm <= 2'b11;
                 cnt <= cnt + 1'b1;
@@ -178,7 +178,7 @@ module sdram_bridge #(
                 sdram_dqm <= 2'b11;
                 cmd(CMD_MRS);
                 sdram_ba <= 2'd0;
-                sdram_addr <= 13'b000_1_00_010_0_011;   // 書きは 1 語、CL = 2、順次、読みは BL = 8
+                sdram_addr <= 13'b000_1_00_010_0_011;   // 書き込みは 1 ワード、CL = 2、シーケンシャル、読み出しは BL = 8
                 cnt <= 13'd0;
                 state <= S_WAIT;
             end
@@ -204,22 +204,22 @@ module sdram_bridge #(
                     ba_q <= w_word[10:9];
                     dq_out <= {wdata, wdata};
                     sdram_dqm <= 2'b00;
-                    // 番地の小さい byte が下位 (= DQ[7:0])。DQM が 1 の byte は書かない
+                    // アドレスの小さいバイトが下位 (DQ[7:0])。DQM が 1 のバイトは書き込まない
                     wready <= 1'b1;
                     state <= S_WR_CMD;
                 end
-            S_REF: begin                        // tRC 60 ns (= 2 cycle)
+            S_REF: begin                        // tRC 60 ns (2 サイクル)
                 state <= S_WAIT;
                 cnt <= 13'd0;
             end
             S_RD_CMD: begin
                 cmd(CMD_READ);
                 sdram_ba <= ba_q;
-                sdram_addr <= {3'b001, 1'b0, col_q};    // A10 = auto precharge
+                sdram_addr <= {3'b001, 1'b0, col_q};    // A10 = オートプリチャージ
                 cnt <= 13'd0;
                 state <= S_RD_DATA;
             end
-            // READ を出した縁を 0 として、2 つ目の縁で最初の語を取り、そこから 8 語
+            // READ を出したエッジを 0 として、2 つ目のエッジで最初のワードを取り込み、そこから 8 ワード
             S_RD_DATA: begin
                 cnt <= cnt + 1'b1;
                 if (cnt >= 13'd1) fill_data <= {sdram_dq, fill_data[127:16]};
@@ -239,7 +239,7 @@ module sdram_bridge #(
                 cnt <= 13'd0;
                 state <= S_WAIT;
             end
-            // 書きは tWR 2 tCK と tRP、読みは auto precharge、リフレッシュと MRS は tRC / tMRD
+            // 書き込みは tWR 2 tCK と tRP、読み出しはオートプリチャージ、リフレッシュと MRS は tRC と tMRD
             S_WAIT: begin
                 cnt <= cnt + 1'b1;
                 if (cnt == 13'd2) state <= S_IDLE;
@@ -248,7 +248,7 @@ module sdram_bridge #(
         endcase
     end
 
-    // 書く byte の選び方は、ACT の cycle の waddr で決まる
+    // 書き込むバイトの選択は、ACT のサイクルの waddr で決まる
     always @(posedge clk)
         if (state == S_IDLE) wmask_q <= waddr[0] ? 2'b01 : 2'b10;
 endmodule

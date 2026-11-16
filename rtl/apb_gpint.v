@@ -1,24 +1,24 @@
 // =============================================================
 // File:        rtl/apb_gpint.v
 // Module:      apb_gpint
-// Role:        AE350 の GP_INT (= ユーザーの割り込み 16 本) を、APB のレジスタから立てる回路 (= 段 4、2026-11-10)。
-//              FPGA のロジック側の回路で、実機にもそのまま載る。
+// Role:        AE350 の GP_INT (ユーザー割り込み 16 本) を、APB のレジスタから駆動する回路。
+//              ファブリック側の回路で、実機でもそのまま使う。
 //
-// Registers (= PADDR[3:2] で選ぶ。上位のビットは見ない):
-//   0x00  GP_INT   R/W   下位 16 bit をそのまま GP_INT[15:0] に出す (= レベル)。初期値 0
+// Registers (PADDR[3:2] で選ぶ。上位のビットは見ない):
+//   0x00  GP_INT   R/W   下位 16 ビットをそのまま GP_INT[15:0] に出力する (レベル)。初期値 0
 //   それ以外       PSLVERR = 1 を返す
 //
 // Ports:
 //   input  wire        clk / rst_n
 //   input  wire        psel / penable / pwrite
 //   input  wire [31:0] paddr / pwdata
-//   input  wire [3:0]  pstrb       書き込みは pstrb のバイトレーンだけ (= 下位 2 byte)
+//   input  wire [3:0]  pstrb       pstrb で選ばれたバイトレーンだけを書き込む (下位 2 バイト)
 //   output wire [31:0] prdata
 //   output wire        pready / pslverr
 //   output wire [15:0] gp_int
 //
-// Clock:       clk (= APB_CLK と同じクロック)
-// Reset:       rst_n (active low、非同期)
+// Clock:       clk (APB_CLK と同じクロック)
+// Reset:       rst_n (アクティブ Low、非同期)
 // =============================================================
 
 `default_nettype none
