@@ -259,16 +259,6 @@ $(BUILD)/coremark_ilm.elf: $(COREMARK_DIR)/core_main.c sw/coremark/core_portme.c
 $(BUILD)/coremark_ilm.bin: $(BUILD)/coremark_ilm.elf
 	$(RISCV_PREFIX)objcopy -O binary $< $@
 
-# Zb* の拡張を使う指定で作った ILM の CoreMark (= 最適化した Hazard3 の版、build.sh の CPU=hazard3-fast 向け。AE350 では動かない)
-ZB_ARCH := -march=rv32imac_zicsr_zifencei_zba_zbb_zbc_zbkb_zbs -mabi=ilp32
-$(BUILD)/coremark_ilm_zb.elf: $(COREMARK_DIR)/core_main.c sw/coremark/core_portme.c sw/coremark/core_portme.h $(SW_COMMON) sw/syscalls.c sw/ilm.ld
-	$(RISCV_PREFIX)gcc $(SW3_CFLAGS) $(ZB_ARCH) $(COREMARK_OPT) -Isw/coremark -I$(COREMARK_DIR) -DPERFORMANCE_RUN=1 \
-	    -DFLAGS_STR='"$(COREMARK_OPT) $(ZB_ARCH)"' -DITERATIONS=0 $(SW_COMMON) $(COREMARK_SRCS) sw/coremark/core_portme.c sw/syscalls.c \
-	    $(ILM_PROG_LDFLAGS) $(SW3_LIBS) -o $@
-
-$(BUILD)/coremark_ilm_zb.bin: $(BUILD)/coremark_ilm_zb.elf
-	$(RISCV_PREFIX)objcopy -O binary $< $@
-
 # 公表値 (= Hazard3 の README の RP2350 の値) と同じ速さのための指定で作った ILM の CoreMark (= 2026-11-13)。C 拡張を使わない
 # (= rv32ima) ので、libgcc は C 拡張を使う版 (= rv32imac。測る区間の外の、整数の割り算などで使う) を名指しで使う。コードが
 # 大きくなり newlib の printf と合わせると ILM に収まらないので、CoreMark の小さい printf (= barebones/ee_printf.c) を使い、小数も
@@ -277,7 +267,6 @@ $(BUILD)/coremark_ilm_zb.bin: $(BUILD)/coremark_ilm_zb.elf
 PUB_OPT     := -O3 -mbranch-cost=1 -funroll-all-loops --param max-inline-insns-auto=200 -finline-limit=10000 \
                -fno-code-hoisting -fno-if-conversion2 -falign-functions=4 -falign-jumps=4 -falign-loops=4
 PUB_ARCH    := -march=rv32ima_zicsr_zifencei -mabi=ilp32
-PUB_ZB_ARCH := -march=rv32ima_zicsr_zifencei_zba_zbb_zbc_zbkb_zbs -mabi=ilp32
 PUB_LIBGCC  := $(dir $(shell $(RISCV_PREFIX)gcc -march=rv32imac -mabi=ilp32 -print-libgcc-file-name))
 PUB_SRCS     = $(COREMARK_SRCS) $(BUILD)/coremark_ee_printf.c sw/coremark/core_portme.c sw/syscalls.c
 
@@ -296,7 +285,6 @@ $(BUILD)/coremark_ilm_$(1).bin: $(BUILD)/coremark_ilm_$(1).elf
 	$(RISCV_PREFIX)objcopy -O binary $$< $$@
 endef
 $(eval $(call PUB_RULE,pub,$(PUB_ARCH)))
-$(eval $(call PUB_RULE,pub_zb,$(PUB_ZB_ARCH)))
 
 $(BUILD)/coremark.bin: $(BUILD)/coremark.elf
 	$(RISCV_PREFIX)objdump -d -h $< > $(BUILD)/coremark.dis
