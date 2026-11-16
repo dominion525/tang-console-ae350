@@ -12,7 +12,7 @@
 #   ROM=loader       ROM に、プログラムを UART で受けて SDRAM で動かすローダー (= sw/loader.c) を置く。観測の回路
 #                    (= ae350_observer) は外す。既定は ROM=probe (= sw/probe.c)
 #   CPU=hazard3      本物の AE350 の代わりに、Hazard3 の版 (= rtl/AE350_SOC.v) を FPGA のロジックで動かす
-#   CPU=hazard3-fast 同上で、Hazard3 の速さの選択肢 (= 分岐予測、速い乗算器) と Zb* の拡張を全部入れる (= AE350 との互換性は無い)
+#   CPU=hazard3-fast 同上で、Hazard3 の速さの選択肢 (= 分岐予測、速い乗算器) を入れる (= 命令は AE350 と同じ)
 #   MEM=ddr3         DDR_H* の先を SOM の DDR3 (= Gowin の DDR3 の IP、1 GB) にする。SDRAM は使わない (= SDRAM=hs とは
 #                    一緒に使えない)。IP は ddr3/ddr3_memory_interface.v (= IDE の IP Core Generator で版 B 向けに作ったもの)
 #   MEM=litedram     実験。DDR_H* の先を SOM の DDR3 の 1 個目 (= 512 MB) にし、制御は LiteDRAM (= litedram/tang_console.yml を
@@ -53,7 +53,10 @@ fi
 export AE350_BOARD_BUILD=$out
 # Hazard3 の版は、指定が無ければ配置の設定を 2 にする (= 2026-11-16。Hazard3 の中の遅い経路は 40 MHz に対する余裕がほとんど無く、
 # CPU=hazard3 MEM=ddr3 では、既定と PLACE=1 で core_clk に違反が出て、PLACE=2 で消えた)
+# CPU=hazard3-fast は、指定が無ければ配線の設定も 1 にする (= 2026-11-17。MEM=ddr3 で、PLACE=2 だけでは core_clk に 5 か所の
+# 違反が残り、ROUTE=1 で消えた。PLACE=1、PLACE=3、ROUTE=2 では消えなかった)
 case "${CPU:-ae350}" in
+  hazard3-fast) PLACE=${PLACE:-2}; ROUTE=${ROUTE:-1} ;;
   hazard3*) PLACE=${PLACE:-2} ;;
 esac
 export AE350_PLACE_OPTION=${PLACE:-}

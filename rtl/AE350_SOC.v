@@ -312,17 +312,12 @@ module AE350_SOC (
         .EXTENSION_ZIFENCEI (1),
         .CSR_COUNTER        (1),     // mcycle / minstret (= A25 も持つ標準のカウンタ)
 `ifdef AE350_HAZARD3_FAST
-        // 最適化した版 (= 2026-11-13。FPGA のロジックで動かす版で、Hazard3 の速さの選択肢と Zb* の拡張を全部入れて比べるため。
-        // build.sh の CPU=hazard3-fast。A25 に無い命令を持つので、AE350 との互換性は無くなる)
+        // 最適化した版 (= 2026-11-13。FPGA のロジックで動かす版で、Hazard3 の速さの選択肢を入れて比べるため。build.sh の
+        // CPU=hazard3-fast。Zb* の拡張は、MEM=ddr3 で core_clk の違反が増えるので入れない (= 2026-11-17)。命令は A25 と同じ)
         .BRANCH_PREDICTOR   (1),
         .MUL_FAST           (1),
         .MUL_FASTER         (1),
         .MULH_FAST          (1),
-        .EXTENSION_ZBA      (1),
-        .EXTENSION_ZBB      (1),
-        .EXTENSION_ZBC      (1),
-        .EXTENSION_ZBKB     (1),
-        .EXTENSION_ZBS      (1),
 `endif
         // 識別子は実機の A25 と同じ値 (= Tang Console で読んだ。2026-11-10)。misa は Hazard3 のまま (= F / D は無い)
         .MVENDORID_VAL      (32'h0000_031E),
