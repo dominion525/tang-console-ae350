@@ -1,20 +1,20 @@
 /*
- * DDR_H* の先のメモリ (= SDRAM か DDR3) への、1 回の読み書きにかかる CPU のクロック数を測るプログラム (= 2026-11-13)。
- * ILM に置いて (= sw/ilm.ld)、ROM のローダーで送って run する。SDRAM の版と DDR3 の版 (= board/tang_console/build.sh の
- * MEM=ddr3) で同じものを流して比べる。
+ * DDR_H* の先のメモリ (SDRAM か DDR3) への 1 回の読み書きにかかる、CPU のクロック数を測るプログラム。
+ * ILM に置き (sw/ilm.ld)、ROM のローダーで送って run する。SDRAM 版と DDR3 版 (board/tang_console/build.sh の
+ * MEM=ddr3) で同じものを実行して比べる。
  *
- * データのキャッシュを切って測る (= mcache_ctl の bit 1。キャッシュが入っていると、メモリまで行かない)。測る前に UART が
- * 送り終わるのを待つ (= AE350 は UART への書き込みを溜めたまま先へ進み、直後のバスの読み出しが待たされる。sw/time_probe.c)。
+ * データキャッシュを無効にして測る (mcache_ctl の bit 1。キャッシュが有効だと、メモリまでアクセスしない)。測る前に、UART の
+ * 送信が終わるのを待つ (AE350 は UART への書き込みを溜めたまま先へ進み、直後のバスの読み出しが待たされる。sw/time_probe.c)。
  *
- *   シーケンシャル書き込み          32 bit を 4 byte ずつ進めて 1024 回書き、最後に fence (= 溜まった書き込みが終わるまで) を置く
- *   シーケンシャル読み出し          32 bit を 4 byte ずつ進めて 1024 回読む
- *   ランダム読み出し (= 4 KB 間隔)  32 bit を 4096 byte ずつ進めて 1024 回読む (= 毎回、別の行。前に読んだものが生かせない)
+ *   シーケンシャル書き込み          32 ビットを 4 バイトずつ進めて 1024 回書き込み、最後に fence (溜まった書き込みが終わるまで待つ) を置く
+ *   シーケンシャル読み出し          32 ビットを 4 バイトずつ進めて 1024 回読む
+ *   ランダム読み出し (4 KB 間隔)    32 ビットを 4096 バイトずつ進めて 1024 回読む (毎回別のラインなので、前に読んだものを再利用できない)
  *
- * 1 回あたりは mcycle の合計 ÷ 1024 (= 100 倍で出す)。
+ * 1 回あたりのクロック数は mcycle の合計 ÷ 1024 (100 倍した値を出力する)。
  *
- * DDR_H* の先の回路のカウンタも、それぞれの前後で読み、1 回あたりの差を出す (= 2026-11-13、DDR3 の読みが SDRAM より遅い件の
- * 内訳)。DDR3 の版は rtl/ahb_ddr3.v の 0x7F00_0000、SDRAM の版は rtl/ahb_sdram.v の 0x0300_0000。0x7F00_0000 を読んで例外に
- * ならなければ DDR3 の版とみなす。
+ * DDR_H* の先の回路のカウンタも、それぞれの前後で読み、1 回あたりの差を出力する (DDR3 の読み出しが SDRAM より遅い原因の
+ * 内訳を調べるため)。DDR3 版は rtl/ahb_ddr3.v の 0x7F00_0000、SDRAM 版は rtl/ahb_sdram.v の 0x0300_0000。0x7F00_0000 を読んで
+ * 例外にならなければ DDR3 版とみなす。
  */
 
 #include <stdint.h>
@@ -33,7 +33,7 @@ static inline void uart_idle(void)
     }
 }
 
-/* 番地は volatile の変数を足して作る (= GCC に定数の番地として扱わせない。sw/ddr3_check.c と同じ) */
+/* アドレスは volatile の変数を足して作る (GCC に定数のアドレスとして扱わせない。sw/ddr3_check.c と同じ) */
 static volatile uintptr_t base0 = BASE;
 
 static void report(const char *name, uint32_t cyc)
@@ -41,7 +41,7 @@ static void report(const char *name, uint32_t cyc)
     printf("%-26s mcycle %8lu  1 回あたり x100 %lu\n", name, (unsigned long)cyc, (unsigned long)((uint64_t)cyc * 100u / N));
 }
 
-/* DDR_H* の先の回路のカウンタ (= 8 語) */
+/* DDR_H* の先の回路のカウンタ (8 ワード) */
 #define STAT_DDR3   0x7F000000u
 #define STAT_SDRAM  0x03000000u
 static uint32_t stat_base;
@@ -51,7 +51,7 @@ static void snap(uint32_t *v)
     for (int i = 0; i < 8; i++) v[i] = load_word_4byte(stat_base + 4u * (uint32_t)i);
 }
 
-/* カウンタの前後の差を、1 回あたり (= x100) で出す */
+/* カウンタの前後の差を、1 回あたり (100 倍) で出力する */
 static void report_stat(const char *name, const uint32_t *a, const uint32_t *b)
 {
     static const char *const ddr3[8] = {"読みの数", "読みで待たせた DDR_CLK", "書きの数", "書きで待たせた DDR_CLK",
@@ -69,13 +69,13 @@ static void report_stat(const char *name, const uint32_t *a, const uint32_t *b)
 
 int main(void)
 {
-    __asm__ volatile("csrc 0x7CA, %0" : : "r"(2u) : "memory");   // データのキャッシュを切る
+    __asm__ volatile("csrc 0x7CA, %0" : : "r"(2u) : "memory");   // データキャッシュを無効にする
     trap_cause = 0;
     fence();
     uintptr_t b = base0;
     uint32_t c0, c1, sum = 0;
     uint32_t s0[8], s1[8], s2[8], s3[8], s4[8], s5[8];
-    static uint32_t got[N];   // シーケンシャル読み出しで読んだ値 (= 書いた値 0〜1023 と照らす。2026-11-13)
+    static uint32_t got[N];   // シーケンシャル読み出しで読んだ値 (書き込んだ値 0〜1023 と照合する)
 
     (void)load_word_4byte(STAT_DDR3);
     stat_base = (trap_cause == 0) ? STAT_DDR3 : STAT_SDRAM;

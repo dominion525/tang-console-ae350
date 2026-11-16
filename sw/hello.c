@@ -1,7 +1,7 @@
 /*
- * SDRAM で動かす確かめのプログラム (= 2026-11-12)。ROM のローダーで送って run する (= sw/sdram.ld)。
- * newlib の printf で、自分の main の番地 (= SDRAM の 0x0001_0000〜 にあること) を出し、1 行受けてそのまま返し、
- * 0x600D (= TB の合格) を返す。main から戻ると、start.S が ROM のローダーへ戻る。
+ * 外部メモリで動かす確認用のプログラム。ROM のローダーで送って run する (sw/sdram.ld)。
+ * newlib の printf で自分の main のアドレス (外部メモリの 0x0001_0000〜 にあること) を出力し、1 行受信してそのまま返し、
+ * 0x600D (テストベンチでの合格) を返す。main から戻ると、start.S が ROM のローダーに戻る。
  */
 
 #include <stdint.h>

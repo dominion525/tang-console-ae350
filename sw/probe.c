@@ -1,14 +1,14 @@
 /*
- * 実機の値を読むプログラム (= board/tang_console/ の構成で動かす。2026-11-10)。
+ * 実機の値を読むプログラム (board/tang_console/ の構成で動かす)。
  *
- * Hazard3 の版を作るときに資料で決めきれなかった値と、本物の AE350 の素性を読み、UART に 1 行ずつ出す。
- * 読むと例外になるもの (= 無い CSR、エラー応答のアドレス) は、mcause を「例外」として出す。
- * 出し終わったら、UART に何か 1 文字送るともう一度出す。
+ * Hazard3 版を作るときに資料だけでは決めきれなかった値と、本物の AE350 の仕様を読み出し、UART に 1 行ずつ出力する。
+ * 読むと例外になるもの (存在しない CSR、エラー応答を返すアドレス) は、mcause を「例外」として出力する。
+ * 出力し終わった後、UART に何か 1 文字送ると、もう一度出力する。
  *
- * 行の形: <名前> <値 (16 進 8 桁)>   か   <名前> 例外 <mcause>
+ * 行の形式: <名前> <値 (16 進 8 桁)>   か   <名前> 例外 <mcause>
  *
- * Hazard3 の版でも流せる (= make run-probe)。そのときは終わりに DDR の 0x0000_0000 に 0x600D を書き、
- * TB を止める (= 実機の DDR_H* の先には何も無いので、書いても何も起きない)。
+ * Hazard3 版でも実行できる (make run-probe)。そのときは最後に DDR の 0x0000_0000 に 0x600D を書き込み、
+ * テストベンチを止める (実機の DDR_H* の先には何もないので、書き込んでも何も起きない)。
  */
 
 #include <stdint.h>
@@ -38,7 +38,7 @@ static void put_line(const char *name, uint32_t v)
     put_str("\r\n");
 }
 
-/* CSR を読む。無い CSR は例外になり、sw/trap.c が次の命令から再開する (= csrr は常に 4 byte) */
+/* CSR を読む。存在しない CSR は例外になり、sw/trap.c が次の命令から再開する (csrr は常に 4 バイト) */
 #define READ_CSR(num) ({                                              \
     uint32_t v_;                                                      \
     trap_cause = 0;                                                   \
@@ -48,15 +48,15 @@ static void put_line(const char *name, uint32_t v)
 
 #define CSR_LINE(name, num) put_line(name, READ_CSR(num))
 
-/* CSR のビットを立てる / 落とす。無い CSR (= Hazard3) は例外になり、次の命令から再開する */
+/* CSR のビットを 1 にする、0 にする。存在しない CSR (Hazard3) は例外になり、次の命令から再開する */
 #define SET_CSR(num, bits) __asm__ volatile("csrs " #num ", %0" : : "r"(bits) : "memory")
 #define CLEAR_CSR(num, bits) __asm__ volatile("csrc " #num ", %0" : : "r"(bits) : "memory")
 
 /*
- * 命令とデータのキャッシュを入れる (= mcache_ctl、0x7CA)。N25F のキャッシュは電源を入れた直後は切れていて、起動の
- * プログラムが入れる。値は Gowin の BSP (= ae350_coremark/ae350.c の __platform_init) と同じ: 命令とデータのキャッシュ
- * (= bit 0 / 1)、命令とデータの先読み (= bit 9 / 10)、データの write-around (= bit 13〜14 を 1)、一貫性 (= bit 19)。
- * 一貫性があるときは、入るまで (= bit 20) 待つ
+ * 命令キャッシュとデータキャッシュを有効にする (mcache_ctl、0x7CA)。N25F のキャッシュは電源投入直後は無効で、起動時の
+ * プログラムが有効にする。値は Gowin の BSP (ae350_coremark/ae350.c の __platform_init) と同じ: 命令キャッシュとデータキャッシュ
+ * (bit 0 と 1)、命令とデータのプリフェッチ (bit 9 と 10)、データの write-around (bit 13〜14 を 1)、コヒーレンシ (bit 19)。
+ * コヒーレンシを使うときは、有効になる (bit 20) まで待つ
  */
 #define MCACHE_DC_EN 0x2u
 static void cache_enable(void)
@@ -81,7 +81,7 @@ static void mem_line(const char *name, uintptr_t addr)
     put_line(name, read_mem(addr));
 }
 
-/* 全部 1 を書いて読み返し、読む前の値に戻す (= 書けるビットを知る)。書けないアドレスは例外を出す */
+/* すべて 1 を書き込んで読み返し、元の値に戻す (書き込めるビットを調べる)。書き込めないアドレスは例外を出す */
 static void wb_line(const char *name, uintptr_t addr)
 {
     uint32_t before = read_mem(addr);
@@ -120,7 +120,7 @@ static void settle(void) { for (volatile int i = 0; i < 200; i = i + 1) { } }
 
 static void put_num(const char *name, uint32_t v) { trap_cause = 0; put_line(name, v); }
 
-/* 割り込みは CPU に入れない (= mie は 0 のまま)。PLIC のレジスタだけで挙動を見る */
+/* 割り込みは CPU に通さない (mie は 0 のまま)。PLIC のレジスタだけで動作を調べる */
 static void plic_behavior(void)
 {
     put_str("-- PLIC の挙動\r\n");
@@ -128,7 +128,7 @@ static void plic_behavior(void)
     w32(PLIC_EN0, 0); w32(PLIC_EN1, 0); w32(PLIC_TH0, 0); w32(PLIC_TH1, 0);
     for (uint32_t id = 1; id < 32; id = id + 1) w32(PLIC_PRIO(id), 1);
 
-    /* 0. pending を空にする (= 前の「書けるビット」の確認で全部立っている。pending は claim でしか落とせない) */
+    /* 0. pending を空にする (前の「書き込めるビット」の確認で、すべて 1 になっている。pending は claim でしかクリアできない) */
     w32(PLIC_EN0, 0xFFFFFFFEu);
     for (int n = 0; n < 40; n = n + 1) {
         uint32_t c = r32(PLIC_CL0);
@@ -137,7 +137,7 @@ static void plic_behavior(void)
     }
     put_num("空にした後の pending", r32(PLIC_PEND));
 
-    /* 1. GP_INT の 16 本がどのソースか (= 立てて pending を読み、落としてから claim / complete で片付ける) */
+    /* 1. GP_INT の 16 本がどのソースか (1 にして pending を読み、0 に戻してから claim と complete で片付ける) */
     uint32_t gp0_src = 0;
     for (uint32_t i = 0; i < 16; i = i + 1) {
         w32(GPINT, 1u << i);
@@ -154,7 +154,7 @@ static void plic_behavior(void)
     }
     put_num("片付けた後の pending", r32(PLIC_PEND));
 
-    /* 2. レベルの再通知: GP0 を立てたまま claim / complete し、また pending が立つか */
+    /* 2. レベルの再通知: GP0 を 1 にしたまま claim と complete を行い、また pending になるか */
     w32(GPINT, 1);
     settle();
     uint32_t id = r32(PLIC_CL0);
@@ -168,7 +168,7 @@ static void plic_behavior(void)
     w32(PLIC_CL0, id);
     put_num("  片付けの claim", id);
 
-    /* 3. enable を落としてから complete したとき、効くか (= 効けば、立てたままの GP0 がまた pending になる) */
+    /* 3. enable を 0 にしてから complete したとき、有効か (有効なら、1 のままの GP0 がまた pending になる) */
     w32(GPINT, 1);
     settle();
     id = r32(PLIC_CL0);
@@ -184,7 +184,7 @@ static void plic_behavior(void)
     id = r32(PLIC_CL0);
     w32(PLIC_CL0, id);
 
-    /* 4. pending に書いて立てる (= ソース 5) */
+    /* 4. pending に書き込んで 1 にする (ソース 5) */
     w32(PLIC_PEND, 1u << 5);
     put_num("pending に bit 5 を書いた後", r32(PLIC_PEND));
     id = r32(PLIC_CL0);
@@ -192,7 +192,7 @@ static void plic_behavior(void)
     w32(PLIC_CL0, id);
     put_num("  complete の後の pending", r32(PLIC_PEND));
 
-    /* 5. claim はしきい値で絞るか (= priority 1、threshold 2) */
+    /* 5. claim はしきい値で絞られるか (priority 1、threshold 2) */
     w32(PLIC_TH0, 2);
     w32(PLIC_PEND, 1u << 5);
     id = r32(PLIC_CL0);
@@ -203,7 +203,7 @@ static void plic_behavior(void)
     put_num("  threshold 0 に戻して claim", id);
     if (id != 0) w32(PLIC_CL0, id);
 
-    /* 6. PREEMPT: priority 2 を claim したときの threshold と PPS、complete の後 */
+    /* 6. PREEMPT: priority 2 のソースを claim したときの threshold と PPS、complete の後 */
     w32(PLIC, 1);
     put_num("feature に 1 を書いた後", r32(PLIC));
     w32(PLIC_PRIO(5), 2);
@@ -221,7 +221,7 @@ static void plic_behavior(void)
     w32(PLIC_PRIO(5), 1);
     w32(PLIC_TH0, 0);
 
-    /* 7. ターゲット 1 の claim (= ターゲット 0 の enable は落とす) */
+    /* 7. ターゲット 1 の claim (ターゲット 0 の enable は 0 にする) */
     w32(PLIC_EN0, 0);
     w32(PLIC_EN1, 1u << 5);
     w32(PLIC_PEND, 1u << 5);
@@ -232,7 +232,7 @@ static void plic_behavior(void)
     put_num("  complete の後の pending", r32(PLIC_PEND));
 w32(PLIC_EN1, 0);
 
-/* 8. PPS の幅 (= ターゲット 0 の 8 ワード、ターゲット 1 の先頭) */
+/* 8. PPS の幅 (ターゲット 0 の 8 ワードと、ターゲット 1 の先頭) */
 put_str("-- PLIC の PPS とターゲット 1\r\n");
 for (uint32_t k = 0; k < 8; k = k + 1) {
     put_str("pps t0 word");
@@ -241,7 +241,7 @@ for (uint32_t k = 0; k < 8; k = k + 1) {
 }
 wb_line("pps t1 0x201400", PLIC + 0x201400u);
 
-/* 9. ターゲット 1 の通知は mip のどこに出るか (= ターゲット 0 と比べる。割り込みは入れない) */
+/* 9. ターゲット 1 の通知は mip のどこに出るか (ターゲット 0 と比べる。割り込みは通さない) */
 w32(PLIC_PRIO(5), 1);
 w32(PLIC_EN0, 0); w32(PLIC_EN1, 0); w32(PLIC_TH0, 0); w32(PLIC_TH1, 0);
 put_num("mip (何も立てない)", READ_CSR(0x344));
@@ -254,7 +254,7 @@ w32(PLIC_EN1, 1u << 5);
 settle();
 put_num("mip (ターゲット 1 に通知)", READ_CSR(0x344));
 
-/* 10. ターゲット 1 の PREEMPT (= feature はターゲットに共通) */
+/* 10. ターゲット 1 の PREEMPT (feature はターゲットで共通) */
 w32(PLIC, 1);
 w32(PLIC_PRIO(5), 2);
 id = r32(PLIC_CL1);
@@ -273,23 +273,23 @@ w32(PLIC_EN1, 0);
 }
 
 /*
- * ahb_sdram のカウンタ (= 0x0300_0000〜。読みと書きの転送の数、AE350 を待たせた DDR_CLK のサイクル数、SDRAM のクロックの側の
- * 行の読みと書きのサイクル数、書いた byte の数) の 7 つを読む
+ * ahb_sdram のカウンタ (0x0300_0000〜。読み出しと書き込みの転送の数、AE350 を待たせた DDR_CLK のサイクル数、SDRAM のクロック側の
+ * ライン読み出しと書き込みのサイクル数、書き込んだバイト数) の 7 つを読む
  */
 #define SDRAM_STAT_BASE 0x03000000u
 #define SDRAM_STAT_N    7
 static void sdram_stat(uint32_t *v)
 {
     /*
-     * 前の書き込みが DDR_H* で終わってから読む。N25F は書き込みの終わりを待たずに進み、番地の違う読み出しは書き込みの
-     * バッファを追い越す (= RVWMO で許される)。fence が無いと、最後の 2〜3 個の書き込みが数に入らないことがあった
-     * (= 実機、2026-11-12)。Hazard3 は書き込みを 1 つずつ終わらせるので、シミュレーションでは起きない
+     * 前の書き込みが DDR_H* で完了してから読む。N25F は書き込みの完了を待たずに先へ進み、アドレスの異なる読み出しが書き込み
+     * バッファを追い越す (RVWMO で許されている)。fence がないと、最後の 2〜3 個の書き込みが数に入らないことがあった
+     * (実機で観測)。Hazard3 は書き込みを 1 つずつ完了させるので、シミュレーションでは起きない
      */
     __asm__ volatile("fence" : : : "memory");
     for (uint32_t k = 0; k < SDRAM_STAT_N; k = k + 1) v[k] = load_word_4byte(SDRAM_STAT_BASE + 4u * k);
 }
 
-/* カウンタの前後の差を出す */
+/* カウンタの前後の差を出力する */
 static void sdram_stat_lines(const char *what, const uint32_t *a, const uint32_t *b)
 {
     static const char *const names[SDRAM_STAT_N] = {
@@ -304,14 +304,14 @@ static void sdram_stat_lines(const char *what, const uint32_t *a, const uint32_t
 }
 
 /*
- * DDR_H* の先の SDRAM (= 0x0000_0000〜、32 MB。rtl/ahb_sdram.v → rtl/sdram_bridge.v)。
- * 32 / 16 / 8 bit の読み書き、32 MB の一番上、32 MB の外のエラー応答、4 KB の読み書きの照合、読み書きのサイクル数を見る
+ * DDR_H* の先の SDRAM (0x0000_0000〜、32 MB。rtl/ahb_sdram.v → rtl/sdram_bridge.v)。
+ * 32、16、8 ビットの読み書き、32 MB の最上位、32 MB の外のエラー応答、4 KB の読み書きの照合、読み書きのサイクル数を確かめる
  */
 static void sdram_check(void)
 {
     /*
-     * この確認の間はデータキャッシュを切る (= 読み書きを SDRAM まで届かせ、カウンタの古い値を読まない)。SDRAM に書くのは
-     * この確認の中だけなので、切る前にキャッシュから書き戻すものは無い
+     * この確認の間はデータキャッシュを無効にする (読み書きを SDRAM まで届かせ、カウンタの古い値を読まないため)。SDRAM に
+     * 書き込むのはこの確認の中だけなので、無効にする前にキャッシュからライトバックするものはない
      */
     CLEAR_CSR(0x7CA, MCACHE_DC_EN);
     put_str("-- DDR_H* の先の SDRAM (= 0x0000_0000、32 MB)\r\n");
@@ -328,8 +328,8 @@ static void sdram_check(void)
     mem_line("0x02000000 (= 32 MB の外。例外 5 になる)", 0x02000000u);
 
     /*
-     * 1 MB 先に、番地から決まる値とその反転を書いて読み返す (= 違う語の数)。実機では 64 KB、シミュレーション (= Andes の
-     * CSR が読めない) では 4 KB。最初の 1024 語の書きと読みの mcycle も出す
+     * 1 MB 先に、アドレスから決まる値とその反転を書き込んで読み返す (一致しないワードの数を出す)。実機では 64 KB、
+     * シミュレーション (Andes の CSR が読めない) では 4 KB。最初の 1024 ワードの書き込みと読み出しの mcycle も出力する
      */
     (void)READ_CSR(0xFC2);
     const uint32_t words = (trap_cause != 0) ? 1024u : 16384u;
@@ -414,15 +414,15 @@ wb_line("pending 0x001000", 0xE4001000u);
     mem_line("plmt mtimecmp lo", 0xE6000008u);
     mem_line("plmt mtimecmp hi", 0xE600000Cu);
     /*
-     * 2000 回のループの前後で mcycle と mtime を読む。同じ測定を 2 回くり返し、1 回目 (= 命令がキャッシュに無い) と
-     * 2 回目 (= キャッシュにある) の両方を出す。mtime を読む前後の mcycle も読み、mtime を読むのにかかったクロック数を
-     * 始まりと終わりで出す (= 2026-11-13。キャッシュを入れると、1 回目の mcycle の差が mtime の差の 8 倍より大きく
-     * なっていた。mcycle の区間と mtime の区間の始まりと終わりのずれが、どれだけあるかを見るため)
+     * 2000 回のループの前後で mcycle と mtime を読む。同じ測定を 2 回繰り返し、1 回目 (命令がキャッシュにない) と
+     * 2 回目 (キャッシュにある) の両方を出力する。mtime を読む前後の mcycle も読み、mtime を読むのにかかったクロック数を
+     * 開始時と終了時で出力する (キャッシュを有効にすると、1 回目の mcycle の差が mtime の差の 8 倍より大きく
+     * なっていたため。mcycle の区間と mtime の区間の、開始と終了のずれがどれだけあるかを調べる)
      */
     for (uint32_t pass = 0; pass < 2; pass = pass + 1) {
         /*
-         * UART が送り終わるのを待ってから測る。AE350 は UART への書き込みを溜めたまま先へ進み、mtime の読み出しがその
-         * 後ろで待たされて、その時間が mcycle の区間にだけ入る (= 2026-11-13 に sw/time_probe.c で確かめた)
+         * UART の送信が終わるのを待ってから測る。AE350 は UART への書き込みを溜めたまま先へ進み、mtime の読み出しがその
+         * 後ろで待たされて、その時間が mcycle の区間にだけ入る (sw/time_probe.c で確かめた)
          */
         while (UART_STATUS & UART_STATUS_BUSY) {
         }
@@ -489,7 +489,7 @@ wb_line("pending 0x001000", 0xE4001000u);
     put_str("== end ==\r\n");
 }
 
-/* mcycle を 64 bit で読む (= 上位が繰り上がる途中を避ける) */
+/* mcycle を 64 ビットで読む (上位の桁上がりの途中を避ける) */
 static uint64_t mcycle64(void)
 {
     uint32_t hi, lo, hi2;
@@ -501,7 +501,7 @@ static uint64_t mcycle64(void)
     return ((uint64_t)hi << 32) | lo;
 }
 
-/* mtime を 64 bit で読む */
+/* mtime を 64 ビットで読む */
 static uint64_t mtime64(void)
 {
     uint32_t hi, lo, hi2;
@@ -514,9 +514,9 @@ static uint64_t mtime64(void)
 }
 
 /*
- * mtime と mcycle の速さを壁時計と比べるための行を出す。mcycle で間を空けて 10 行出し、受ける側 (= Mac) が
- * 各行の届いた時刻を記録する。行の形: "tick <番号> mtime <16 進 16 桁> mcycle <16 進 16 桁>"
- * 実機では間を 8 億 mcycle (= CORE_CLK が 800 MHz なら 1 秒) にする。Hazard3 の版 (= Andes の CSR が読めない) では短くする
+ * mtime と mcycle の速さを実時間と比べるための行を出力する。mcycle で間隔を空けて 10 行出力し、受信側 (Mac) が
+ * 各行が届いた時刻を記録する。行の形式: "tick <番号> mtime <16 進 16 桁> mcycle <16 進 16 桁>"
+ * 実機では間隔を 8 億 mcycle (CORE_CLK が 800 MHz なら 1 秒) にする。Hazard3 版 (Andes の CSR が読めない) では短くする
  */
 static void ticks(void)
 {
@@ -547,8 +547,8 @@ int main(void)
     report();
     ticks();
     /*
-     * Hazard3 の版の TB に終わりを知らせる。0 番地への書き込みは C で書くと GCC が消すので、命令で書く。実機 (= Andes の CSR が
-     * 読める) では書かない (= 0 番地は SDRAM で、データキャッシュに書いたまま残る)
+     * Hazard3 版のテストベンチに終了を知らせる。アドレス 0 への書き込みは C で書くと GCC が削除するので、命令で書く。実機 (Andes の
+     * CSR が読める) では書き込まない (アドレス 0 は SDRAM で、データキャッシュに書き込んだまま残るため)
      */
     (void)READ_CSR(0xFC2);
     if (trap_cause != 0) store_word_4byte(0x00000000u, 0x600Du);

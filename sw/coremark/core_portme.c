@@ -1,11 +1,11 @@
 /*
- * CoreMark を、この構成 (= AE350 か、Hazard3 の版) で動かすための関数 (= 2026-11-13。core_portme.h の説明を見る)。
+ * CoreMark を、この構成 (AE350 か Hazard3 版) で動かすための関数 (core_portme.h の説明を参照)。
  *
- * - 時間は mcycle を 64 bit で読む (= mcycleh を前後で読み、上位が繰り上がる途中を避ける)
- * - 秒に直すための CPU の周波数は misa で見分ける: F 拡張がある (= 本物の AE350、A25 は RV32 IMAFDC) なら 800 MHz、
- *   無い (= Hazard3) なら 40 MHz (= board/tang_console/top.v の CPU=hazard3 の CORE_CLK)。シミュレーションの中の Hazard3 は
- *   800 MHz で動くので、秒の値は合わない (= シミュレーションでは、結果が正しいかだけを見る)
- * - くり返しの回数は ITERATIONS で決める (= 0 なら CoreMark が 10 秒以上になるように自分で決める)
+ * - 時間は mcycle を 64 ビットで読む (mcycleh を前後で読み、上位の桁上がりの途中を避ける)
+ * - 秒に変換するための CPU の周波数は misa で判別する: F 拡張がある (本物の AE350。A25 は RV32 IMAFDC) なら 800 MHz、
+ *   ない (Hazard3) なら 40 MHz (board/tang_console/top.v の CPU=hazard3 の CORE_CLK)。シミュレーションの Hazard3 は
+ *   800 MHz で動くので、秒の値は合わない (シミュレーションでは、結果が正しいかだけを見る)
+ * - 繰り返しの回数は ITERATIONS で決める (0 なら、CoreMark が 10 秒以上になるように自動で決める)
  */
 
 #include "coremark.h"
@@ -13,7 +13,7 @@
 #if !HAS_PRINTF
 #include "uart.h"
 
-/* CoreMark の小さい printf (= barebones/ee_printf.c) が 1 文字ずつ出す先 (= Makefile がその uart_send_char をこれに差し替える) */
+/* CoreMark の簡易 printf (barebones/ee_printf.c) が 1 文字ずつ出力する先 (Makefile が、その uart_send_char をこれに差し替える) */
 void ae350_uart_putc(char c)
 {
     uart_putc(c);
@@ -55,7 +55,7 @@ static uint64_t read_mcycle64(void)
     return ((uint64_t)hi << 32) | lo;
 }
 
-/* 実行した命令の数 (= 1 命令あたりのクロック数を出すため。2026-11-13) */
+/* 実行した命令の数 (1 命令あたりのクロック数を出すため) */
 static uint64_t read_minstret64(void)
 {
     uint32_t hi, lo, hi2;
@@ -99,7 +99,7 @@ secs_ret time_in_secs(CORE_TICKS ticks)
 #if HAS_FLOAT
     return (secs_ret)ticks / (secs_ret)core_hz();
 #else
-    /* 秒が 32 bit の整数のとき (= HAS_FLOAT=0)、64 bit の ticks のまま割ってから直す (= 800 MHz では ticks が 32 bit を超える) */
+    /* 秒が 32 ビットの整数のとき (HAS_FLOAT=0) は、64 ビットの ticks のまま割ってから変換する (800 MHz では ticks が 32 ビットを超える) */
     return (secs_ret)(ticks / core_hz());
 #endif
 }
@@ -116,7 +116,7 @@ void portable_init(core_portable *p, int *argc, char *argv[])
 void portable_fini(core_portable *p)
 {
     uint64_t t = get_time();
-    /* 1 MHz あたりの点数を出すための生の値 (= 周波数に関係なく、くり返しの回数と mcycle から出せる) */
+    /* 1 MHz あたりのスコアを出すための生の値 (周波数に関係なく、繰り返しの回数と mcycle から出せる) */
     ee_printf("mcycle (64 bit) : %lu %lu\n", (unsigned long)(t >> 32), (unsigned long)(t & 0xFFFFFFFFu));
     uint64_t n = stop_instret - start_instret;
     ee_printf("minstret (64 bit) : %lu %lu\n", (unsigned long)(n >> 32), (unsigned long)(n & 0xFFFFFFFFu));

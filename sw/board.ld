@@ -1,11 +1,11 @@
 /*
- * 実機の値を読む構成 (= board/tang_console/) のリンカスクリプト (= 2026-11-10)。
+ * 実機の値を読む構成 (board/tang_console/) のリンカスクリプト。
  *
- *   0x8000_0000〜  ROM (= ROM_H* の先のブロック RAM、16 KB)   .text、.rodata、.data の初期値
- *   0xA020_0000〜  DLM (= AE350 の中のメモリ、64 KB)          .result、.data、.bss、スタック
+ *   0x8000_0000〜  ROM (ROM_H* の先のブロック RAM、16 KB)   .text、.rodata、.data の初期値
+ *   0xA020_0000〜  DLM (AE350 の内蔵メモリ、64 KB)          .result、.data、.bss、スタック
  *
- * DDR_H* の先には何も置かない (= DDR3 を使わない) ので、データもスタックも DLM に置く。
- * start.S が参照する名前 (= _data_load / _data_start / _data_end / _bss_start / _bss_end / _stack_top) は
+ * DDR_H* の先には何も置かない (DDR3 を使わない) ので、データもスタックも DLM に置く。
+ * start.S が参照するシンボル (_data_load、_data_start、_data_end、_bss_start、_bss_end、_stack_top) は
  * sw/ae350.ld と同じ。
  */
 
