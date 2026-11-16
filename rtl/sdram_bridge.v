@@ -1,9 +1,9 @@
 // =============================================================
 // File:        rtl/sdram_bridge.v
 // Module:      sdram_bridge
-// Role:        Lapidary の側の行のポートと書きのポート (= rtl/ext_mem_bridge.v と同じ約束) を、SDR SDRAM
+// Role:        上位の回路 (= rtl/ahb_sdram.v) からの行のポートと書きのポートを、SDR SDRAM
 //              (= W9825G6KH-6) の命令に直す。行の読みは 8 語のバースト、書きは 1 語。どちらも auto precharge。
-//              SDRAM の初期化とリフレッシュもここで行う。クロックは Lapidary のクロック 1 本。
+//              SDRAM の初期化とリフレッシュもここで行う。クロックは clk 1 本。
 //
 //              SDRAM のクロックは clk の逆相 (= 上位のトップが ~clk を出す)。命令は clk の立ち上がりで変わり、SDRAM は
 //              半 cycle 後の立ち上がりで受ける。CL = 2 なので、読みの最初の語は、受けた 1 cycle 後の SDRAM の立ち上がりから
@@ -11,12 +11,12 @@
 //              20 MHz なら、ピンまでのクロックの遅れが 19 ns ほどまで取れる。
 //
 // Parameters:
-//   ADDR_WIDTH     = `ADDR_WIDTH (= 20)   Lapidary の byte 番地の幅
+//   ADDR_WIDTH     = 25                   byte 番地の幅 (= 32 MB。W9825G6KH の大きさ)
 //   INIT_CYCLES    = 4000                 電源投入の後の待ち (= 200 us、20 MHz)
 //   REFRESH_CYCLES = 152                  リフレッシュの間隔 (= 7.6 us、20 MHz)
 //
 // Ports:
-//   (Lapidary の側。heap_cache の下のポートと同じ)
+//   (上位の回路の側)
 //   input  wire clk, rst_n
 //   input  wire                   fill_valid    行を読んでほしい間 1
 //   input  wire [ADDR_WIDTH-5:0]  fill_line     行の番地 (= byte 番地の上位。16 byte 境界)
@@ -26,7 +26,7 @@
 //   input  wire [ADDR_WIDTH-1:0]  waddr
 //   input  wire [7:0]             wdata
 //   output reg                    wready        受け付けた次の cycle に 1
-//   output reg                    init_done     SDRAM の初期化が終わった。一度立ったら下りない。Lapidary の非同期 reset に
+//   output reg                    init_done     SDRAM の初期化が終わった。一度立ったら下りない。上位の非同期 reset に
 //                                               つながるので、state から組み合わせ回路で作らない (= 一瞬の 0 が reset になる)
 //
 //   (SDRAM の側)
@@ -36,22 +36,22 @@
 //   output reg         sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n
 //   output reg  [1:0]  sdram_dqm
 //
-// Contract (= ext_mem_bridge.v と同じ):
+// Contract:
 //   - 行の読み 1 回は、fill_valid が立ってから fill_ready の cycle まで。fill_valid が途中で下りたら、
 //     その読みは捨てる (= 下りた後にまた立っても、それは新しい読み)
 //   - 書き 1 回は、we が立ってから wready の cycle まで
 //   - 受け付けた書き込みは、次の読みから見える
 //   - 行の読みと書きが同じ cycle に立っていたら、読みを先に受ける
 //
-// Reset:       rst_n は Lapidary の reset。受け付けている読みの結果を捨てる。SDRAM の初期化はやり直さない
+// Reset:       rst_n は上位の reset。受け付けている読みの結果を捨てる。SDRAM の初期化はやり直さない
 //              (= 電源投入のときだけ。FF の初期値で始める)
 // Clock:       posedge clk
 //
 // Dependencies:
-//   rtl/lapidary_config.vh   ADDR_WIDTH
+//   なし
 //
 // Testbench:
-//   cores/sdram/simulation/tb_bridge.v   SDRAM のモデルとつないで、書いた byte を行で読み返す
+//   tb/sdram_tb.v   ahb_sdram と SDRAM のモデルとつないで確かめる
 //
 // Design Notes:
 //   - **番地の割り当ては {行, バンク, 列}。**列 9 bit、バンク 2 bit、残りが行。
@@ -61,10 +61,8 @@
 
 `default_nettype none
 
-`include "lapidary_config.vh"
-
 module sdram_bridge #(
-    parameter ADDR_WIDTH     = `ADDR_WIDTH,
+    parameter ADDR_WIDTH     = 25,
     parameter INIT_CYCLES    = 4000,
     parameter REFRESH_CYCLES = 152
 ) (
