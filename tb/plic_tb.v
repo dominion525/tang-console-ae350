@@ -1,11 +1,11 @@
 // =============================================================
 // File:        tb/plic_tb.v
 // Module:      plic_tb
-// Role:        ae350_plic の単体の TB (= 段 4 の後、2026-11-10)。Hazard3 の版の全体の TB (tb_mem) は全ソースがレベルの構成
-//              なので、ここではエッジのソースを持つ構成と、claim がしきい値で絞らない構成 (= CLAIM_ABOVE_THRESHOLD = 0)
-//              を確かめる。破れたら $fatal で止まる。
+// Role:        ae350_plic の単体テストベンチ。Hazard3 版の全体のテストベンチ (tb_mem) は全ソースがレベル割り込みの構成
+//              なので、ここではエッジのソースを持つ構成と、claim をしきい値で絞らない構成 (CLAIM_ABOVE_THRESHOLD = 0)
+//              を確かめる。期待と違えば $fatal で止まる。
 //
-//   u_edge   EDGE_TRIGGER = ソース 5 だけエッジ (= ソース 6 はレベル)
+//   u_edge   EDGE_TRIGGER = ソース 5 だけエッジ (ソース 6 はレベル)
 //   u_nothr  CLAIM_ABOVE_THRESHOLD = 0
 //
 // 実行: make test-plic
@@ -39,7 +39,7 @@ module plic_tb;
     wire        meip_edge;
     wire        meip_nothr;
 
-    // seip (= ターゲット 1 への通知) はここでは見ない (= 段 4 の確認がレジスタで見る)
+    // seip (ターゲット 1 への通知) はここでは見ない (sw/stage4_test.c がレジスタで確かめる)
     /* verilator lint_off PINCONNECTEMPTY */
     ae350_plic #(
         .EDGE_TRIGGER (32'h0000_0020)
@@ -89,8 +89,8 @@ module plic_tb;
         end
     endtask
 
-    // 1 サイクルの読み出し (= claim なら副作用が起きる)。読む前に 1 サイクル空ける (= PLIC は、選んだ割り込みを
-    // レジスタに受けてから claim と通知に使うので、pending や enable の変化が見えるのは 1 サイクル後。CPU のバスは、
+    // 1 サイクルの読み出し (claim なら副作用が起きる)。読む前に 1 サイクル空ける (PLIC は、選んだ割り込みを
+    // レジスタで受けてから claim と通知に使うので、pending や enable の変化が見えるのは 1 サイクル後。CPU のバスでは、
     // 続けて読むまでに何サイクルもかかる)
     task rd(input s, input [21:0] a, output [31:0] d);
         begin
@@ -104,7 +104,7 @@ module plic_tb;
 
     task expect32(input [31:0] got, input [31:0] want, input integer no);
         begin
-            if (got !== want) $fatal(1, "確認 %0d: 0x%08x を期待したが 0x%08x", no, want, got);
+            if (got !== want) $fatal(1, "check %0d: expected 0x%08x, got 0x%08x", no, want, got);
         end
     endtask
 
@@ -131,8 +131,8 @@ module plic_tb;
         wr(0, A_ENABLE, 32'h0000_0060);                                   // ソース 5 と 6
 
         pulse(5);
-        rd(0, A_PENDING, v);            expect32(v, 32'h0000_0020, 2);   // 立ち上がりで pending
-        pulse(5);                                                         // 止まっている間のエッジは捨てる
+        rd(0, A_PENDING, v);            expect32(v, 32'h0000_0020, 2);   // 立ち上がりで pending になる
+        pulse(5);                                                         // 停止している間のエッジは捨てる
         rd(0, A_CLAIM, v);              expect32(v, 32'd5, 3);
         rd(0, A_PENDING, v);            expect32(v, 32'h0, 4);
         pulse(5);                                                         // claim の後、complete の前のエッジも捨てる
@@ -140,12 +140,12 @@ module plic_tb;
         wr(0, A_CLAIM, 32'd5);                                            // complete
         @(posedge clk); #1;
         rd(0, A_PENDING, v);            expect32(v, 32'h0, 6);           // 捨てたエッジは数えていない
-        src[5] = 1'b1;                                                    // 立ち上がり、立ったまま
+        src[5] = 1'b1;                                                    // 立ち上がり、1 のまま保つ
         @(posedge clk); #1;
         rd(0, A_CLAIM, v);              expect32(v, 32'd5, 7);
         wr(0, A_CLAIM, 32'd5);
         repeat (3) @(posedge clk); #1;
-        rd(0, A_PENDING, v);            expect32(v, 32'h0, 8);           // エッジは、立ったままでは再び立たない
+        rd(0, A_PENDING, v);            expect32(v, 32'h0, 8);           // エッジは、1 のままでは再び pending にならない
         src[5] = 1'b0;
 
         // ---- 同じ構成のレベルのソース (ソース 6) ----
@@ -154,7 +154,7 @@ module plic_tb;
         rd(0, A_CLAIM, v);              expect32(v, 32'd6, 9);
         wr(0, A_CLAIM, 32'd6);
         repeat (2) @(posedge clk); #1;
-        rd(0, A_PENDING, v);            expect32(v, 32'h0000_0040, 10);  // レベルは、立ったままなら再び立つ
+        rd(0, A_PENDING, v);            expect32(v, 32'h0000_0040, 10);  // レベルは、1 のままなら再び pending になる
         src[6] = 1'b0;
         rd(0, A_CLAIM, v);              expect32(v, 32'd6, 11);
         wr(0, A_CLAIM, 32'd6);
@@ -164,8 +164,8 @@ module plic_tb;
         wr(1, A_THRESHOLD, 32'd3);
         src[7] = 1'b1;
         repeat (2) @(posedge clk); #1;
-        if (meip_nothr) $fatal(1, "確認 12: 優先度 1 は しきい値 3 では通知されないはず");
-        rd(1, A_CLAIM, v);              expect32(v, 32'd7, 13);          // 通知は無いが、claim は返す
+        if (meip_nothr) $fatal(1, "check 12: priority 1 should not be notified at threshold 3");
+        rd(1, A_CLAIM, v);              expect32(v, 32'd7, 13);          // 通知はないが、claim は番号を返す
         src[7] = 1'b0;
         wr(1, A_CLAIM, 32'd7);
 
@@ -174,29 +174,29 @@ module plic_tb;
         wr(0, A_THRESHOLD, 32'd3);
         src[7] = 1'b1;
         repeat (2) @(posedge clk); #1;
-        rd(0, A_CLAIM, v);              expect32(v, 32'd0, 14);          // 絞るので 0
+        rd(0, A_CLAIM, v);              expect32(v, 32'd0, 14);          // しきい値で絞るので 0
         src[7] = 1'b0;
 
-        // ---- claim を空けずに続けて読む (= 選んだ結果はレジスタに受けるので、消した番号が 1 サイクル残る。
+        // ---- claim を間を空けずに続けて読む (選んだ結果はレジスタで受けるので、クリアした番号が 1 サイクル残る。
         //      claim を読んだサイクルにはレジスタを 0 にするので、続けて読んでも同じ番号を 2 回返さない) ----
         wr(0, A_THRESHOLD, 32'd0);
-        wr(0, A_ENABLE, 32'h0000_00C0);                                   // ソース 6 と 7 (= どちらもレベル、優先度 1)
+        wr(0, A_ENABLE, 32'h0000_00C0);                                   // ソース 6 と 7 (どちらもレベル、優先度 1)
         src[6] = 1'b1;
         src[7] = 1'b1;
         repeat (3) @(posedge clk); #1;
         sel = 1'b0; addr = A_CLAIM; ren = 1'b1;
-        #1 v = rdata_edge;              expect32(v, 32'd6, 15);          // 同じ優先度なら番号の小さい方
+        #1 v = rdata_edge;              expect32(v, 32'd6, 15);          // 優先度が同じなら番号の小さい方
         @(posedge clk); #1;
-        v = rdata_edge;                 expect32(v, 32'd0, 16);          // 続けて読むと 0 (= 6 を 2 回返さない)
+        v = rdata_edge;                 expect32(v, 32'd0, 16);          // 続けて読むと 0 (6 を 2 回返さない)
         @(posedge clk); #1;
         ren = 1'b0;
-        rd(0, A_CLAIM, v);              expect32(v, 32'd7, 17);          // 空けて読むと次の 7
+        rd(0, A_CLAIM, v);              expect32(v, 32'd7, 17);          // 間を空けて読むと次の 7
         src[6] = 1'b0;
         src[7] = 1'b0;
         wr(0, A_CLAIM, 32'd6);
         wr(0, A_CLAIM, 32'd7);
 
-        $display("plic_tb: 合格");
+        $display("plic_tb: PASS");
         $finish;
     end
 

@@ -1,5 +1,5 @@
-// 出どころ: Sipeed の TangMega-138K-example の ddr_memory/ddr_memory_test_uart/src/gowin_pll/gowin_pll.v (= Apache-2.0)。
-// 中身は元のまま (= 2026-11-13、ae350 の DDR3 の版で使うために写した)
+// 出典: Sipeed の TangMega-138K-example の ddr_memory/ddr_memory_test_uart/src/gowin_pll/gowin_pll.v (Apache-2.0)。
+// 内容は元のまま (AE350 の DDR3 版で使うために取り込んだ)
 module Gowin_PLL(
     clkin,
     init_clk,

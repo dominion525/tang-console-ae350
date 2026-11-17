@@ -1,31 +1,31 @@
 // =============================================================
 // File:        rtl/ahb_reg_slice.v
 // Module:      ahb_reg_slice
-// Role:        AHB (= 32 bit) の転送をレジスタで区切る回路 (= 2026-11-10)。AE350 の EXTS_H* と FPGA 側のスレーブの
-//              間に置く。実機では AE350 が FPGA の端にあり、行きと帰りの配線だけで AHB_CLK の周期の大半を使う。
-//              マスタ側とも、スレーブ側とも、行きと帰りをレジスタで区切る (= どちらの境目も「レジスタから
-//              レジスタへの片道」にする)。実機の配置配線で、次の 2 つの往復が AHB_CLK に収まらなかった。
-//                - スレーブの HREADYOUT から AE350 を通って HSEL が戻り、スレーブのレジスタに入る
-//                - (スライスを AE350 の近くに置いたとき) スレーブの HREADYOUT がスライスを通ってスレーブに戻る
+// Role:        AHB (32 ビット) の転送にレジスタを挟む回路 (レジスタスライス)。AE350 の EXTS_H* と、FPGA 側のスレーブの
+//              間に置く。実機では AE350 が FPGA の端にあり、往復の配線だけで AHB_CLK の周期の大半を使う。
+//              マスタ側でもスレーブ側でも、往路と復路をレジスタで切る (どちらの境界も、レジスタからレジスタへの
+//              片道の経路にする)。実機の配置配線で、次の 2 つの往復経路が AHB_CLK のタイミングを満たさなかった。
+//                - スレーブの HREADYOUT から AE350 を通って HSEL が戻り、スレーブのレジスタに入る経路
+//                - (スライスを AE350 の近くに置いたとき) スレーブの HREADYOUT がスライスを通ってスレーブに戻る経路
 //
-//   マスタ側 (= AE350)                        スレーブ側
-//   アドレスフェーズ (HREADYOUT = 1) ─控える─▶  ST_ADDR   アドレスフェーズを 1 つ出す (= HSEL / HTRANS はレジスタ)
-//   データフェーズ (HREADYOUT = 0 で待たせる)    ST_DATA0  スレーブのデータフェーズの 1 サイクル目 (= 控えた応答はまだ前のもの)
-//                                              ST_DATA   控えた HREADYOUT を待ち、応答を控える
-//                                 ◀── 応答    ST_RDY    HREADYOUT = 1 (= 次の転送のアドレスフェーズを受けられる)
-//   エラー応答は、マスタ側でも 2 サイクル (= HRESP = 1 で HREADYOUT = 0、続いて 1) にする
+//   マスタ側 (AE350)                           スレーブ側
+//   アドレスフェーズ (HREADYOUT = 1) ─保持─▶   ST_ADDR   アドレスフェーズを 1 つ出す (HSEL と HTRANS はレジスタ出力)
+//   データフェーズ (HREADYOUT = 0 で待たせる)    ST_DATA0  スレーブのデータフェーズの 1 サイクル目 (保持した応答はまだ前の転送のもの)
+//                                              ST_DATA   保持した HREADYOUT を待ち、応答を保持する
+//                                 ◀── 応答    ST_RDY    HREADYOUT = 1 (次の転送のアドレスフェーズを受け付けられる)
+//   エラー応答は、マスタ側でも 2 サイクル (HRESP = 1 で HREADYOUT = 0、続いて HREADYOUT = 1) にする
 //
-//   - 転送ごとに、マスタから見た待ちが 4 サイクル以上増える。転送の中身と順番は変わらない
-//   - HWDATA はマスタのデータフェーズの値を、そのままスレーブのデータフェーズに渡す (= マスタは応答まで保つ)
-//   - スレーブは 1 つだけで、転送は 1 つずつ出す (= アドレスフェーズを出すとき、スレーブは前の転送を終えている)
+//   - マスタから見たウェイトは、転送ごとに 4 サイクル以上増える。転送の内容と順序は変わらない
+//   - HWDATA は、マスタのデータフェーズの値をそのままスレーブのデータフェーズに渡す (マスタは応答まで値を保持する)
+//   - スレーブは 1 つだけで、転送は 1 つずつ出す (アドレスフェーズを出すとき、スレーブは前の転送を終えている)
 //
 // Ports:
 //   input  wire        clk / rst_n
-//   m_*    マスタ (= AE350 の EXTS_H*) とつなぐ。m_hreadyout は AE350 の EXTS_HREADYIN へ
-//   s_*    スレーブとつなぐ (= スレーブの HREADY には、スレーブの HREADYOUT をそのまま返す)
+//   m_*    マスタ (AE350 の EXTS_H*) との接続。m_hreadyout は AE350 の EXTS_HREADYIN へつなぐ
+//   s_*    スレーブとの接続 (スレーブの HREADY には、スレーブの HREADYOUT をそのまま返す)
 //
-// Clock:       clk (= AHB_CLK)
-// Reset:       rst_n (active low、非同期)
+// Clock:       clk (AHB_CLK)
+// Reset:       rst_n (アクティブ Low、非同期)
 // =============================================================
 
 `default_nettype none
@@ -55,15 +55,15 @@ module ahb_reg_slice (
     input  wire        s_hresp
 );
 
-    localparam [2:0] ST_RDY   = 3'd0;   // HREADYOUT = 1。アドレスフェーズを受けられる
+    localparam [2:0] ST_RDY   = 3'd0;   // HREADYOUT = 1。アドレスフェーズを受け付けられる
     localparam [2:0] ST_ADDR  = 3'd1;   // スレーブにアドレスフェーズを出している
     localparam [2:0] ST_DATA0 = 3'd2;   // スレーブのデータフェーズの 1 サイクル目
-    localparam [2:0] ST_DATA  = 3'd3;   // 控えたスレーブの応答を待つ
+    localparam [2:0] ST_DATA  = 3'd3;   // 保持したスレーブの応答を待つ
     localparam [2:0] ST_ERR1  = 3'd4;   // マスタ側のエラー応答の 1 サイクル目
 
     reg [2:0] st;
 
-    // スレーブの応答を 1 段レジスタで受ける
+    // スレーブの応答を 1 段のレジスタで受ける
     reg        r_ready;
     reg        r_resp;
     reg [31:0] r_rdata;
@@ -91,7 +91,7 @@ module ahb_reg_slice (
 
             case (st)
                 ST_RDY: begin
-                    // HREADYOUT = 1 の端 (= 前の転送のデータフェーズの終わり) で、次のアドレスフェーズを受ける
+                    // HREADYOUT = 1 のエッジ (前の転送のデータフェーズの終わり) で、次のアドレスフェーズを受け付ける
                     s_haddr  <= m_haddr;
                     s_hwrite <= m_hwrite;
                     s_hsize  <= m_hsize;
@@ -103,7 +103,7 @@ module ahb_reg_slice (
                     end
                 end
                 ST_ADDR: begin
-                    // スレーブはこの端でアドレスフェーズを受ける (= スレーブは前の転送を終えていて HREADYOUT = 1)
+                    // スレーブはこのエッジでアドレスフェーズを受け付ける (スレーブは前の転送を終えていて HREADYOUT = 1)
                     s_hsel <= 1'b0;
                     st     <= ST_DATA0;
                 end
@@ -111,7 +111,7 @@ module ahb_reg_slice (
                     st <= ST_DATA;
                 end
                 ST_DATA: begin
-                    // r_* はスレーブのデータフェーズの 1 サイクル前の応答。HREADYOUT = 1 ならそこで終わっている
+                    // r_* は、スレーブのデータフェーズの 1 サイクル前の応答。HREADYOUT = 1 なら、そこで転送が終わっている
                     if (r_ready) begin
                         m_hrdata <= r_rdata;
                         if (r_resp) begin
@@ -124,7 +124,7 @@ module ahb_reg_slice (
                     end
                 end
                 default: begin
-                    // エラー応答の 2 サイクル目 (= HRESP = 1 のまま HREADYOUT = 1)
+                    // エラー応答の 2 サイクル目 (HRESP = 1 のまま HREADYOUT = 1)
                     m_hreadyout <= 1'b1;
                     st          <= ST_RDY;
                 end
@@ -133,7 +133,7 @@ module ahb_reg_slice (
     end
 
     /* verilator lint_off UNUSEDSIGNAL */
-    wire unused = m_htrans[0];   // NONSEQ と SEQ を区別しない (= どちらも 1 つの転送として受ける)
+    wire unused = m_htrans[0];   // NONSEQ と SEQ を区別しない (どちらも 1 つの転送として受け付ける)
     /* verilator lint_on UNUSEDSIGNAL */
 
 endmodule

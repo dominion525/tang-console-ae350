@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# バイナリを $readmemh で読める hex (= 1 行 1 word、32 bit、リトルエンディアン) に直す。
+# バイナリを、$readmemh で読める hex (1 行 1 ワード、32 ビット、リトルエンディアン) に変換する。
 #
 #   ruby tools/bin2hex.rb <in.bin> <out.hex>
 

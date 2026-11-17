@@ -1,20 +1,20 @@
 // =============================================================
 // File:        board/tang_console/ae350_pll.v
 // Module:      ae350_pll
-// Role:        AE350 のクロック 5 本を、Tang Console の 50 MHz の発振器から作る PLL (= 実機の値を読む構成、2026-11-10)。
-//              分周の値は Sipeed の AE350 のデモの PLL (= gowin_pll_ae350.v) と同じ。
+// Role:        Tang Console の 50 MHz の発振器から、AE350 のクロック 5 本を生成する PLL。
+//              分周比は Sipeed の AE350 のデモの PLL (gowin_pll_ae350.v) と同じ。
 //
 //     VCO       = 50 MHz ÷ IDIV (1) × FBDIV (1) × MDIV (16) = 800 MHz
 //     DDR_CLK   = VCO ÷ ODIV0 (16) = 50 MHz
-//     CORE_CLK  = VCO ÷ ODIV1 (CORE_DIV、既定 1) = 800 MHz
-//     AHB_CLK   = VCO ÷ ODIV2 (AHB_DIV、既定 8)  = 100 MHz
+//     CORE_CLK  = VCO ÷ ODIV1 (CORE_DIV、既定値 1) = 800 MHz
+//     AHB_CLK   = VCO ÷ ODIV2 (AHB_DIV、既定値 8)  = 100 MHz
 //     APB_CLK   = VCO ÷ ODIV3 (8)  = 100 MHz
 //     RTC_CLK   = VCO ÷ ODIV4 (80) = 10 MHz
-//     SDRAM_CLK = VCO ÷ ODIV5 (40) = 20 MHz  (= DDR_H* の先の SDRAM の制御が使う)
+//     SDRAM_CLK = VCO ÷ ODIV5 (40) = 20 MHz  (DDR_H* の先の SDRAM コントローラが使う)
 //
 // Parameters:
-//   CORE_DIV / AHB_DIV  CORE_CLK と AHB_CLK の分周 (= 既定は本物の AE350 の 800 / 100 MHz。Hazard3 の版を FPGA のロジックで
-//                       動かす版 (= build.sh の CPU=hazard3) は、配置配線の Fmax に合わせて下げる)
+//   CORE_DIV / AHB_DIV  CORE_CLK と AHB_CLK の分周比 (既定値は本物の AE350 の 800 MHz と 100 MHz。Hazard3 版をファブリック上で
+//                       動かすビルド (build.sh の CPU=hazard3) では、配置配線の Fmax に合わせて下げる)
 // =============================================================
 `default_nettype none
 
@@ -23,18 +23,18 @@ module ae350_pll #(
     parameter integer AHB_DIV  = 8
 ) (
     input  wire clkin,      // 50 MHz
-    input  wire reset,      // 1 で PLL を reset に保つ
+    input  wire reset,      // 1 の間、PLL をリセット状態に保つ
     output wire core_clk,
     output wire ddr_clk,
     output wire ahb_clk,
     output wire apb_clk,
     output wire rtc_clk,
     output wire sdram_clk,  // 20 MHz
-    output wire lock        // 周波数が安定したら 1
+    output wire lock        // 周波数が安定すると 1
 );
     wire clkout6, clkfbout;
     /* verilator lint_off UNUSEDSIGNAL */
-    wire unused = &{clkout6, clkfbout};   // CLKOUT6 は使わず、帰還は内部 (= CLKFB_SEL INTERNAL)
+    wire unused = &{clkout6, clkfbout};   // CLKOUT6 は使わず、帰還は内部 (CLKFB_SEL INTERNAL)
     /* verilator lint_on UNUSEDSIGNAL */
 
     PLL #(

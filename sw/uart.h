@@ -1,5 +1,5 @@
 /*
- * APB_P* の先の UART (= rtl/apb_uart.v) のレジスタ (段 3、2026-11-09。段 3b で受信を足した)。
+ * APB_P* の先の UART (rtl/apb_uart.v) のレジスタ。
  */
 
 #ifndef AE350_UART_H
@@ -12,15 +12,15 @@
 #define UART_STATUS     (*(volatile uint32_t *)(UART_BASE + 0x04))
 #define UART_CTRL       (*(volatile uint32_t *)(UART_BASE + 0x08))
 
-#define UART_CTRL_SEQ_HOLD    (1u << 0)   /* UART の合図 (= rtl/uart_reset_seq.v) を見張らない */
+#define UART_CTRL_SEQ_HOLD    (1u << 0)   /* 1 の間、UART のリセットシーケンス (rtl/uart_reset_seq.v) を監視しない */
 
-#define UART_STATUS_CAN_TAKE  (1u << 0)   /* 送信: 次の文字を待たずに受け取れる */
-#define UART_STATUS_BUSY      (1u << 1)   /* 送信: 送信待ちか、送り出している途中の文字がある */
+#define UART_STATUS_CAN_TAKE  (1u << 0)   /* 送信: 次の文字を待たずに受け付けられる */
+#define UART_STATUS_BUSY      (1u << 1)   /* 送信: 送信待ちの文字か、送信途中の文字がある */
 #define UART_STATUS_RX_READY  (1u << 2)   /* 受信: FIFO に文字がある */
-#define UART_STATUS_OVERRUN   (1u << 3)   /* 受信: FIFO があふれて文字を落とした (読むと 0 に戻る) */
+#define UART_STATUS_OVERRUN   (1u << 3)   /* 受信: FIFO があふれて文字を失った (読むと 0 に戻る) */
 #define UART_STATUS_FRAME     (1u << 4)   /* 受信: ストップビットが 0 の文字を捨てた (読むと 0 に戻る) */
 
-/* DATA への書き込みは、送信待ちの文字が残っているとバスを待たせるので、書くだけでよい */
+/* DATA への書き込みは、送信待ちの文字が残っているとバスを待たせるので、書き込むだけでよい */
 static inline void uart_putc(char c)
 {
     UART_DATA = (uint8_t)c;

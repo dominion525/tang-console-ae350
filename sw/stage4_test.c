@@ -1,11 +1,11 @@
 /*
- * 段 4 の確認用プログラム (2026-11-10)。
+ * stage4 のテストプログラム。
  * PLMT のタイマ割り込みと、GP_INT → PLIC → 外部割り込みの経路を確かめる。
- * UART に出す行は sw/stage4_expected.txt と比べる (= Makefile)。
+ * UART に出力する行は sw/stage4_expected.txt と比べる (Makefile)。
  *
- * 戻り値は start.S が 0x0000_0000 に書き、TB (= tb/tb_mem.v) が表示する。
- *   0x600D  全部通った
- *   1〜     最初に失敗した確認の番号 (= 下の check の番号)
+ * 戻り値は start.S が 0x0000_0000 に書き込み、テストベンチ (tb/tb_mem.v) が表示する。
+ *   0x600D  すべて合格
+ *   1〜     最初に失敗した確認の番号 (下の check の番号)
  */
 
 #include <stdint.h>
@@ -21,7 +21,7 @@ static volatile int      ext_hits;
 static volatile uint32_t last_cause;
 static volatile uint32_t ext_ids[4];
 
-/* GP_INT のビットを下げ、APB の書き込みが終わったことを読み返しで確かめる */
+/* GP_INT のビットを 0 にし、APB の書き込みが完了したことを読み返しで確かめる */
 static void gpint_lower(uint32_t bits)
 {
     GPINT &= ~bits;
@@ -44,7 +44,7 @@ void irq_handler(uint32_t mcause)
     } else if (mcause == MCAUSE_M_EXT) {
         uint32_t id = PLIC_CLAIM;
         if (ext_hits < 4) ext_ids[ext_hits] = id;
-        gpint_lower(gpint_bit_of(id));   /* ソースを下げてから complete する (= レベル) */
+        gpint_lower(gpint_bit_of(id));   /* ソースを 0 にしてから complete する (レベル割り込み) */
         PLIC_CLAIM = id;
         ext_hits++;
     }
@@ -52,8 +52,8 @@ void irq_handler(uint32_t mcause)
 
 /*
  * 割り込みを待つ。「回数を確かめる → wfi」の間に割り込みが来て処理まで終わると、wfi は次の割り込みまで
- * 眠り続ける。そのため、確かめてから wfi に入るまでは mstatus.MIE を 0 にしておく (= wfi は、mie で許した
- * 割り込みが pending になれば MIE が 0 でも起きる)。起きたら MIE を一度 1 にして、割り込みの処理を走らせる
+ * スリープし続ける。そのため、確かめてから wfi に入るまでは mstatus.MIE を 0 にしておく (wfi は、mie で許可した
+ * 割り込みが pending になれば MIE が 0 でも復帰する)。復帰したら MIE を一度 1 にして、割り込みの処理を実行させる
  */
 static void wait_until(volatile int *counter, int value)
 {
@@ -67,8 +67,8 @@ static void wait_until(volatile int *counter, int value)
 }
 
 /*
- * PLIC のレジスタを書いた後の mip.MEIP: PLIC の meip は次のサイクルに変わり、Hazard3 は irq の入力を
- * レジスタで受けてから mip に見せるので、少し待ってから読む
+ * PLIC のレジスタに書き込んだ後の mip.MEIP: PLIC の meip は次のサイクルに変わり、Hazard3 は irq の入力を
+ * レジスタで受けてから mip に反映するので、少し待ってから読む
  */
 static int meip_settled(void)
 {
@@ -77,7 +77,7 @@ static int meip_settled(void)
     return (csr_read(mip) & MIP_MEIP) != 0;
 }
 
-/* PLIC の pending のビットが立つまで待つ (= GP_INT は 2 段の同期を通る) */
+/* PLIC の pending のビットが 1 になるまで待つ (GP_INT は 2 段の同期化を通る) */
 static int wait_pending(uint32_t mask)
 {
     for (int i = 0; i < 1000; i++) {
@@ -89,9 +89,9 @@ static int wait_pending(uint32_t mask)
 int main(void)
 {
     /*
-     * 22: PLIC (= NCEPLIC100) の初期値。どれも、まだ何も書いていない状態で見る
-     *   feature 0、priority 1 (= 標準の PLIC と違う)、threshold 0、PPS 0、
-     *   0x1100 = {ターゲット 2, ソース 31}、0x1104 = {最大優先度 3, 版 1}、0x1080 = 0 (= 全ソースがレベル) (= 実機の値)
+     * 22: PLIC (NCEPLIC100) の初期値。どれも、まだ何も書き込んでいない状態で確かめる
+     *   feature 0、priority 1 (標準の PLIC とは異なる)、threshold 0、PPS 0、
+     *   0x1100 = {ターゲット 2, ソース 31}、0x1104 = {最大優先度 3, バージョン 1}、0x1080 = 0 (全ソースがレベル) (実機の値)
      */
     if (PLIC_FEATURE != 0 || PLIC_PRIORITY(1) != 1 || PLIC_PRIORITY(31) != 1 || PLIC_THRESHOLD != 0 ||
         PLIC_PPS != 0 || PLIC_PENDING != 0 || PLIC_ENABLE != 0) return 22;
@@ -107,8 +107,8 @@ int main(void)
     if (t1 <= t0) return 1;
 
     /*
-     * 21: mcycle と minstret は、CSR に何も書かなくてもリセット直後から進む (= AE350 の A25 と同じ。
-     * Gowin の BSP の delay.c は mcountinhibit に触れずに mcycle で時間を測る)
+     * 21: mcycle と minstret は、CSR に何も書き込まなくてもリセット直後から進む (AE350 の A25 と同じ。
+     * Gowin の BSP の delay.c は、mcountinhibit を設定せずに mcycle で時間を計る)
      */
     uint32_t cyc0 = csr_read(mcycle);
     uint32_t ins0 = csr_read(minstret);
@@ -119,10 +119,10 @@ int main(void)
     if (cyc1 - cyc0 < 100 || ins1 - ins0 < 100) return 21;
 
     /*
-     * 45: mcycle は CORE_CLK、mtime は AHB_CLK で進むので、進み方の比は 2 つのクロックの周波数の比になる
-     * (= リファレンスデザインでは 800 / 100 = 8)。TB が比 × 256 を 0x0000_0008 に置く。差は 2% まで
+     * 45: mcycle は CORE_CLK、mtime は AHB_CLK で進むので、進み方の比は 2 つのクロックの周波数比になる
+     * (リファレンスデザインでは 800 / 100 = 8)。テストベンチが比 × 256 を 0x0000_0008 に置く。許容する誤差は 2% まで
      */
-    /* 0 番地に近い定数の番地を C で読むと、GCC が中身の無い場所の読み出しとみなして -Warray-bounds を出すので、命令で読む */
+    /* アドレス 0 に近い定数のアドレスを C で読むと、GCC が中身のない場所の読み出しとみなして -Warray-bounds を出すので、命令で読む */
     uint32_t want256;
     __asm__ volatile("lw %0, 8(zero)" : "=r"(want256) : : "memory");
     uint32_t mt_a  = PLMT_MTIME_LO;
@@ -134,11 +134,11 @@ int main(void)
     uint32_t got256 = (uint32_t)(((uint64_t)(cyc_b - cyc_a) * 256u) / (mt_b - mt_a));
     if (want256 == 0 || got256 * 50u < want256 * 49u || got256 * 50u > want256 * 51u) return 45;
 
-    /* 2: mtimecmp の初期値は最大で、mip.MTIP は立っていない */
+    /* 2: mtimecmp の初期値は最大値で、mip.MTIP は 0 */
     if (PLMT_MTIMECMP_LO != 0xFFFFFFFFu || PLMT_MTIMECMP_HI != 0xFFFFFFFFu) return 2;
     if (csr_read(mip) & MIP_MTIP) return 3;
 
-    /* 4: 割り込みを許していなくても、mtime が mtimecmp に達すると mip.MTIP が立つ。mtimecmp を戻すと下がる */
+    /* 4: 割り込みを許可していなくても、mtime が mtimecmp に達すると mip.MTIP が 1 になる。mtimecmp を戻すと 0 になる */
     mtimecmp_write(mtime_read() + 20);
     int seen = 0;
     for (int i = 0; i < 1000 && !seen; i++) seen = (csr_read(mip) & MIP_MTIP) != 0;
@@ -159,7 +159,7 @@ int main(void)
 
     /* ---- PLIC (割り込みで受ける) ---- */
 
-    /* 7: GP0 / GP15 / GP1 を 1 本ずつ立て、外部割り込みで claim する */
+    /* 7: GP0、GP15、GP1 を 1 本ずつ 1 にし、外部割り込みで claim する */
     uint32_t gps[3] = { 0, 15, 1 };
     for (int k = 0; k < 3; k++) PLIC_PRIORITY(PLIC_ID_GP(gps[k])) = 1;
     PLIC_ENABLE = (1u << PLIC_ID_GP(0)) | (1u << PLIC_ID_GP(15)) | (1u << PLIC_ID_GP(1));
@@ -176,7 +176,7 @@ int main(void)
     /* ---- PLIC (割り込みを止めて、レジスタで確かめる) ---- */
     csr_clear(mstatus, MSTATUS_MIE);
 
-    /* 9: 優先度: GP2 (= 12、優先度 1) と GP3 (= 13、優先度 3) を同時に立てると、claim は 13、12、0 の順 */
+    /* 9: 優先度: GP2 (12、優先度 1) と GP3 (13、優先度 3) を同時に 1 にすると、claim は 13、12、0 の順 */
     PLIC_PRIORITY(12) = 1;
     PLIC_PRIORITY(13) = 3;
     PLIC_ENABLE = (1u << 12) | (1u << 13);
@@ -205,14 +205,14 @@ int main(void)
     PLIC_THRESHOLD = 0;
     printf("threshold %lu\n", (unsigned long)c4);
 
-    /* 15: レベル: ソースが立ったまま complete すると、また pending になり、もう一度 claim できる */
+    /* 15: レベル: ソースが 1 のまま complete すると、また pending になり、もう一度 claim できる */
     PLIC_PRIORITY(PLIC_ID_GP0) = 1;
     PLIC_ENABLE = 1u << PLIC_ID_GP0;
     GPINT = 1u << 0;
     if (!wait_pending(1u << PLIC_ID_GP0)) return 15;
     uint32_t c5 = PLIC_CLAIM;
-    if (PLIC_PENDING & (1u << PLIC_ID_GP0)) return 16;   /* claim で落ちている */
-    PLIC_CLAIM = c5;                                      /* ソースは立ったまま */
+    if (PLIC_PENDING & (1u << PLIC_ID_GP0)) return 16;   /* claim でクリアされている */
+    PLIC_CLAIM = c5;                                      /* ソースは 1 のまま */
     if (!wait_pending(1u << PLIC_ID_GP0)) return 17;
     uint32_t c6 = PLIC_CLAIM;
     gpint_lower(1u << 0);
@@ -231,21 +231,21 @@ int main(void)
 
     /* ---- PLIC: Andes NCEPLIC100 の拡張 ---- */
 
-    /* 18 で立てたままのソース 14 の pending を、claim / complete で片付ける */
+    /* 18 で 1 にしたままのソース 14 の pending を、claim と complete で片付ける */
     PLIC_ENABLE = 1u << 14;
     uint32_t c14 = PLIC_CLAIM;
     PLIC_CLAIM = c14;
     PLIC_ENABLE = 0;
     if (c14 != 14 || PLIC_PENDING != 0) return 44;
 
-    /* 24: feature は 2 bit を読み書きできる。上位は 0。trigger は読み出し専用 */
+    /* 24: feature は 2 ビットを読み書きできる。上位は 0。trigger は読み出し専用 */
     PLIC_FEATURE = 0xFFFFFFFFu;
     if (PLIC_FEATURE != (PLIC_FEATURE_PREEMPT | PLIC_FEATURE_VECTORED)) return 24;
     PLIC_FEATURE = 0;
     PLIC_TRIGGER = 0xFFFFFFFFu;
     if (PLIC_TRIGGER != 0) return 25;
 
-    /* 26: 優先度は 2 bit (= 0〜3)。上位のビットは持たない。ソースは 1〜31 (= 実機と同じ) */
+    /* 26: 優先度は 2 ビット (0〜3)。上位のビットは持たない。ソースは 1〜31 (実機と同じ) */
     PLIC_PRIORITY(20) = 15;
     if (PLIC_PRIORITY(20) != 3) return 26;
     PLIC_PRIORITY(20) = 1;
@@ -255,7 +255,7 @@ int main(void)
     PLIC_PRIORITY(31) = 1;
     PLIC_ENABLE = 0;
 
-    /* 28: pending は書いて立てられる (= OR)。0 を書いても落ちない。落とせるのは claim だけ */
+    /* 28: pending は書き込みで 1 にできる (OR)。0 を書き込んでもクリアされない。クリアできるのは claim だけ */
     PLIC_PENDING = 1u << 20;
     PLIC_PENDING = 0;
     if (PLIC_PENDING != (1u << 20)) return 28;
@@ -267,8 +267,8 @@ int main(void)
     printf("swpend %lu\n", (unsigned long)c7);
 
     /*
-     * 30: complete は、そのソースの enable が立っていなくても効く (= 実機で確かめた)。enable を落として complete
-     * しても、ゲートウェイは再開し、ソースが立ったままなら、enable を戻した後に pending が立つ
+     * 30: complete は、そのソースの enable が 1 でなくても有効 (実機で確かめた)。enable を 0 にして complete
+     * しても、ゲートウェイは再開し、ソースが 1 のままなら、enable を戻した後に pending が 1 になる
      */
     PLIC_PRIORITY(PLIC_ID_GP0) = 1;
     PLIC_ENABLE = 1u << PLIC_ID_GP0;
@@ -276,9 +276,9 @@ int main(void)
     if (!wait_pending(1u << PLIC_ID_GP0)) return 30;
     uint32_t c8 = PLIC_CLAIM;
     PLIC_ENABLE = 0;
-    PLIC_CLAIM = c8;                                   /* enable が無くても効く */
+    PLIC_CLAIM = c8;                                   /* enable が 0 でも有効 */
     PLIC_ENABLE = 1u << PLIC_ID_GP0;
-    if (!wait_pending(1u << PLIC_ID_GP0)) return 31;   /* ソースが立ったままなので、また立つ */
+    if (!wait_pending(1u << PLIC_ID_GP0)) return 31;   /* ソースが 1 のままなので、また 1 になる */
     uint32_t c9 = PLIC_CLAIM;
     gpint_lower(1u << 0);
     PLIC_CLAIM = c9;
@@ -286,9 +286,9 @@ int main(void)
     printf("gateway %lu %lu\n", (unsigned long)c8, (unsigned long)c9);
 
     /*
-     * 33: PREEMPT (= 入れ子)。claim で今の threshold を PPS に積み、claim したソースの優先度を threshold に書く。
+     * 33: PREEMPT (入れ子)。claim で現在の threshold を PPS に積み、claim したソースの優先度を threshold に書く。
      * complete で PPS の最も高い優先度を threshold に戻す。threshold 以下のソースは通知されない
-     *   GP1 (= 11) 優先度 1、GP2 (= 12) 優先度 3、GP3 (= 13) 優先度 2
+     *   GP1 (11) 優先度 1、GP2 (12) 優先度 3、GP3 (13) 優先度 2
      */
     PLIC_FEATURE = PLIC_FEATURE_PREEMPT;
     PLIC_THRESHOLD = 0;
@@ -299,12 +299,12 @@ int main(void)
     GPINT = 1u << 1;
     if (!wait_pending(1u << 11)) return 33;
     uint32_t p1 = PLIC_CLAIM;                                            /* 11 */
-    if (PLIC_THRESHOLD != 1 || PLIC_PPS != 0x1u) return 34;             /* 0 を積んで 1 に */
+    if (PLIC_THRESHOLD != 1 || PLIC_PPS != 0x1u) return 34;             /* 0 を積んで 1 になる */
     GPINT = (1u << 1) | (1u << 2) | (1u << 3);
     if (!wait_pending((1u << 12) | (1u << 13))) return 35;
     if (!meip_settled()) return 36;                                      /* 3 > 1 */
     uint32_t p2 = PLIC_CLAIM;                                            /* 12 */
-    if (PLIC_THRESHOLD != 3 || PLIC_PPS != 0x3u) return 37;             /* 1 を積んで 3 に */
+    if (PLIC_THRESHOLD != 3 || PLIC_PPS != 0x3u) return 37;             /* 1 を積んで 3 になる */
     if (meip_settled()) return 38;                                       /* 13 の優先度 2 は 3 以下 */
     gpint_lower(1u << 2);
     PLIC_CLAIM = p2;
@@ -322,9 +322,9 @@ int main(void)
     PLIC_ENABLE = 0;
     printf("preempt %lu %lu %lu\n", (unsigned long)p1, (unsigned long)p2, (unsigned long)p3);
 
-    /* ---- APB の先: どこにも当たらないアドレスと、GP_INT のレジスタの割り当ての無いオフセット ---- */
+    /* ---- APB の先: どこにも当たらないアドレスと、GP_INT のレジスタの割り当てのないオフセット ---- */
 
-    /* 46: 0xF800_2000 はどの周辺回路にも当たらない → PSLVERR → 例外 5 / 7 */
+    /* 46: 0xF800_2000 はどの周辺回路にも当たらない → PSLVERR → 例外 5 または 7 */
     trap_cause = 0;
     (void)load_word_4byte(0xF8002000u);
     if (trap_cause != 5) return 46;
@@ -337,7 +337,7 @@ int main(void)
     (void)load_word_4byte(0xF8001004u);
     if (trap_cause != 5) return 48;
 
-    /* ---- GP_INT の 16 本すべて (= GP0 → 4、GP1〜GP15 → 11〜25) ---- */
+    /* ---- GP_INT の 16 本すべて (GP0 → 4、GP1〜GP15 → 11〜25) ---- */
     uint32_t ids[16];
     uint32_t all = 0;
     for (int n = 0; n < 16; n++) {
@@ -358,9 +358,9 @@ int main(void)
     for (int n = 0; n < 16; n++) printf(" %lu", (unsigned long)ids[n]);
     printf("\n");
 
-    /* ---- PLIC: 優先度 3 と 2、32 bit でない書き込み ---- */
+    /* ---- PLIC: 優先度 3 と 2、32 ビットでない書き込み ---- */
 
-    /* 51: 優先度 3 (= GP2、12) と 2 (= GP1、11) を同時に立てると、3 から claim される */
+    /* 51: 優先度 3 (GP2、12) と 2 (GP1、11) を同時に 1 にすると、3 から claim される */
     PLIC_PRIORITY(11) = 2;
     PLIC_PRIORITY(12) = 3;
     PLIC_ENABLE = (1u << 11) | (1u << 12);
@@ -374,24 +374,24 @@ int main(void)
     PLIC_ENABLE = 0;
     printf("prio3 %lu %lu\n", (unsigned long)q1, (unsigned long)q2);
 
-    /* 52: PLIC は 32 bit の書き込みだけを受ける。1 byte の書き込みは無視される */
+    /* 52: PLIC は 32 ビットの書き込みだけを受け付ける。1 バイトの書き込みは無視される */
     *(volatile uint8_t *)(PLIC_BASE + 4u * 11) = 1;
     if (PLIC_PRIORITY(11) != 2) return 52;
 
-    /* ---- PLMT: 8 / 16 bit の書き込み、割り当ての無いオフセット、mtime の書き込みと繰り上がり ---- */
+    /* ---- PLMT: 8 ビットと 16 ビットの書き込み、割り当てのないオフセット、mtime の書き込みと桁上がり ---- */
 
-    /* 53: mtimecmp に 1 byte / 2 byte で書くと、そのバイトだけが変わる */
+    /* 53: mtimecmp に 1 バイトか 2 バイトで書き込むと、そのバイトだけが変わる */
     mtimecmp_write(UINT64_MAX);
     *(volatile uint8_t *)(PLMT_BASE + 0x09) = 0x12;
     *(volatile uint16_t *)(PLMT_BASE + 0x0E) = 0x3456;
     if (PLMT_MTIMECMP_LO != 0xFFFF12FFu || PLMT_MTIMECMP_HI != 0x3456FFFFu) return 53;
     mtimecmp_write(UINT64_MAX);
 
-    /* 54: 割り当ての無いオフセット (0x10) は、読むと 0、書いても何も起きない */
+    /* 54: 割り当てのないオフセット (0x10) は、読み出しは 0、書き込みは無視される */
     REG32(PLMT_BASE + 0x10) = 0x55u;
     if (REG32(PLMT_BASE + 0x10) != 0) return 54;
 
-    /* 55: mtime は書ける。下位が一周すると上位に繰り上がる */
+    /* 55: mtime は書き込める。下位が一周すると上位に桁上がりする */
     PLMT_MTIME_HI = 0;
     PLMT_MTIME_LO = 0xFFFFFF00u;
     if (PLMT_MTIME_HI != 0) return 55;
@@ -400,12 +400,12 @@ int main(void)
     if (!carried || PLMT_MTIME_LO > 0x00010000u) return 56;
     printf("plmt ok\n");
 
-    /* 57: PLIC の PPS はソフトウェアから読み書きできる (= AX45 18.4.11、診断のため)。優先度 0〜3 の 4 bit を持つ (= 実機と同じ) */
+    /* 57: PLIC の PPS はソフトウェアから読み書きできる (AX45 18.4.11、診断用)。優先度 0〜3 の 4 ビットを持つ (実機と同じ) */
     PLIC_PPS = 0x0000842Au;
     if (PLIC_PPS != 0x0000000Au) return 57;
     PLIC_PPS = 0;
 
-    /* 58: GP_INT のレジスタは、書いたバイトレーンだけが変わる (= PSTRB) */
+    /* 58: GP_INT のレジスタは、書き込んだバイトレーンだけが変わる (PSTRB) */
     GPINT = 0;
     *(volatile uint8_t *)0xF8001001u = 0x80;          /* 上位のバイトだけ: GP15 */
     if (GPINT != 0x8000u) return 58;
@@ -415,8 +415,8 @@ int main(void)
     printf("pps gpint ok\n");
 
     /*
-     * 72: APB_P* の 1 / 2 byte の読み書きは、PADDR が 4 byte に揃い、PWDATA は書くバイトのレーンだけに値が入る
-     * (= 実機と同じ形。0xF800_F000 の PADDR を読み返すレジスタで見る。0x1C は読み出しの PADDR の下位 8 bit を並べて返す)
+     * 72: APB_P* の 1 バイトと 2 バイトの読み書きでは、PADDR が 4 バイト境界に揃い、PWDATA は書き込むバイトレーンにだけ値が入る
+     * (実機と同じ形。0xF800_F000 の PADDR を読み返すレジスタで確かめる。0x1C は読み出しの PADDR の下位 8 ビットを並べて返す)
      */
     *(volatile uint8_t *)0xF800F023u = 0xAB;
     if (REG32(0xF800F000u) != 0xF800F020u || REG32(0xF800F004u) != 0x8u || REG32(0xF800F008u) != 0xAB000000u) return 72;
@@ -425,14 +425,14 @@ int main(void)
     if (*(volatile uint8_t *)0xF800F01Du != 0x1Cu || *(volatile uint16_t *)0xF800F01Eu != 0x1C1Cu) return 74;
     printf("apb subword ok\n");
 
-    /* 75: CPU の識別子は、実機の A25 と同じ値 (= Tang Console で読んだ値) */
+    /* 75: CPU の識別子は、実機の A25 と同じ値 (Tang Console で読み出した値) */
     if (csr_read(mvendorid) != 0x31Eu || csr_read(marchid) != 0x80000A25u || csr_read(mimpid) != 0x160u) return 75;
     printf("ids ok\n");
 
     /*
-     * 60: PLIC のターゲット 1 (= 実機では S モードへの通知)。enable、threshold、claim / complete、PPS をターゲットごとに
-     * 持ち、pending とゲートウェイは共通。feature (= PREEMPT) も共通。CPU には届かないので、レジスタだけで見る
-     * 先に、58〜59 で GP_INT を立てたときの pending (= 25 と 4) を claim / complete で片付ける
+     * 60: PLIC のターゲット 1 (実機では S モードへの通知)。enable、threshold、claim と complete、PPS はターゲットごとに
+     * 持ち、pending とゲートウェイは共通。feature (PREEMPT) も共通。CPU には届かないので、レジスタだけで確かめる
+     * 先に、58〜59 で GP_INT を 1 にしたときの pending (25 と 4) を、claim と complete で片付ける
      */
     PLIC_ENABLE = 0xFFFFFFFEu;
     for (int n = 0; n < 40; n++) {
@@ -461,7 +461,7 @@ int main(void)
     if (PLIC_CLAIM != 0) return 65;
     uint32_t t1a = PLIC_CLAIM1;
     gpint_lower(1u << 0);
-    for (volatile int i = 0; i < 20; i++) {                               /* ソースが 0 になったのが PLIC に届くまで待つ */
+    for (volatile int i = 0; i < 20; i++) {                               /* ソースが 0 になったことが PLIC に届くまで待つ */
     }
     PLIC_CLAIM1 = t1a;
     if (t1a != PLIC_ID_GP0 || PLIC_PENDING != 0) return 66;

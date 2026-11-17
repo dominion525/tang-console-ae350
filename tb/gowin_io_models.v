@@ -1,15 +1,15 @@
 // =============================================================
 // File:        tb/gowin_io_models.v
-// Role:        シミュレーション用の Gowin の IO の部品 (= ODDR、IDDR、IOBUF) のモデル (= 2026-11-11)。
-//              Gowin のモデル (= simlib/gw5a/prim_sim.v) は手続きの中の assign / deassign を使い、Verilator で動かないので、
-//              同じ遅れのふるまいだけを写した。GSR (= 全体のリセット) と INIT 以外のパラメータは持たない。
-//              実機では使わない (= 合成では Gowin の本物の部品になる)。
+// Role:        シミュレーション用の、Gowin の IO プリミティブ (ODDR、IDDR、IOBUF、IODELAY) のモデル。
+//              Gowin のモデル (simlib/gw5a/prim_sim.v) は手続き内の assign と deassign を使っていて Verilator で動かないので、
+//              同じ遅延の動作だけを写した。GSR (グローバルリセット) と INIT 以外のパラメータは持たない。
+//              実機では使わない (合成では Gowin の本物のプリミティブになる)。
 //
-//   ODDR   D0 / D1 / TX を CLK の立ち上がりで取り、2 サイクル後の立ち上がりから出す。Q0 は CLK が 1 の半周期に D0、
-//          0 の半周期に D1。Q1 は TX (= TXCLK_POL 0 のとき、立ち上がりで変わる)
-//   IDDR   D を立ち上がりで取って 2 サイクル後に Q0、立ち下がりで取って Q1
-//   IOBUF  OEN が 0 のとき I をピンに出す。O はピンの値
-//   IODELAY  DI を C_STATIC_DLY × 12.5 ps 遅らせて DO に出す (= 静的な指定だけ。UG304 4.4.1 の「1 刻み約 12.5 ps」)
+//   ODDR   D0、D1、TX を CLK の立ち上がりで取り込み、2 サイクル後の立ち上がりから出力する。Q0 は CLK が 1 の半周期に D0、
+//          0 の半周期に D1。Q1 は TX (TXCLK_POL が 0 のとき、立ち上がりで変わる)
+//   IDDR   D を立ち上がりで取り込んで 2 サイクル後に Q0 に、立ち下がりで取り込んで Q1 に出力する
+//   IOBUF  OEN が 0 のとき I をピンに出力する。O はピンの値
+//   IODELAY  DI を C_STATIC_DLY × 12.5 ps 遅らせて DO に出力する (静的な設定だけ。UG304 4.4.1 の「1 ステップ約 12.5 ps」)
 // =============================================================
 
 `default_nettype none

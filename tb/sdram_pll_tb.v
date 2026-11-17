@@ -1,12 +1,12 @@
 // =============================================================
 // File:        tb/sdram_pll_tb.v
 // Module:      sdram_pll_tb
-// Role:        sdram_pll (= 166.7 MHz 版の SDRAM の制御のクロック) を、Gowin の PLL のモデルで確かめる TB (= 2026-11-11)。
-//              Gowin のモデルは iverilog で動かす (= モデルは
-//              tools/prim_sim_gw5a.rb が直したものを使う)。破れたら $fatal で止まる。
+// Role:        sdram_pll (166.7 MHz 版の SDRAM コントローラのクロック) を、Gowin の PLL のモデルで確かめるテストベンチ。
+//              Gowin のモデルは iverilog で動かす (tools/prim_sim_gw5a.rb で修正したモデルを使う)。
+//              期待と違えば $fatal で止まる。
 //
-//   1  lock が立つ
-//   2  s_clk の周期が 6.0 ns (= 166.7 MHz) で、High の長さが 3.0 ns
+//   1  lock が 1 になる
+//   2  s_clk の周期が 6.0 ns (166.7 MHz) で、High の期間が 3.0 ns
 //
 // 実行: make test-sdram-pll
 // =============================================================
@@ -31,12 +31,12 @@ module sdram_pll_tb;
         #200000;
         pll_rst = 1'b0;
         wait (lock);
-        $display("1 lock: 合格 (%0t)", $time);
+        $display("1 lock: PASS (%0t)", $time);
         repeat (20) @(posedge s_clk);
         @(negedge s_clk);
-        if (period != 6000 || high != 3000) $fatal(1, "2: 周期 %0d ps、High %0d ps", period, high);
-        $display("2 周期 6.0 ns、High 3.0 ns: 合格");
-        $display("sdram_pll_tb: 合格");
+        if (period != 6000 || high != 3000) $fatal(1, "2: period %0d ps, high %0d ps", period, high);
+        $display("2 period 6.0 ns, high 3.0 ns: PASS");
+        $display("sdram_pll_tb: PASS");
         $finish;
     end
 

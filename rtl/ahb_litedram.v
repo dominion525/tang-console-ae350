@@ -1,46 +1,47 @@
 // =============================================================
 // File:        rtl/ahb_litedram.v
 // Module:      ahb_litedram
-// Role:        AE350 の DDR_H* (= 64 bit の AHB) を、LiteDRAM の DDR3 の制御 (= litedram_gen で書き出した litedram_core の
-//              native port) につなぐ回路 (= 2026-11-16、実験。board/tang_console/build.sh の MEM=litedram)。形は ahb_ddr3.v と同じ。
+// Role:        AE350 の DDR_H* (64 ビット AHB) を、LiteDRAM の DDR3 コントローラ (litedram_gen が生成する litedram_core の
+//              native ポート) につなぐブリッジ (board/tang_console/build.sh の MEM=litedram)。構成は ahb_ddr3.v と同じ。
 //
-//   hclk (= DDR_CLK) の側                           cclk (= LiteDRAM の user_clk) の側
-//   AE350 の転送を受け、控えて、トグルで渡す ───▶  読み: 番地を含む native port の 1 語 (= 2^LINE_AW byte) を読み、
-//                                                       8 byte を選ぶ
-//                                                  書き: 1 語のうち、HSIZE と番地で決まる byte だけを書く (= wdata_we)
-//   応答を受けて AE350 に返す              ◀───  終わったらトグルで返す
+//   hclk (DDR_CLK) 側                               cclk (LiteDRAM の user_clk) 側
+//   AE350 の転送を受け付けて保持し、トグルで渡す ───▶  読み出し: アドレスを含む native ポートの 1 ワード (2^LINE_AW バイト) を
+//                                                       読み、8 バイトを選ぶ
+//                                                  書き込み: 1 ワードのうち、HSIZE とアドレスで決まるバイトだけを書き込む (wdata_we)
+//   応答を受けて AE350 に返す              ◀───  完了したらトグルで返す
 //
-//   - native port は、命令 (= cmd_valid / cmd_ready、cmd_we、cmd_addr) と、書くデータ (= wdata_valid / wdata_ready) と、
-//     読んだデータ (= rdata_valid / rdata_ready) の 3 つの valid / ready の組。番地は 1 語の単位 (= DDR3 1 個は 16 byte、2 個は 32 byte。どちらも 25 bit)
-//   - 直前に読んだ 1 語を覚えておき、同じ 1 語の読みは LiteDRAM に行かずに返す。同じ 1 語への書きは、覚えている値も書き換える
-//     (= ahb_ddr3.v と同じ考え)
-//   - LiteDRAM の初期化と調整 (= init_done) が済むまで、cclk の側は転送を受けない (= AE350 は待たされるだけ)
-//   - AE350 に返す HREADYOUT / HRDATA / HRESP はレジスタの出力。転送は 1 つずつ
-//   - DDR3 の範囲 (= 2^MEM_AW byte) の外の番地にはエラー応答。ただし STAT_BASE からの 32 byte は、時間を数えるカウンタ
-//     (= ahb_ddr3.v と同じ並び。sw/mem_bench.c がそのまま読める)
+//   - native ポートは、コマンド (cmd_valid と cmd_ready、cmd_we、cmd_addr)、書き込みデータ (wdata_valid と wdata_ready)、
+//     読み出しデータ (rdata_valid と rdata_ready) の 3 組の valid と ready からなる。アドレスは 1 ワード単位 (DDR3 1 個なら 16 バイト、
+//     2 個なら 32 バイト。どちらも 25 ビット)
+//   - 直前に読み出した 1 ワードを保持し、同じワードの読み出しは LiteDRAM にアクセスせずに返す。同じワードへの書き込みでは、
+//     保持した値も更新する (ahb_ddr3.v と同じ方式)
+//   - LiteDRAM の初期化とレベリング (init_done) が終わるまで、cclk 側は転送を受け付けない (AE350 は待たされるだけ)
+//   - AE350 に返す HREADYOUT、HRDATA、HRESP はレジスタ出力。転送は 1 つずつ処理する
+//   - DDR3 の範囲 (2^MEM_AW バイト) 外のアドレスにはエラー応答を返す。ただし STAT_BASE からの 32 バイトは時間計測用の
+//     カウンタ (ahb_ddr3.v と同じ配置なので、sw/mem_bench.c がそのまま読める)
 //
-//     +0x00 読みの転送の数                          +0x04 読みで HREADYOUT = 0 だった DDR_CLK のサイクル数の合計
-//     +0x08 書きの転送の数                          +0x0C 書きで HREADYOUT = 0 だった DDR_CLK のサイクル数の合計
-//     +0x10 読みの命令を出してから受けられるまでの      +0x14 読みの命令を受けられてから読んだ値が来るまでの
-//           cclk のサイクル数の合計                        cclk のサイクル数の合計
-//     +0x18 書きの命令とデータが受けられるまでの        +0x1C 覚えている 1 語から返した読みの数
-//           cclk のサイクル数の合計
+//     +0x00 読み出し転送の数                          +0x04 読み出しで HREADYOUT = 0 だった DDR_CLK のサイクル数の合計
+//     +0x08 書き込み転送の数                          +0x0C 書き込みで HREADYOUT = 0 だった DDR_CLK のサイクル数の合計
+//     +0x10 読み出しコマンドを出してから受け付けられる  +0x14 読み出しコマンドが受け付けられてから読み出しデータが
+//           までの cclk のサイクル数の合計                  届くまでの cclk のサイクル数の合計
+//     +0x18 書き込みコマンドとデータが受け付けられる    +0x1C 保持した 1 ワードから返した読み出しの数
+//           までの cclk のサイクル数の合計
 //
 // Ports:
-//   input  wire hclk / hresetn            DDR_CLK と、AE350 が出す DDR_RSTN
-//   AHB のスレーブ (= DDR_H*。hready は AE350 の DDR_HREADY と同じ、この回路の hreadyout)
-//   input  wire cclk / crst_n             LiteDRAM の user_clk と、その側のリセット (= init_done かつ !user_rst)
-//   LiteDRAM の native port (= cmd_* / wdata_* / rdata_*)
+//   input  wire hclk / hresetn            DDR_CLK と、AE350 が出力する DDR_RSTN
+//   AHB スレーブ (DDR_H*。hready は AE350 の DDR_HREADY で、この回路の hreadyout と同じ)
+//   input  wire cclk / crst_n             LiteDRAM の user_clk と、その側のリセット (init_done かつ !user_rst)
+//   LiteDRAM の native ポート (cmd_*、wdata_*、rdata_*)
 // =============================================================
 
 `default_nettype none
 
 module ahb_litedram #(
     parameter [31:0]  STAT_BASE = 32'h7F00_0000,
-    parameter integer MEM_AW    = 30,   // DDR3 の byte 番地の幅 (= 30 なら 1 GB、DDR3 2 個。29 なら 512 MB、1 個)
-    parameter integer LINE_AW   = 5     // native port の 1 語の byte 数の bit 数 (= 5 なら 32 byte、DQ 32 bit。4 なら 16 byte、DQ 16 bit)
+    parameter integer MEM_AW    = 30,   // DDR3 のバイトアドレスの幅 (30 なら 1 GB で DDR3 2 個、29 なら 512 MB で 1 個)
+    parameter integer LINE_AW   = 5     // native ポートの 1 ワードのバイト数の log2 (5 なら 32 バイトで DQ 32 ビット、4 なら 16 バイトで DQ 16 ビット)
 ) (
-    // DDR_CLK の側
+    // DDR_CLK 側
     input  wire         hclk,
     input  wire         hresetn,
     input  wire [31:0]  haddr,
@@ -52,7 +53,7 @@ module ahb_litedram #(
     output reg          hreadyout,
     output reg          hresp,
 
-    // LiteDRAM の側
+    // LiteDRAM 側
     input  wire         cclk,
     input  wire         crst_n,
     output reg          cmd_valid,
@@ -69,7 +70,7 @@ module ahb_litedram #(
 );
 
     // ---------------------------------------------------------
-    // DDR_CLK の側: 受けて、控えて、渡す
+    // DDR_CLK 側: 受け付けて保持し、cclk 側に渡す
     // ---------------------------------------------------------
     localparam [1:0] H_RDY  = 2'd0;
     localparam [1:0] H_DATA = 2'd1;
@@ -85,17 +86,17 @@ module ahb_litedram #(
     reg [1:0]  ack_s;
     reg        ack_seen;
     reg        ack_t;
-    localparam integer DW = 8 << LINE_AW;   // native port の 1 語の bit 数
+    localparam integer DW = 8 << LINE_AW;   // native ポートの 1 ワードのビット数
     localparam integer TW = MEM_AW - LINE_AW;
-    reg [DW-1:0] c_rline;              // cclk の側が読んだ 16 byte (= 次の要求まで変わらないので、ack を受けてから hclk で読む)
+    reg [DW-1:0] c_rline;              // cclk 側が読み出した 1 ワード (次の要求まで変わらないので、ack を受けてから hclk で読む)
 
     wire in_range = (q_addr[31:MEM_AW] == {(32-MEM_AW){1'b0}});
-    wire [LINE_AW-4:0] q_lane = q_addr[LINE_AW-1:3];   // 1 語の中の 8 byte の位置
+    wire [LINE_AW-4:0] q_lane = q_addr[LINE_AW-1:3];   // 1 ワードの中での 8 バイトの位置
     wire ack_new  = (ack_s[1] != ack_seen);
     wire in_stat  = (q_addr[31:5] == STAT_BASE[31:5]);
 
     reg         line_valid;
-    reg [TW-1:0] line_tag;            // byte の番地の bit MEM_AW-1〜LINE_AW
+    reg [TW-1:0] line_tag;            // バイトアドレスのビット MEM_AW-1〜LINE_AW
     reg [DW-1:0] line_data;
     wire         line_hit = line_valid && (line_tag == q_addr[MEM_AW-1:LINE_AW]);
 
@@ -112,7 +113,7 @@ module ahb_litedram #(
         endcase
     endfunction
 
-    // HSIZE と番地の下位から、書く byte を決める (= 64 bit のバスの byte のレーン)
+    // HSIZE とアドレスの下位から、書き込むバイトを決める (64 ビットバスのバイトレーン)
     function [7:0] lanes(input [2:0] a, input [2:0] size);
         case (size)
             3'd0:    lanes = 8'b0000_0001 << a;
@@ -214,12 +215,12 @@ module ahb_litedram #(
     end
 
     // ---------------------------------------------------------
-    // LiteDRAM の側 (= cclk): 1 つの転送を、native port の命令 1 回にする
+    // LiteDRAM 側 (cclk): 1 つの転送を、native ポートのコマンド 1 回にする
     // ---------------------------------------------------------
     localparam [1:0] C_IDLE  = 2'd0;
-    localparam [1:0] C_WRITE = 2'd1;  // 書きの命令とデータを出している (= 両方受けられるまで)
-    localparam [1:0] C_READ  = 2'd2;  // 読みの命令を出している (= 受けられるまで)
-    localparam [1:0] C_RDATA = 2'd3;  // 読んだ値を待つ
+    localparam [1:0] C_WRITE = 2'd1;  // 書き込みコマンドとデータを出している (両方が受け付けられるまで)
+    localparam [1:0] C_READ  = 2'd2;  // 読み出しコマンドを出している (受け付けられるまで)
+    localparam [1:0] C_RDATA = 2'd3;  // 読み出しデータを待つ
 
     reg [1:0] c_st;
     reg [1:0] req_s;
@@ -228,7 +229,7 @@ module ahb_litedram #(
 
     assign rdata_ready = (c_st == C_RDATA);
 
-    // q_addr / q_write / q_size / q_wdata は、req を受けてから ack を返すまで hclk の側で変わらないので、cclk で読む
+    // q_addr、q_write、q_size、q_wdata は、req を受けてから ack を返すまで hclk 側で変わらないので、cclk で読んでよい
     wire [(1<<LINE_AW)-1:0] w_we = {{((1<<LINE_AW)-8){1'b0}}, h_lanes} << (q_lane * 8);
 
     always @(posedge cclk or negedge crst_n) begin
@@ -270,7 +271,7 @@ module ahb_litedram #(
                     end
                 end
                 C_WRITE: begin
-                    // 命令とデータは別々に受けられる。両方受けられたら終わり
+                    // コマンドとデータは別々に受け付けられる。両方が受け付けられたら完了
                     if (cmd_valid && cmd_ready) cmd_valid <= 1'b0;
                     if (wdata_valid && wdata_ready) wdata_valid <= 1'b0;
                     if ((!cmd_valid || cmd_ready) && (!wdata_valid || wdata_ready)) begin

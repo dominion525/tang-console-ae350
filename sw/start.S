@@ -1,13 +1,12 @@
 /*
- * スタートアップ (= 段 2、2026-11-08)。リセットベクタ 0x8000_0000 に置く。
+ * スタートアップルーチン。リセットベクタ 0x8000_0000 に置く。
  *
  *   1. スタックと mtvec を設定する
- *   2. .data の初期値を ROM から DDR に写す
+ *   2. .data の初期値を ROM から DDR にコピーする
  *   3. .bss を 0 にする
- *   4. main を呼び、戻り値を result (= 0x0000_0000) に書いて止まる
+ *   4. main を呼び、戻り値を result (0x0000_0000) に書いて停止する
  *
- * 例外と割り込みの入口 (trap_entry) はレジスタを退避して sw/trap.c の trap_handler を呼ぶ (= 段 4 で
- * この形にした)。
+ * 例外と割り込みの入口 (trap_entry) は、レジスタを退避して sw/trap.c の trap_handler を呼ぶ。
  */
 
     .section .text.start, "ax"
@@ -38,7 +37,7 @@ _start:
     la      t0, result
     sw      a0, 0(t0)
 #ifdef START_RETURN_TO_ROM
-    /* SDRAM で動かすプログラム (= sw/sdram.ld): 書き込みを終わらせてから、ROM のローダーへ戻る */
+    /* 外部メモリで動かすプログラム (sw/sdram.ld): 書き込みを完了させてから、ROM のローダーに戻る */
     fence
     li      t0, 0x80000000
     jr      t0
@@ -46,8 +45,8 @@ _start:
 5:  j       5b
 
     /*
-     * 例外と割り込みの入口: 呼び出し側が保存するレジスタ (= ra、t0〜t6、a0〜a7) を退避し、
-     * trap_handler(mcause, mepc) (= sw/trap.c) を呼ぶ。戻り値を mepc にして mret で戻る
+     * 例外と割り込みの入口: 呼び出し側が保存するレジスタ (ra、t0〜t6、a0〜a7) を退避し、
+     * trap_handler(mcause, mepc) (sw/trap.c) を呼ぶ。戻り値を mepc に設定し、mret で戻る
      */
     .balign 4
     .globl trap_entry

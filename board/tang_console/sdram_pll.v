@@ -1,27 +1,27 @@
 // =============================================================
 // File:        board/tang_console/sdram_pll.v
 // Module:      sdram_pll
-// Role:        SDRAM の制御の 166.7 MHz 版のクロックを作る 2 つ目の PLL (= 2026-11-11)。AE350 の PLL (= ae350_pll.v、
-//              PLL_R[0]、VCO 800 MHz) とは別に置く (= 800 MHz の VCO からは 166.7 MHz を作れない)。
+// Role:        166.7 MHz 版の SDRAM コントローラのクロックを生成する、2 つ目の PLL。AE350 の PLL (ae350_pll.v、
+//              PLL_R[0]、VCO 800 MHz) とは別に置く (800 MHz の VCO からは 166.7 MHz を生成できないため)。
 //              パラメータの並びは ae350_pll.v と同じ。
 //
-//     VCO   = 50 MHz ÷ IDIV (1) × FBDIV (1) × MDIV (20) = 1000 MHz   (= DS981 3.10.3 の範囲 800〜2000 MHz)
-//     s_clk = VCO ÷ ODIV0 (6) = 166.7 MHz   制御のクロック (= W9825G6KH-6 の CL 3 の最短の周期 6 ns)
+//     VCO   = 50 MHz ÷ IDIV (1) × FBDIV (1) × MDIV (20) = 1000 MHz   (DS981 3.10.3 の範囲 800〜2000 MHz に収まる)
+//     s_clk = VCO ÷ ODIV0 (6) = 166.7 MHz   コントローラのクロック (W9825G6KH-6 の CL 3 の最小周期 6 ns)
 //
-//     読んだデータを取る位置は、PLL の位相ではなく、sdram_io の IODELAY と取る縁で決める (= 1 本のピンの ODDR と IDDR は
-//     同じクロックでなければならない。合成の CK0012)
+//     読み出しデータを取り込むタイミングは、PLL の位相ではなく、sdram_io の IODELAY と取り込むエッジで決める (1 本のピンの
+//     ODDR と IDDR は同じクロックで動かす必要があるため。合成の CK0012)
 // =============================================================
 `default_nettype none
 
 module sdram_pll (
     input  wire clkin,      // 50 MHz
-    input  wire reset,      // 1 で PLL を reset に保つ
+    input  wire reset,      // 1 の間、PLL をリセット状態に保つ
     output wire s_clk,
     output wire lock
 );
     wire clkout1, clkout2, clkout3, clkout4, clkout5, clkout6, clkfbout;
     /* verilator lint_off UNUSEDSIGNAL */
-    wire unused = &{clkout1, clkout2, clkout3, clkout4, clkout5, clkout6, clkfbout};   // 使うのは CLKOUT0 (= s_clk) だけ
+    wire unused = &{clkout1, clkout2, clkout3, clkout4, clkout5, clkout6, clkfbout};   // 使うのは CLKOUT0 (s_clk) だけ
     /* verilator lint_on UNUSEDSIGNAL */
 
     PLL #(

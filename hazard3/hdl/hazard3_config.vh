@@ -200,8 +200,8 @@ parameter MVENDORID_VAL       = 32'h0,
 // 4-byte-aligned.
 parameter MCONFIGPTR_VAL      = 32'h0,
 
-// ae350: marchid と mimpid を外から決められるようにした (= 既定は上流と同じ値)。
-// MIMPID_OVERRIDE が 0 なら、mimpid は上流と同じく版の番号から作る
+// ae350: marchid と mimpid を外部から指定できるようにした (既定値は上流と同じ)。
+// MIMPID_OVERRIDE が 0 なら、mimpid は上流と同じくバージョン番号から作る
 parameter MARCHID_VAL         = 32'd27,
 parameter MIMPID_OVERRIDE     = 0,
 parameter MIMPID_VAL          = 32'h0,

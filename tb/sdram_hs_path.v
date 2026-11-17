@@ -1,16 +1,17 @@
 // =============================================================
 // File:        tb/sdram_hs_path.v
 // Module:      sdram_hs_path
-// Role:        シミュレーション用の、SDRAM の制御の 166.7 MHz 版の経路 (= 2026-11-11)。
-//              sdram_ctrl_hs → sdram_io (= TB 用の Gowin の IO の部品) → ボードの遅れ → SDRAM のモデル。
-//              上の側の口は sdram_bridge と同じなので、TB は sdram_bridge + SDRAM のモデルの代わりに置ける。
+// Role:        シミュレーション用の、SDRAM コントローラの 166.7 MHz 版の経路。
+//              sdram_ctrl_hs → sdram_io (テストベンチ用の Gowin の IO プリミティブのモデル) → ボード上の遅延 → SDRAM のモデル。
+//              上位側のポートは sdram_bridge と同じなので、テストベンチでは sdram_bridge と SDRAM のモデルの組の代わりに置ける。
 //
-//   ボードの遅れ (= パラメータ BOARD_PS、既定 0。TB では定義 SDRAM_BOARD_PS で渡す): FPGA のピンと SDRAM の間の片道の遅れ。命令、番地、クロックは行きに、
-//   DQ は書くときは行きに、読むときは帰りにかかる (= 読んだ語は、c_clk から見て 2 倍遅れて届く)
+//   ボード上の遅延 (パラメータ BOARD_PS。既定値 0。テストベンチではマクロ SDRAM_BOARD_PS で渡す): FPGA のピンと SDRAM の間の
+//   片道の遅延。コマンド、アドレス、クロックは往路に、DQ は書き込みでは往路に、読み出しでは復路にかかる (読み出したワードは、
+//   c_clk から見ると往復分遅れて届く)
 //
 // Ports:
 //   input  wire s_clk / rst_n
-//   上の側の口 (= sdram_bridge と同じ)
+//   上位側のポート (sdram_bridge と同じ)
 // =============================================================
 
 `timescale 1ns / 1ps
@@ -61,7 +62,7 @@ module sdram_hs_path #(
     );
 
     // ---------------------------------------------------------
-    // ボードの遅れ (= 遅れつきの連続代入。DQ は出している側の値を、遅れてもう一方へ渡す)
+    // ボード上の遅延 (遅延付きの連続代入。DQ は、駆動している側の値を遅らせて反対側へ渡す)
     // ---------------------------------------------------------
     localparam real BD = BOARD_PS / 1000.0;
 
@@ -69,12 +70,12 @@ module sdram_hs_path #(
     wire [1:0]  m_ba, m_dqm;
     wire        m_clk, m_cs_n, m_ras_n, m_cas_n, m_we_n;
     wire [15:0] m_dq;
-    wire [15:0] fpga_q  = u_io.dq_q;             // FPGA が出す値 (= IOBUF の I)
-    wire        f_drive = !u_io.dq_oen[0];       // FPGA が DQ を出している (= IOBUF の OEN が 0)
+    wire [15:0] fpga_q  = u_io.dq_q;             // FPGA が出力する値 (IOBUF の I)
+    wire        f_drive = !u_io.dq_oen[0];       // FPGA が DQ を駆動している (IOBUF の OEN が 0)
     wire [15:0] to_m, to_f;
     wire        to_m_en, to_f_en;
 
-    // 遅れが 0 のときは遅れなしで代入する (= 遅れ 0 の代入は、--no-sched-zero-delay と合わない)
+    // 遅延が 0 のときは遅延なしで代入する (遅延 0 の代入は --no-sched-zero-delay と両立しないため)
     generate
         if (BOARD_PS == 0) begin : no_delay
             assign {m_a, m_ba, m_dqm, m_clk, m_cs_n, m_ras_n, m_cas_n, m_we_n} =

@@ -1,4 +1,4 @@
-# Tang Console の AE350 の UART を、端末から読み書きする道具（macOS 専用）。
+# Tang Console の AE350 の UART を、端末から読み書きするスクリプト（macOS 専用）。
 #   ruby tools/ae350_uart.rb <ポート> [秒数]
 #
 # 受信したデータを標準出力に出し、標準入力から読んだデータを送信する。
@@ -23,7 +23,7 @@ module AE350Uart
   # macOS のシリアルポートを 1,250,000 bps で開く
   def open_port(path)
     port = File.open(path, File::RDWR | File::NOCTTY)
-    system("stty -f #{path} 115200 cs8 -cstopb -parenb raw -echo -crtscts clocal") or abort 'stty に失敗した'
+    system("stty -f #{path} 115200 cs8 -cstopb -parenb raw -echo -crtscts clocal") or abort 'stty failed'
     port.ioctl(IOSSIOSPEED, [BAUD].pack('Q'))
     port.sync = true
     discard_pending(port)
@@ -59,7 +59,7 @@ end
 
 if $PROGRAM_NAME == __FILE__
   path, sec = ARGV
-  abort '使い方: ruby tools/ae350_uart.rb <ポート> [秒数]' if path.nil?
+  abort 'usage: ruby tools/ae350_uart.rb <port> [seconds]' if path.nil?
   $stdout.sync = true
   trap('INT') { exit }
   AE350Uart.relay(AE350Uart.open_port(path), $stdin, $stdout, sec && Float(sec))

@@ -1,31 +1,31 @@
-// 実機の値を読む構成 (= board/tang_console/top.v) のピンの割り当て。
+// ボード構成 (board/tang_console/top.v) のピン割り当て。
 
-// 50 MHz の発振器。V22 はクロック専用のピンではないので、配置配線で PR1014 が出る
+// 50 MHz の発振器。V22 はクロック専用ピンではないので、配置配線で PR1014 の警告が出る
 IO_LOC  "clk50" V22;
 IO_PORT "clk50" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
 
-// ボタン 0 (= USER_BUTTON0)。押すと GND につながるので、FPGA の内部で引き上げる
+// ボタン 0 (USER_BUTTON0)。押すと GND につながるので、FPGA の内部でプルアップする
 IO_LOC  "btn0_n" AA13;
 IO_PORT "btn0_n" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 
-// USB シリアル (= BL616)。FPGA_UART.RX / FPGA_UART.TX
+// USB シリアル (BL616)。FPGA_UART.RX と FPGA_UART.TX
 IO_LOC  "uart_rx" V14;
 IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 IO_LOC  "uart_tx" U15;
 IO_PORT "uart_tx" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
 
-// AE350 の CORE_CLK は「PLL_R[0] の clkout1」から専用の経路で届くので、PLL を PLL_R[0] に置く
-// (= Gowin MUG1031-1.3.1E 8.4 節「it must constrain the location of this PLL_ADV IP to "PLL_R[0]"」)
-// 合成後の名前は u_pll/u_pll_s8 になる (= 配置配線の報告のクロックの一覧)
+// AE350 の CORE_CLK は「PLL_R[0] の clkout1」から専用配線で供給されるので、PLL を PLL_R[0] に配置する
+// (Gowin MUG1031-1.3.1E 8.4 節「it must constrain the location of this PLL_ADV IP to "PLL_R[0]"」)
+// 合成後のインスタンス名は u_pll/u_pll_s8 になる (配置配線レポートのクロックの一覧で確かめた)
 INS_LOC "u_pll/u_pll_s8" PLL_R[0];
 
-// EXTS_H* のレジスタスライスを、AE350 (= R0C160) のすぐ近くに置く (= Gowin SUG1018 2.4.1)。
+// EXTS_H* のレジスタスライスを、AE350 (R0C160) のすぐ近くに配置する (Gowin SUG1018 2.4.1)。
 // スライスの HREADYOUT から AE350 を通って HSEL が戻る往復の配線が、AHB_CLK の周期の大半を占めていた
-// (= 真ん中に置かれると片道約 4.4 ns)。APB のスライスは寄せない (= 寄せると、反対側のデコーダとの往復が長くなった)
+// (中央に配置されると片道約 4.4 ns)。APB のスライスは寄せない (寄せると、反対側にあるデコーダとの往復が長くなった)
 GROUP exts_slice = { "u_top/u_exts_slice/*" };
 GRP_LOC exts_slice R[1:10]C[145:160];
 
-// ベースボードの SDRAM0 (= W9825G6KH、32 MB)。CKE のピンは無い
+// ベースボードの SDRAM0 (W9825G6KH、32 MB)。CKE のピンはない
 IO_LOC  "sdram_dq[0]" E14;
 IO_PORT "sdram_dq[0]" IO_TYPE=LVCMOS33;
 IO_LOC  "sdram_dq[1]" E13;

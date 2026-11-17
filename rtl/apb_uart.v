@@ -1,43 +1,43 @@
 // =============================================================
 // File:        rtl/apb_uart.v
 // Module:      apb_uart
-// Role:        AE350 の APB_P* の先に置く UART (= 段 3 で送信、段 3b (2026-11-10) で受信を足した)。
-//              FPGA のロジック側の回路で、実機にもそのまま載る (= 本物の AE350 を使う構成でも使う)。
-//              送信器と受信器は rtl/vendor/verilog-uart/ の uart_tx.v / uart_rx.v (= MIT、手を加えずに
-//              取り込んだもの) を使う。受信した文字は RX_DEPTH 文字の FIFO に溜める。
+// Role:        AE350 の APB_P* の先に置く UART。
+//              ファブリック側の回路で、実機でもそのまま使う (本物の AE350 を使う構成でも使う)。
+//              送信回路と受信回路には、rtl/vendor/verilog-uart/ の uart_tx.v と uart_rx.v (MIT。変更せずに取り込んだもの) を
+//              使う。受信した文字は、RX_DEPTH 文字の FIFO に溜める。
 //
-// Registers (= PADDR[3:2] で選ぶ。上位のビットは見ない):
-//   0x00  DATA     書くと下位 8 bit を 1 文字送る。送信待ちの文字が残っていると、空くまで PREADY を 0 にする。
-//                  読むと受信した 1 文字を FIFO から取り出す (= 空なら 0 を返し、何も取り出さない)
-//   0x04  STATUS   読み出し専用 (= 書いても何も起きない)
-//                  bit 0  送信: 次の文字を待たずに受け取れる
-//                  bit 1  送信: 送信中 (= 送信待ちの文字か、送り出している途中の文字がある)
+// Registers (PADDR[3:2] で選ぶ。上位のビットは見ない):
+//   0x00  DATA     書き込むと、下位 8 ビットを 1 文字送信する。送信待ちの文字が残っていると、空くまで PREADY を 0 にする。
+//                  読み出すと、受信した 1 文字を FIFO から取り出す (空なら 0 を返し、何も取り出さない)
+//   0x04  STATUS   読み出し専用 (書き込みは無視する)
+//                  bit 0  送信: 次の文字を待たずに受け付けられる
+//                  bit 1  送信: 送信中 (送信待ちの文字か、送信途中の文字がある)
 //                  bit 2  受信: FIFO に文字がある
-//                  bit 3  受信: FIFO があふれて文字を落とした (= STATUS を読むと 0 に戻る)
-//                  bit 4  受信: ストップビットが 0 の文字を受けて捨てた (= STATUS を読むと 0 に戻る)
-//   0x08  CTRL     読み書き。bit 0  UART の合図 (= rtl/uart_reset_seq.v) を見張らない (= ROM のローダーが中身を受けて
-//                  いる間に 1 にする。中身に合図の 8 byte が並んでいても、リセットがかからない。2026-11-12)
+//                  bit 3  受信: FIFO があふれて文字を失った (STATUS を読むと 0 に戻る)
+//                  bit 4  受信: ストップビットが 0 の文字を受信して捨てた (STATUS を読むと 0 に戻る)
+//   0x08  CTRL     R/W。bit 0 が 1 の間、リセットシーケンス (rtl/uart_reset_seq.v) を監視しない (ROM のローダーがデータを
+//                  受信している間に 1 にする。データにシーケンスの 8 バイトが含まれていても、リセットがかからない)
 //   それ以外       PSLVERR = 1 を返す
 //
 // Ports:
 //   input  wire        clk / rst_n
 //   input  wire        psel / penable / pwrite
 //   input  wire [31:0] paddr / pwdata
-//   input  wire [3:0]  pstrb       DATA への書き込みは pstrb[0] が 1 のときだけ文字を送る
+//   input  wire [3:0]  pstrb       DATA への書き込みは、pstrb[0] が 1 のときだけ文字を送信する
 //   output wire [31:0] prdata
 //   output wire        pready / pslverr
-//   output wire        txd         アイドルは 1
-//   input  wire        rxd         ピンから非同期に入る。フリップフロップ 2 段で同期させてから受信器に渡す
-//   output wire        seq_hold    CTRL の bit 0 (= uart_reset_seq の hold へ)
+//   output wire        txd         アイドル時は 1
+//   input  wire        rxd         ピンから非同期に入る。2 段の FF で同期化してから受信回路に渡す
+//   output wire        seq_hold    CTRL の bit 0 (uart_reset_seq の hold へ)
 //
 // Parameters:
-//   PRESCALE   1 bit の長さ ÷ 8 (= uart_tx / uart_rx の prescale)。100 MHz で 115200 bps なら 108
-//   RX_DEPTH   受信の FIFO の深さ (= 2 のべき乗)。既定 256 (= 2026-11-12、ローダーがプログラムを受けるときの余裕。16 では
-//              シミュレーションの Hazard3 のローダーが読み出しに追いつかず、あふれた)
+//   PRESCALE   1 ビットの長さ ÷ 8 (uart_tx と uart_rx の prescale)。100 MHz で 115200 bps なら 108
+//   RX_DEPTH   受信 FIFO の深さ (2 のべき乗)。既定値 256 (ローダーがプログラムを受信するときの余裕。16 では、
+//              シミュレーションで Hazard3 版のローダーの読み出しが追いつかず、FIFO があふれた)
 //
-// Clock:       clk (= APB_CLK と同じクロック)
-// Reset:       rst_n (active low、非同期)。uart_tx / uart_rx (= 同期リセット) には、rst_n をフリップフロップ
-//              1 段で受けたものを与える
+// Clock:       clk (APB_CLK と同じクロック)
+// Reset:       rst_n (アクティブ Low、非同期)。uart_tx と uart_rx (同期リセット) には、rst_n を 1 段の FF で受けたものを
+//              与える
 // =============================================================
 
 `default_nettype none
@@ -70,8 +70,8 @@ module apb_uart #(
     wire [1:0] reg_sel   = paddr[3:2];
     wire       reg_known = (reg_sel == REG_DATA) || (reg_sel == REG_STATUS) || (reg_sel == REG_CTRL);
 
-    // uart_tx / uart_rx は同期リセット。rst_n (= 非同期) を 1 段のフリップフロップで受けて与える
-    // (= かかるのは非同期、解けるのはクロックに同期)
+    // uart_tx と uart_rx は同期リセット。rst_n (非同期) を 1 段の FF で受けて与える
+    // (アサートは非同期、解除はクロックに同期)
     reg sync_rst;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) sync_rst <= 1'b1;
@@ -97,7 +97,7 @@ module apb_uart #(
     assign seq_hold = ctrl_hold;
 
     // ---------------------------------------------------------
-    // 送信: 送信待ちの文字 (= 1 文字分)
+    // 送信: 送信待ちの文字 (1 文字分)
     // ---------------------------------------------------------
     reg  [7:0] hold_data;
     reg        hold_valid;
@@ -136,7 +136,7 @@ module apb_uart #(
     );
 
     // ---------------------------------------------------------
-    // 受信: ピンの同期、受信器、FIFO
+    // 受信: ピンの同期化、受信回路、FIFO
     // ---------------------------------------------------------
     reg [1:0] rxd_sync;
     always @(posedge clk or negedge rst_n) begin
@@ -156,17 +156,17 @@ module apb_uart #(
         .rst           (sync_rst),
         .m_axis_tdata  (rx_data),
         .m_axis_tvalid (rx_valid),
-        .m_axis_tready (1'b1),          // 受けたらすぐ FIFO に移す
+        .m_axis_tready (1'b1),          // 受信したらすぐ FIFO に移す
         .rxd           (rxd_sync[1]),
         .busy          (),
-        .overrun_error (),              // tready が常に 1 なので起きない
+        .overrun_error (),              // tready が常に 1 なので発生しない
         .frame_error   (rx_frame_error),
         .prescale      (PRESCALE)
     );
     /* verilator lint_on PINCONNECTEMPTY */
 
     reg [7:0]     rx_fifo [0:RX_DEPTH-1];
-    reg [RX_AW:0] rx_wptr;               // 1 bit 多く持ち、満杯と空を見分ける
+    reg [RX_AW:0] rx_wptr;               // 1 ビット多く持ち、満杯と空を区別する
     reg [RX_AW:0] rx_rptr;
     reg           rx_overrun;
     reg           rx_frame;
@@ -189,7 +189,7 @@ module apb_uart #(
             if (rx_pop) begin
                 rx_rptr <= rx_rptr + 1'b1;
             end
-            // STATUS を読むと 0 に戻る。同じサイクルに新しく起きたら 1 のまま
+            // STATUS を読むと 0 に戻る。同じサイクルに新しく発生したら 1 のまま
             if (status_read) begin
                 rx_overrun <= 1'b0;
                 rx_frame   <= 1'b0;
@@ -199,12 +199,12 @@ module apb_uart #(
         end
     end
 
-    // 先頭の 1 文字を、前もってレジスタに読んでおく (= 2026-11-12。RX_DEPTH を 256 にしたら、DATA の読み出しで rx_rptr から
-    // 256 個を選ぶ回路が APB の経路に入り、APB_CLK の余裕が 0.016 ns になった)。
-    //   rx_ram_q  毎サイクル rx_fifo[rx_rptr] を読む (= 同期の読み出し。ブロック RAM に置ける形)
-    //   rx_byp    空の FIFO に書いた文字が、そのまま先頭になるとき (= 書いたサイクルの読み出しは古い値なので、横から渡す)
-    // 取り出した (= rx_pop) 後、次の先頭がレジスタに出るのは 2 サイクル後。APB の転送は setup と access の 2 サイクルが要る
-    // ので、次の DATA の読み出しには間に合う
+    // FIFO の先頭の 1 文字を、あらかじめレジスタに読んでおく (RX_DEPTH を 256 にしたとき、DATA の読み出しで rx_rptr から
+    // 256 個を選ぶ回路が APB の経路に入り、APB_CLK のスラックが 0.016 ns になったため)。
+    //   rx_ram_q  毎サイクル rx_fifo[rx_rptr] を読む (同期読み出し。ブロック RAM として推論できる形)
+    //   rx_byp    空の FIFO に書き込んだ文字が、そのまま先頭になるとき (書き込んだサイクルの読み出しは古い値なので、バイパスで渡す)
+    // 取り出した (rx_pop) 後、次の先頭がレジスタに出るのは 2 サイクル後。APB の転送には SETUP と ACCESS の 2 サイクルが
+    // 必要なので、次の DATA の読み出しには間に合う
     reg [7:0] rx_ram_q;
     reg [7:0] rx_byp;
     reg       rx_byp_use;

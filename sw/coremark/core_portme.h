@@ -1,12 +1,12 @@
 /*
- * CoreMark (= EEMBC の CoreMark。ソースはリポジトリに取り込まず、make が build/ に取ってくる) を、この構成 (= AE350 か、
- * Hazard3 の版) で動かすための定義 (= 2026-11-13)。CoreMark の雛形 (= barebones/core_portme.h) が求める名前を、
+ * CoreMark (EEMBC の CoreMark。ソースはリポジトリに含めず、make が build/ に取得する) を、この構成 (AE350 か
+ * Hazard3 版) で動かすための定義。CoreMark のテンプレート (barebones/core_portme.h) が求める名前を、
  * この構成に合わせて新しく書いたもの。
  *
- * - 時間は mcycle (= CPU のクロックの数、64 bit) で測る。1 MHz あたりの点数は、くり返しの回数と mcycle から出せる
- * - 秒に直すための CPU の周波数は misa で見分ける (= core_portme.c)
- * - 出力は newlib の printf (= sw/syscalls.c で UART に出す)
- * - 作業用のメモリはスタック (= sw/sdram.ld でも sw/ae350.ld でも DLM か DDR の決まった場所。どちらの CPU でも同じ)
+ * - 時間は mcycle (CPU のクロック数、64 ビット) で測る。1 MHz あたりのスコアは、繰り返しの回数と mcycle から出せる
+ * - 秒に変換するための CPU の周波数は misa で判別する (core_portme.c)
+ * - 出力は newlib の printf (sw/syscalls.c で UART に出す)
+ * - 作業用のメモリはスタック (sw/sdram.ld でも sw/ae350.ld でも、DLM か DDR の決まった場所。どちらの CPU でも同じ)
  */
 
 #ifndef CORE_PORTME_H
@@ -15,16 +15,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* 0 にすると小数を使わない (= Makefile の coremark_ilm_pub。小数を文字に直す部分を入れると ILM に収まらないため。点数は
-   mcycle とくり返しの回数から出す) */
+/* 0 にすると浮動小数点を使わない (Makefile の coremark_ilm_pub。小数を文字列に変換する部分を入れると ILM に収まらないため。
+   スコアは mcycle と繰り返しの回数から出す) */
 #ifndef HAS_FLOAT
 #define HAS_FLOAT 1
 #endif
 #define HAS_TIME_H 0
 #define USE_CLOCK 0
 #define HAS_STDIO 1
-/* 0 にすると、newlib の printf の代わりに CoreMark の小さい printf (= barebones/ee_printf.c) を使う (= Makefile の
-   coremark_ilm_pub。2026-11-13、公表値と同じ指定で作るとコードが大きくなり、ILM に収まらないため) */
+/* 0 にすると、newlib の printf の代わりに CoreMark の簡易 printf (barebones/ee_printf.c) を使う (Makefile の
+   coremark_ilm_pub。公表値と同じオプションでビルドするとコードが大きくなり、ILM に収まらないため) */
 #ifndef HAS_PRINTF
 #define HAS_PRINTF 1
 #endif
@@ -50,7 +50,7 @@ typedef size_t    ee_size_t;
 
 #define align_mem(x) (void *)(4 + (((ee_ptr_int)(x) - 1) & ~3))
 
-/* mcycle は 800 MHz では 32 bit が 5.4 秒で一周するので、64 bit で数える */
+/* mcycle は 800 MHz では 32 ビットが 5.4 秒で一周するので、64 ビットで数える */
 #define CORETIMETYPE uint64_t
 typedef uint64_t CORE_TICKS;
 

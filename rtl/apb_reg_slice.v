@@ -1,26 +1,26 @@
 // =============================================================
 // File:        rtl/apb_reg_slice.v
 // Module:      apb_reg_slice
-// Role:        APB の転送をレジスタで区切る回路 (= 2026-11-10)。AE350 の APB_P* と FPGA 側の周辺回路の間に置く。
-//              実機では AE350 が FPGA の端にあり、行きと帰りの配線だけで APB_CLK の周期の大半を使う。
-//              PADDR からデコーダを通って PRDATA / PREADY / PSLVERR が AE350 に戻る経路を切り、AE350 に出入りする
-//              経路をすべてレジスタからレジスタにする (= 配置配線の報告で違反していた経路)。
+// Role:        APB の転送にレジスタを挟む回路 (レジスタスライス)。AE350 の APB_P* と、FPGA 側の周辺回路の間に置く。
+//              実機では AE350 が FPGA の端にあり、往復の配線だけで APB_CLK の周期の大半を使う。
+//              PADDR からデコーダを通って PRDATA、PREADY、PSLVERR が AE350 に戻る経路を切り、AE350 に出入りする
+//              経路をすべてレジスタ間の経路にする (配置配線でタイミング違反になっていた経路)。
 //
-//   マスタ側 (= AE350)        スレーブ側 (= デコーダと周辺回路)
-//   セットアップ  ─控える─▶  S_SETUP  (PSEL = 1、PENABLE = 0)
-//   アクセス (待ち)           S_ACCESS (PSEL = 1、PENABLE = 1)、PREADY を待って応答を控える
-//   アクセス (PREADY = 1) ◀─  S_DONE   控えた応答を出す
+//   マスタ側 (AE350)          スレーブ側 (デコーダと周辺回路)
+//   セットアップ  ─保持─▶    S_SETUP  (PSEL = 1、PENABLE = 0)
+//   アクセス (ウェイト)       S_ACCESS (PSEL = 1、PENABLE = 1)。PREADY を待ち、応答を保持する
+//   アクセス (PREADY = 1) ◀─  S_DONE   保持した応答を出力する
 //
-//   - 転送ごとに、マスタから見た待ちが 2 サイクル以上増える。転送の中身と順番は変わらない
-//   - マスタ側の PREADY / PRDATA / PSLVERR はレジスタの出力
+//   - マスタから見たウェイトは、転送ごとに 2 サイクル以上増える。転送の内容と順序は変わらない
+//   - マスタ側の PREADY、PRDATA、PSLVERR はレジスタ出力
 //
 // Ports:
 //   input  wire        clk / rst_n
-//   m_*    マスタ (= AE350 の APB_P*) とつなぐ
-//   s_*    スレーブ (= デコーダ) とつなぐ
+//   m_*    マスタ (AE350 の APB_P*) との接続
+//   s_*    スレーブ (デコーダ) との接続
 //
-// Clock:       clk (= APB_CLK)
-// Reset:       rst_n (active low、非同期)
+// Clock:       clk (APB_CLK)
+// Reset:       rst_n (アクティブ Low、非同期)
 // =============================================================
 
 `default_nettype none
@@ -73,8 +73,8 @@ module apb_reg_slice (
         end else begin
             case (state)
                 S_IDLE: begin
-                    // 毎サイクル控え、マスタのセットアップのサイクル (= PSEL = 1、PENABLE = 0) で先へ進む
-                    // (= PSEL を控えるレジスタの CE に配らない。実機で PSEL からの配線が APB_CLK に収まらなかった)
+                    // 毎サイクル保持し、マスタのセットアップのサイクル (PSEL = 1、PENABLE = 0) で次の状態に進む。
+                    // PSEL を、保持するレジスタの CE には配線しない (実機で PSEL からの配線が APB_CLK のタイミングを満たさなかった)
                     s_pwrite <= m_pwrite;
                     s_paddr  <= m_paddr;
                     s_pwdata <= m_pwdata;

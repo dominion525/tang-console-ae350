@@ -1,13 +1,13 @@
 // =============================================================
 // File:        rtl/ae350_reset_sync.v
 // Module:      ae350_reset_sync
-// Role:        リセットの同期 (= 段 4 の後、2026-11-10)。かかるのは非同期、解けるのは clk に同期 (= 2 段)。
-//              AE350 の Hazard3 の版で、クロックごとのリセット (= HRESETN / PRESETN / DDR_RSTN と CPU のリセット) を作る。
+// Role:        リセット同期化回路。アサートは非同期、解除は clk に同期させる (2 段の FF)。
+//              AE350 の Hazard3 版で、クロックごとのリセット (HRESETN、PRESETN、DDR_RSTN と CPU のリセット) を作る。
 //
 // Ports:
 //   input  wire clk
-//   input  wire rst_n_in     非同期のリセット (active low)
-//   output wire rst_n_out    clk に同期して解けるリセット
+//   input  wire rst_n_in     非同期リセット (アクティブ Low)
+//   output wire rst_n_out    clk に同期して解除されるリセット
 // =============================================================
 
 `default_nettype none
@@ -18,8 +18,8 @@ module ae350_reset_sync (
     output wire rst_n_out
 );
 
-    // 出力をほかのフリップフロップの非同期リセットに使うので、lint は「同期と非同期の両方に使われる」と見る。
-    // リセットの同期はこの形が決まりなので、このファイルの中だけで止める
+    // 出力を他の FF の非同期リセットに使うので、lint は「同期と非同期の両方に使われている」と判定する。
+    // リセット同期化回路はこの形が定石なので、このファイルの中だけで警告を止める
     /* verilator lint_off SYNCASYNCNET */
     reg [1:0] sync;
     /* verilator lint_on SYNCASYNCNET */

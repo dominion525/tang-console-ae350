@@ -1,39 +1,41 @@
 /*
- * ROM に置くローダー (= 2026-11-12)。UART でプログラムを受けて DDR_H* の先 (= SDRAM の版は 0x0000_0000〜0x01FF_FFFF、DDR3 の版は
- * 0x0000_0000〜0x3FFF_FFFF) か ILM に書き、
- * 別の命令で、そこへ飛ぶ。送る (load) と動かす (run) を分けるので、送った中身を確かめてから動かせる。
+ * ROM に置くローダー。UART でプログラムを受信して DDR_H* の先 (SDRAM 版は 0x0000_0000〜0x01FF_FFFF、DDR3 版は
+ * 0x0000_0000〜0x3FFF_FFFF) か ILM に書き込み、
+ * 別のコマンドでそこへジャンプする。送信 (load) と実行 (run) を分けるので、送った内容を確かめてから実行できる。
  *
- *   Mac → ローダー                       ローダー → Mac
- *   (電源投入、プログラムから戻った)          READY ae350 loader
- *   load <番地 16 進 8 桁> <長さ 16 進 8 桁>  GO                (= 受けられる。Mac はこれを見てから中身を送る)
- *                                        ERR range / syntax (= Mac は中身を送らない)
- *   <中身 (= 長さ byte)>                  OK <長さ> <CRC-32>  (= 書いた後に SDRAM から読み直した中身で計算)
- *                                        ERR timeout        (= 次の byte が LOADER_TIMEOUT_MCYCLE 来なかった)
- *                                        ERR uart           (= 受けている間に、受信があふれたか、ストップビットが 0 の
- *                                                              文字を捨てた)
- *   run <番地 16 進 8 桁>                  RUN <番地>         (= 送り終わってから飛ぶ。この後はプログラムの出力)
- *   それ以外                              ERR command
+ *   Mac → ローダー                          ローダー → Mac
+ *   (電源投入時、プログラムから戻ったとき)     READY ae350 loader
+ *   load <アドレス 16 進 8 桁> <長さ 16 進 8 桁>  GO                (受信可能。Mac はこれを確認してからデータを送る)
+ *                                           ERR range / syntax (Mac はデータを送らない)
+ *   <データ (長さ分のバイト)>                  OK <長さ> <CRC-32>  (書き込んだ後にメモリから読み直したデータで計算する)
+ *                                           ERR timeout        (次のバイトが LOADER_TIMEOUT_MCYCLE の間に届かなかった)
+ *                                           ERR uart           (受信中に、受信バッファがあふれたか、ストップビットが 0 の
+ *                                                                 文字を捨てた)
+ *   run <アドレス 16 進 8 桁>                 RUN <アドレス>     (送信し終わってからジャンプする。この後はプログラムの出力)
+ *   それ以外                                 ERR command
  *
- * 返事は機械が読むので、短い ASCII の決まった語にする:
- *   ERR range    番地と長さが、DDR_H* の先 (= 上の範囲) にも ILM (= 0xA000_0000〜0xA000_FFFF) にも収まらない
- *   ERR syntax   load / run の形が違う (= 番地と長さは 16 進 8 桁、間は空白 1 つ)
+ * 応答はプログラムが読むので、短い ASCII の決まった語にする:
+ *   ERR range    アドレスと長さが、DDR_H* の先 (上の範囲) にも ILM (0xA000_0000〜0xA000_FFFF) にも収まらない
+ *   ERR syntax   load か run の形式が違う (アドレスと長さは 16 進 8 桁、区切りは空白 1 つ)
  *   ERR command  load でも run でもない
- *   ERR timeout  中身の途中で、次の byte が来なかった
- *   ERR uart     中身を受けている間に、受信の誤りがあった
+ *   ERR timeout  データの途中で、次のバイトが届かなかった
+ *   ERR uart     データの受信中に、受信エラーがあった
  *
- * - 命令は 1 行の文字 (= \r は捨てる)。番地と長さは 16 進 8 桁に決めて、読み取りを最小にする
- * - CRC-32 は zlib と同じ (= 多項式 0xEDB88320、初期値と最後の反転あり)。Ruby の Zlib.crc32 で照らせる。表は使わない
- *   (= 1 KB の ROM を使わない。読み直しは送る時間に比べて短い)
- * - 番地が 4 の倍数なら、4 byte をまとめて 32 bit で書き、32 bit で読み直す (= DDR_H* の転送を 4 分の 1 にする)
- * - 起動の始めに、データキャッシュを全部書き戻して捨てる (= mcctlcommand に L1D_WBINVAL_ALL。前に動かしたプログラムが
- *   書いた値が、後で新しいプログラムの上に書き戻されないように)。その後、命令キャッシュだけを入れ、データキャッシュは
- *   切ったまま受ける (= 書いた中身がそのまま SDRAM に届く)
- * - 中身を受けている間は、UART の合図 (= rtl/uart_reset_seq.v) の見張りを止める (= apb_uart の CTRL)。中身に合図の
- *   8 byte が並んでいても、リセットがかからない。受け終わったら (= OK、ERR timeout、ERR uart のどれでも) 見張りに戻す
- * - run では、UART が送り終わるのを待ち、fence (= 書き込みを終わらせる) と fence.i (= 命令キャッシュを捨てる) の後、
- *   データキャッシュも入れてから飛ぶ。飛んだ先は自分のスタートアップ (= sw/start.S) から始め、main から戻るとここへ戻る
- * - キャッシュの CSR (= mcache_ctl 0x7CA、mcctlcommand 0x7CC) は、Hazard3 には無い。例外になり、次の命令から
- *   再開する (= sw/trap.c)
+ * - コマンドは 1 行のテキスト (\r は捨てる)。アドレスと長さを 16 進 8 桁に固定して、解析を最小限にする
+ * - CRC-32 は zlib と同じ (多項式 0xEDB88320、初期値と最後の反転あり)。Ruby の Zlib.crc32 で照合できる。テーブルは使わない
+ *   (1 KB の ROM を使わないため。読み直しにかかる時間は、送信にかかる時間に比べて短い)
+ * - アドレスが 4 の倍数なら、4 バイトをまとめて 32 ビットで書き込み、32 ビットで読み直す (DDR_H* の転送を 4 分の 1 にする)
+ * - 起動時に、データキャッシュをすべてライトバックして無効化する (mcctlcommand に L1D_WBINVAL_ALL。前に実行したプログラムが
+ *   書き込んだ値が、後から新しいプログラムの上に書き戻されないようにするため)。その後、命令キャッシュだけを有効にし、
+ *   データキャッシュは無効のまま受信する (書き込んだデータがそのままメモリに届く)
+ * - データの受信中は、UART のリセットシーケンス (rtl/uart_reset_seq.v) の監視を止める (apb_uart の CTRL)。データに
+ *   シーケンスの 8 バイトが含まれていても、リセットがかからない。受信し終わったら (OK、ERR timeout、ERR uart のどれでも)
+ *   監視を再開する
+ * - run では、UART の送信が終わるのを待ち、fence (書き込みを完了させる) と fence.i (命令キャッシュを無効化する) の後、
+ *   データキャッシュも有効にしてからジャンプする。ジャンプ先は自分のスタートアップルーチン (sw/start.S) から始まり、
+ *   main から戻るとここに戻る
+ * - キャッシュの CSR (mcache_ctl 0x7CA、mcctlcommand 0x7CC) は Hazard3 にはない。例外になり、次の命令から
+ *   再開する (sw/trap.c)
  */
 
 #include <stdint.h>
@@ -41,12 +43,12 @@
 #include "trap.h"
 
 #ifndef LOADER_TIMEOUT_MCYCLE
-#define LOADER_TIMEOUT_MCYCLE 800000000u   /* 1 秒 (= CORE_CLK 800 MHz)。シミュレーションでは短くして作る */
+#define LOADER_TIMEOUT_MCYCLE 800000000u   /* 1 秒 (CORE_CLK 800 MHz)。シミュレーション用には短くしてビルドする */
 #endif
 
-#define SDRAM_END        0x02000000u   /* SDRAM の版 (= 32 MB) */
-#define DDR3_END         0x40000000u   /* DDR3 の版 (= 1 GB。board/tang_console/build.sh の MEM=ddr3、2026-11-14) */
-#define ILM_BASE         0xA0000000u   /* ILM にも置ける (= 2026-11-13。SDRAM の待ちを除いて CPU の速さを比べるため) */
+#define SDRAM_END        0x02000000u   /* SDRAM 版 (32 MB) */
+#define DDR3_END         0x40000000u   /* DDR3 版 (1 GB。board/tang_console/build.sh の MEM=ddr3) */
+#define ILM_BASE         0xA0000000u   /* ILM にも置ける (外部メモリのウェイトを除いて CPU の速さを比べるため) */
 #define ILM_END          0xA0010000u
 #define MCACHE_IC        0x1u
 #define MCACHE_DC        0x2u
@@ -86,10 +88,10 @@ static uint32_t crc32_byte(uint32_t crc, uint32_t b)
     return crc;
 }
 
-/* 受けている間に見た、受信の誤りの印 (= STATUS の bit 3 / 4 は読むと 0 に戻るので溜める) */
+/* 受信中に検出した受信エラーのフラグ (STATUS の bit 3 と bit 4 は読むと 0 に戻るので溜める) */
 static uint32_t rx_errors;
 
-/* 1 byte を受ける。LOADER_TIMEOUT_MCYCLE の間に届かなければ -1 */
+/* 1 バイト受信する。LOADER_TIMEOUT_MCYCLE の間に届かなければ -1 */
 static int getc_timeout(void)
 {
     uint32_t t0 = mcycle();
@@ -101,7 +103,7 @@ static int getc_timeout(void)
     }
 }
 
-/* 1 行を受ける (= \n まで。\r は捨てる。長すぎる行は切り詰める) */
+/* 1 行受信する (\n まで。\r は捨てる。長すぎる行は切り詰める) */
 static void get_line(char *buf, uint32_t max)
 {
     uint32_t n = 0;
@@ -137,8 +139,8 @@ static uint32_t parse_hex8(const char *s, int *ok)
 }
 
 /*
- * DDR_H* の先のメモリの終わり。起動のときに 0x0200_0000 (= SDRAM の 32 MB の位置) を読んでみて、例外になれば SDRAM の版
- * (= ahb_sdram がエラー応答を返す)、ならなければ DDR3 の版 (= 1 GB) とみなす
+ * DDR_H* の先のメモリの終端。起動時に 0x0200_0000 (SDRAM の 32 MB の位置) を読んでみて、例外になれば SDRAM 版
+ * (ahb_sdram がエラー応答を返す)、ならなければ DDR3 版 (1 GB) とみなす
  */
 static uint32_t mem_end;
 
@@ -150,7 +152,7 @@ static void find_mem_end(void)
     trap_cause = 0;
 }
 
-/* 番地と長さが、DDR_H* の先のメモリか ILM のどちらかに収まるか */
+/* アドレスと長さが、DDR_H* の先のメモリか ILM のどちらかに収まるか */
 static int fits(uint32_t addr, uint32_t len)
 {
     if (addr < mem_end) return len <= mem_end - addr;
@@ -170,9 +172,9 @@ static int starts_with(const char *s, const char *p)
 
 static void do_load(uint32_t addr, uint32_t len)
 {
-    (void)UART_STATUS;   /* 前の印を消す */
+    (void)UART_STATUS;   /* 前のフラグをクリアする */
     rx_errors = 0;
-    UART_CTRL = UART_CTRL_SEQ_HOLD;   /* 中身を受けている間は、中身に合図が並んでいてもリセットしない */
+    UART_CTRL = UART_CTRL_SEQ_HOLD;   /* データの受信中は、データにシーケンスが含まれていてもリセットしない */
     reply("GO");
     const int words = (addr & 3u) == 0;
     uint32_t w = 0;
@@ -194,7 +196,7 @@ static void do_load(uint32_t addr, uint32_t len)
         }
     }
     UART_CTRL = 0;
-    /* 4 byte に満たない残り */
+    /* 4 バイトに満たない残り */
     if (words) {
         for (uint32_t i = len & ~3u; i < len; i = i + 1) *(volatile uint8_t *)(uintptr_t)(addr + i) = (uint8_t)(w >> (8u * (i & 3u)));
     }

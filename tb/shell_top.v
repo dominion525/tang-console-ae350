@@ -1,46 +1,46 @@
 // =============================================================
 // File:        tb/shell_top.v
 // Module:      shell_top
-// Role:        AE350_SOC をインスタンス化した確認用のトップ (= 段 1、2026-11-08。段 2 で ROM_H* / DDR_H* を外に出した)。
-//              全ポートを名前で接続する。制御用の入力は、実機で使う値 (= Sipeed のデモの IP の出力と
+// Role:        AE350_SOC をインスタンス化した確認用のトップ。
+//              全ポートを名前で接続する。制御用の入力には、実機で使う値 (Sipeed のデモの IP の出力と
 //              同じ値) を与える。
-//              シミュレーションでは Hazard3 の版 (rtl/AE350_SOC.v) とつながり、合成では本物の
-//              プリミティブとつながる記述にしてある。
+//              シミュレーションでは Hazard3 版 (rtl/AE350_SOC.v) につながり、合成では本物の
+//              プリミティブにつながる記述にしてある。
 //
 // Ports:
-//   input  wire core_clk   CORE_CLK (= リファレンスデザインは 800 MHz)
-//   input  wire ahb_clk    AHB_CLK (= 100 MHz)。ROM_H* と、AE350 の中の PLIC / PLMT のクロック
-//   input  wire apb_clk    APB_CLK (= 100 MHz)。APB_P* と、その先の UART / GP_INT のレジスタのクロック
-//   input  wire ddr_clk    DDR_CLK (= 50 MHz)。DDR_H* のクロック
-//   input  wire rtc_clk    RTC_CLK に与えるクロック (= 本物では内蔵の RTC が使う。Hazard3 の版は使わない。PLMT の mtime は AHB_CLK で進む)
-//   input  wire rst_n      HW_RSTN に与えるリセット (active low)。POR_N は 1 に固定する。UART の合図 (= rtl/uart_reset_seq.v)
-//                          でも HW_RSTN にリセットを入れる (= 固まったプログラムから ROM のローダーへ戻す。2026-11-12)
-//   output wire uart_tx    APB_P* の先の UART (= rtl/apb_uart.v、段 3) の送信。AE350 の UART2_TXD は使わない
-//   input  wire uart_rx    同じ UART の受信 (= 段 3b)。アイドルは 1。AE350 の UART2_RXD は使わない
-//   output wire hresetn    AE350_SOC が出す AHB 側のリセット
-//   rom_h*                 ROM_H* をそのまま外に出す (= 命令メモリは外に置く)
-//   ddr_h*                 DDR_H* のうち HADDR / HTRANS / HWRITE / HSIZE / HWDATA / HRDATA / HREADY / HRESP を外に出す
+//   input  wire core_clk   CORE_CLK (リファレンスデザインでは 800 MHz)
+//   input  wire ahb_clk    AHB_CLK (100 MHz)。ROM_H* と、AE350 内部の PLIC と PLMT のクロック
+//   input  wire apb_clk    APB_CLK (100 MHz)。APB_P* と、その先の UART と GP_INT のレジスタのクロック
+//   input  wire ddr_clk    DDR_CLK (50 MHz)。DDR_H* のクロック
+//   input  wire rtc_clk    RTC_CLK に与えるクロック (本物では内蔵の RTC が使う。Hazard3 版は使わない。PLMT の mtime は AHB_CLK で進む)
+//   input  wire rst_n      HW_RSTN に与えるリセット (アクティブ Low)。POR_N は 1 に固定する。UART のリセットシーケンス
+//                          (rtl/uart_reset_seq.v) でも HW_RSTN にリセットをかける (固まったプログラムから ROM のローダーへ戻すため)
+//   output wire uart_tx    APB_P* の先の UART (rtl/apb_uart.v) の送信。AE350 の UART2_TXD は使わない
+//   input  wire uart_rx    同じ UART の受信。アイドル時は 1。AE350 の UART2_RXD は使わない
+//   output wire hresetn    AE350_SOC が出力する AHB 側のリセット
+//   rom_h*                 ROM_H* をそのまま外に出す (命令メモリは外に置く)
+//   ddr_h*                 DDR_H* のうち HADDR、HTRANS、HWRITE、HSIZE、HWDATA、HRDATA、HREADY、HRESP を外に出す
 //
 // Testbench:
-//   make check    (= lint)
-//   tb/tb_mem.v      (= メモリモデルをつないでプログラムを流す)
+//   make check    (lint)
+//   tb/tb_mem.v   (メモリモデルをつないでプログラムを実行する)
 //
 // Design Notes:
-//   - APB_P* の先に、UART (= 段 3、0xF800_0000)、GP_INT を立てるレジスタ (= 段 4、0xF800_1000)、届いた PADDR を
-//     読み返すレジスタ (= 実機の値を読む構成、0xF800_F000) を置く。
-//     どちらにも当たらないアドレスは PSLVERR を返す。PRESETN を周辺回路のリセットに使う
-//   - EXTS_H* の先に 4 KB の RAM (= rtl/ahb_sram.v、段 5) を置く。EXTS_WAIT でデータフェーズの待ちを選ぶ
-//   - EXTM_H* は外に出す (= マスタは外に置く。EXTM_HREADY には EXTM_HREADYOUT を返す。Falcon の設計と同じ形)
-//   - DDR_HBURST / DDR_HPROT は外に出さない (= 段 2 のメモリモデルは使わない)
-//   - 使わない出力は空の接続にし、lint_off PINCONNECTEMPTY で囲む
-//   - APB_CE は Sipeed のデモの値 (= 8'b10110101)。各ビットがどの周辺回路かは確かめていない
+//   - APB_P* の先に、UART (0xF800_0000)、GP_INT を駆動するレジスタ (0xF800_1000)、届いた PADDR を
+//     読み返すレジスタ (実機の値を読む構成で使う。0xF800_F000) を置く。
+//     どれにも当たらないアドレスには PSLVERR を返す。PRESETN を周辺回路のリセットに使う
+//   - EXTS_H* の先に 4 KB の RAM (rtl/ahb_sram.v) を置く。EXTS_WAIT でデータフェーズのウェイトを選ぶ
+//   - EXTM_H* は外に出す (マスタは外に置く。EXTM_HREADY には EXTM_HREADYOUT を返す。Falcon の設計と同じ構成)
+//   - DDR_HBURST と DDR_HPROT は外に出さない (テストベンチのメモリモデルは使わない)
+//   - 使わない出力は未接続にし、lint_off PINCONNECTEMPTY で囲む
+//   - APB_CE は Sipeed のデモの値 (8'b10110101)。各ビットがどの周辺回路に対応するかは確認していない
 // =============================================================
 
 `default_nettype none
 
 module shell_top #(
-    parameter [15:0]  UART_PRESCALE = 16'd108,    // 1 bit の長さ ÷ 8 (= 100 MHz で 115200 bps)
-    parameter integer EXTS_WAIT     = 0            // EXTS_H* の先の RAM のデータフェーズの待ち
+    parameter [15:0]  UART_PRESCALE = 16'd108,    // 1 ビットの長さ ÷ 8 (100 MHz で 115200 bps)
+    parameter integer EXTS_WAIT     = 0            // EXTS_H* の先の RAM の、データフェーズのウェイト
 ) (
     input  wire        core_clk,
     input  wire        ahb_clk,
@@ -52,13 +52,13 @@ module shell_top #(
     input  wire        uart_rx,
     output wire        hresetn,
 
-    // 実機で見張るための出力 (= board/tang_console/ae350_observer.v。シミュレーションでは使わない)
+    // 実機で監視するための出力 (board/tang_console/ae350_observer.v。シミュレーションでは使わない)
     output wire        dbg_presetn,
     output wire        dbg_apb_access,
     output wire [31:0] dbg_apb_paddr,
     output wire [3:0]  dbg_misc,       // {DDR_RSTN, CORE0_WFI_MODE, RTC_WAKEUP, PRDYN_CHAIN_O}
 
-    // 命令メモリへの AHB (= ROM_H*)
+    // 命令メモリへの AHB (ROM_H*)
     output wire [31:0] rom_haddr,
     output wire [1:0]  rom_htrans,
     output wire        rom_hwrite,
@@ -66,7 +66,7 @@ module shell_top #(
     input  wire        rom_hready,
     input  wire        rom_hresp,
 
-    // データメモリへの AHB (= DDR_H*)
+    // データメモリへの AHB (DDR_H*)
     output wire [31:0] ddr_haddr,
     output wire [1:0]  ddr_htrans,
     output wire        ddr_hwrite,
@@ -76,7 +76,7 @@ module shell_top #(
     input  wire        ddr_hready,
     input  wire        ddr_hresp,
 
-    // FPGA 側のマスタから AE350 へ (= EXTM_H*、AHB_CLK、64 bit)。マスタは外に置く (= TB ではモデル)
+    // FPGA 側のマスタから AE350 へ (EXTM_H*、AHB_CLK、64 ビット)。マスタは外に置く (テストベンチではモデル)
     input  wire        extm_hsel,
     input  wire [31:0] extm_haddr,
     input  wire [1:0]  extm_htrans,
@@ -92,10 +92,10 @@ module shell_top #(
 
     // ---------------------------------------------------------
     // APB_P* の先: アドレスデコーダと周辺回路
-    //   0xF800_0000〜0xF800_0FFF  UART (= apb_uart)
-    //   0xF800_1000〜0xF800_1FFF  GP_INT を立てるレジスタ (= apb_gpint)
-    //   0xF800_F000〜0xF800_FFFF  届いた PADDR を読み返すレジスタ (= apb_paddr_probe。実機で PADDR の形を確かめる)
-    //   それ以外                   PSLVERR = 1 (= 待たせずにエラーを返す)
+    //   0xF800_0000〜0xF800_0FFF  UART (apb_uart)
+    //   0xF800_1000〜0xF800_1FFF  GP_INT を駆動するレジスタ (apb_gpint)
+    //   0xF800_F000〜0xF800_FFFF  届いた PADDR を読み返すレジスタ (apb_paddr_probe。実機で PADDR の形を確かめるため)
+    //   それ以外                   PSLVERR = 1 (ウェイトなしでエラーを返す)
     // ---------------------------------------------------------
     wire        presetn;
     wire [31:0] apb_paddr;
@@ -109,8 +109,8 @@ module shell_top #(
     wire [3:0]  apb_pstrb;
 
     assign dbg_presetn    = presetn;
-    // AE350 の APB_P* (= ae_apb_*) とデコーダ (= apb_*) の間を、レジスタで区切る (= rtl/apb_reg_slice.v。
-    // 実機で、PADDR からデコーダを通って AE350 に戻る経路が APB_CLK に収まらなかった)
+    // AE350 の APB_P* (ae_apb_*) とデコーダ (apb_*) の間に、レジスタを挟む (rtl/apb_reg_slice.v。
+    // 実機で、PADDR からデコーダを通って AE350 に戻る経路が APB_CLK のタイミングを満たさなかった)
     wire [31:0] ae_apb_paddr;
     wire        ae_apb_penable;
     wire [31:0] ae_apb_prdata;
@@ -166,7 +166,7 @@ module shell_top #(
     assign apb_pready  = sel_uart  ? uart_pready  : sel_gpint ? gpint_pready  : sel_probe ? probe_pready  : 1'b1;
     assign apb_pslverr = sel_uart  ? uart_pslverr : sel_gpint ? gpint_pslverr : sel_probe ? probe_pslverr : (apb_psel && apb_penable);
 
-    wire seq_hold;       // apb_uart の CTRL の bit 0 (= ROM のローダーが中身を受けている間は 1。uart_reset_seq の hold へ)
+    wire seq_hold;       // apb_uart の CTRL の bit 0 (ROM のローダーがデータを受信している間は 1。uart_reset_seq の hold へ)
     apb_uart #(
         .PRESCALE (UART_PRESCALE)
     ) u_uart (
@@ -216,8 +216,8 @@ module shell_top #(
     );
 
     // ---------------------------------------------------------
-    // EXTS_H* の先: 4 KB の RAM (= 0xE800_0000〜0xE800_0FFF。その外の EXTS_H* の範囲はエラー応答)
-    // EXTS_H* は AHB_CLK で動く (= Gowin の AE350 の資料)
+    // EXTS_H* の先: 4 KB の RAM (0xE800_0000〜0xE800_0FFF。それ以外の EXTS_H* の範囲はエラー応答)
+    // EXTS_H* は AHB_CLK で動く (Gowin の AE350 の資料による)
     // ---------------------------------------------------------
     wire [31:0] exts_haddr;
     wire [1:0]  exts_htrans;
@@ -229,8 +229,8 @@ module shell_top #(
     wire        exts_hreadyout;
     wire        exts_hresp;
 
-    // AE350 の EXTS_H* (= ae_exts_*) と RAM (= exts_*) の間を、レジスタで区切る (= rtl/ahb_reg_slice.v。
-    // 実機で、RAM の HREADYOUT から AE350 を通って HSEL が戻る経路が AHB_CLK に収まらなかった)
+    // AE350 の EXTS_H* (ae_exts_*) と RAM (exts_*) の間に、レジスタを挟む (rtl/ahb_reg_slice.v。
+    // 実機で、RAM の HREADYOUT から AE350 を通って HSEL が戻る経路が AHB_CLK のタイミングを満たさなかった)
     wire [31:0] ae_exts_haddr;
     wire [1:0]  ae_exts_htrans;
     wire        ae_exts_hsel;
@@ -282,7 +282,7 @@ module shell_top #(
         .hresp     (exts_hresp)
     );
 
-    // UART の合図で AE350 をリセットする (= 合図の見張りは rst_n でだけリセットし、自分のリセットではリセットしない)
+    // UART のリセットシーケンスで AE350 をリセットする (シーケンスの監視回路は rst_n でだけリセットし、自分が出すリセットではリセットしない)
     wire seq_rst_n;
     uart_reset_seq #(.PRESCALE (UART_PRESCALE)) u_reset_seq (
         .clk       (apb_clk),
@@ -300,7 +300,7 @@ module shell_top #(
         .DDR_CLK        (ddr_clk),
         .AHB_CLK        (ahb_clk),
         .APB_CLK        (apb_clk),
-        .DBG_TCK        (1'b1),     // JTAG を使わないときの値 (= LiteX の gowin_ae350 と tang-phosphor と同じ)
+        .DBG_TCK        (1'b1),     // JTAG を使わないときの値 (LiteX の gowin_ae350、tang-phosphor と同じ)
         .RTC_CLK        (rtc_clk),
         .CORE_CE        (1'b1),
         .AXI_CE         (1'b1),
@@ -380,7 +380,7 @@ module shell_top #(
         .DDR_HWRITE     (ddr_hwrite),
 
         .TMS_IN         (1'b1),
-        .TRST_IN        (1'b1),     // 0 は JTAG のリセット。0 だと実機の AE350 は HRESETN / PRESETN を解かなかった (= 2026-11-10)
+        .TRST_IN        (1'b1),     // 0 は JTAG のリセット。0 にすると、実機の AE350 は HRESETN と PRESETN を解除しなかった
         .TDI_IN         (1'b0),
         .TDO_OUT        (),
         .TDO_OE         (),

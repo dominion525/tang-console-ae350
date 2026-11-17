@@ -1,13 +1,13 @@
 /*
- * ILM で動かすプログラムのリンカスクリプト (= 2026-11-13)。ROM のローダー (= sw/loader.c) が UART で受けて ILM に書き、
- * run で 0xA000_0000 へ飛ぶ。命令もデータも CPU のそばのメモリ (= ILM / DLM) に置くので、SDRAM の待ちが入らない
- * (= AE350 と Hazard3 の CPU の速さを、メモリの差を除いて比べるため)。
+ * ILM で動かすプログラムのリンカスクリプト。ROM のローダー (sw/loader.c) が UART で受信して ILM に書き込み、
+ * run で 0xA000_0000 にジャンプする。命令もデータも CPU の近くのメモリ (ILM と DLM) に置くので、外部メモリの
+ * ウェイトが入らない (AE350 と Hazard3 の CPU の速さを、メモリの差を除いて比べるため)。
  *
- *   0x0000_0000〜0x0000_000F  .result (= SDRAM。TB が結果を読む場所。sw/sdram.ld と同じ)
- *   0xA000_0000〜0xA000_FFFF  ILM (= 64 KB): .text、.rodata、.init_array、.data の初期値 (= 送る中身)
- *   0xA020_0000〜0xA020_FFFF  DLM (= 64 KB): .data (= start.S が ILM から写す)、.bss、ヒープ、スタック
+ *   0x0000_0000〜0x0000_000F  .result (外部メモリ。テストベンチが結果を読む場所。sw/sdram.ld と同じ)
+ *   0xA000_0000〜0xA000_FFFF  ILM (64 KB): .text、.rodata、.init_array、.data の初期値 (送る内容)
+ *   0xA020_0000〜0xA020_FFFF  DLM (64 KB): .data (start.S が ILM からコピーする)、.bss、ヒープ、スタック
  *
- * start.S は START_RETURN_TO_ROM を定義して作る (= main から戻ったら、ROM のローダーへ戻る)。
+ * start.S は START_RETURN_TO_ROM を定義してビルドする (main から戻ったら、ROM のローダーに戻る)。
  */
 
 OUTPUT_ARCH(riscv)
@@ -41,7 +41,7 @@ SECTIONS
         *(.eh_frame .eh_frame.*)
     } > ILM
 
-    /* newlib の __libc_init_array / exit が参照する (= start.S は呼ばないが、リンクには要る) */
+    /* newlib の __libc_init_array と exit が参照する (start.S は呼ばないが、リンクには必要) */
     .init_array :
     {
         . = ALIGN(4);
@@ -75,7 +75,7 @@ SECTIONS
         _bss_end = .;
     } > DLM
 
-    /* DLM の後ろ 16 KB をスタック、.bss の後ろからその手前までをヒープにする */
+    /* DLM の末尾 16 KB をスタックにし、.bss の後ろからその手前までをヒープにする */
     _stack_top  = ORIGIN(DLM) + LENGTH(DLM);
     _heap_start = ALIGN(_bss_end, 8);
     _heap_end   = _stack_top - 16K;

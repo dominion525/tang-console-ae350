@@ -1,23 +1,23 @@
 `verilator_config
 
-// 上流のコピーで中身を変えないファイルは lint の対象にしない
+// 取り込んだ外部のコードで、内容を変えないファイルは lint の対象にしない
 //   hazard3/hdl/              Hazard3
-//   rtl/vendor/verilog-uart/  UART の送信器と受信器
+//   rtl/vendor/verilog-uart/  UART の送信回路と受信回路
 lint_off -file "*hazard3/hdl/*"
 lint_off -file "*vendor/verilog-uart/*"
 
-// 流用したファイル (= DDR_H* の先の SDRAM の経路)。sdram_bridge は流用した書き方 (= FF の初期値) のまま、
-// SDRAM のモデルは上流のコピー
+// 他の設計から流用したファイル (DDR_H* の先の SDRAM の経路)。sdram_bridge は流用したときの書き方 (FF の初期値) のまま、
+// SDRAM のモデルは取り込んだ外部のコード
 lint_off -rule PROCASSINIT -file "*rtl/sdram_bridge.v"
 lint_off -file "*zeitlos/sdram_model.v"
 
-// TB 用の Gowin の IO の部品のモデル (= Gowin のモデルと同じく、FF の初期値を持ち、1 つのファイルに 3 つの部品を置く)
+// テストベンチ用の Gowin の IO プリミティブのモデル (Gowin のモデルと同じく、FF の初期値を持ち、1 つのファイルに 3 つのプリミティブを置く)
 lint_off -rule PROCASSINIT -file "*tb/gowin_io_models.v"
 lint_off -rule DECLFILENAME -file "*tb/gowin_io_models.v"
 lint_off -rule UNUSEDPARAM -file "*tb/gowin_io_models.v"
 
-// Gowin の部品 PLL の中身の無いモジュール (= tools/gowin_pll_stub.rb が Gowin のモデルから作る。ボードの回路の lint のため)
+// Gowin のプリミティブ PLL の空のモジュール (tools/gowin_pll_stub.rb が Gowin のモデルから作る。ボードの回路を lint にかけるため)
 lint_off -file "*build/gowin_pll_stub.v"
 
-// ボードの頂点 (= Gowin のプロジェクトの頂点の名前 ae350_probe_top を、build.tcl の top_module で指している)
+// ボードのトップ (Gowin のプロジェクトのトップモジュール名 ae350_probe_top を、build.tcl の top_module で指定している)
 lint_off -rule DECLFILENAME -file "*board/tang_console/top.v"

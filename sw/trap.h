@@ -1,9 +1,9 @@
 /*
- * 例外を確かめるための道具 (段 4 の後、2026-11-10。段 2 / 段 3 の確認用プログラムにあったものをまとめた)。
+ * 例外を確かめるための補助関数 (テストプログラムで共通に使う)。
  *
- *   trap_cause         例外の mcause (= sw/trap.c が書く)
- *   load_word_4byte    4 byte の命令 (= 圧縮しない lw) で読む。例外のときは sw/trap.c が次の命令から再開する
- *   store_word_4byte   4 byte の命令 (= 圧縮しない sw) で書く
+ *   trap_cause         例外の mcause (sw/trap.c が書く)
+ *   load_word_4byte    4 バイトの命令 (圧縮しない lw) で読む。例外が起きたときは、sw/trap.c が次の命令から再開する
+ *   store_word_4byte   4 バイトの命令 (圧縮しない sw) で書く
  */
 
 #ifndef AE350_TRAP_H

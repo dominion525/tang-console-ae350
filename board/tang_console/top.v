@@ -1,22 +1,23 @@
 // =============================================================
 // File:        board/tang_console/top.v
 // Module:      ae350_probe_top
-// Role:        Tang Console 138K で本物の AE350 を動かし、実機でしか決まらない値を読む構成のトップ (= 2026-11-10)。
-//              DDR3 は使わない。命令はブロック RAM の ROM から読み、データとスタックは AE350 の中の DLM に置く
-//              (= sw/board.ld)。値は sw/probe.c が UART (= USB シリアル、1,250,000 bps) に出す。
+// Role:        Tang Console 138K で本物の AE350 を動かすボード構成のトップ。
+//              既定の構成では、命令はブロック RAM の ROM から読み、データとスタックは AE350 の内蔵 DLM に置く
+//              (sw/board.ld)。値は sw/probe.c が UART (USB シリアル、1,250,000 bps) に出力する。
 //
-//   50 MHz ─▶ ae350_pll ─▶ CORE 800 / DDR 50 / AHB 100 / APB 100 / RTC 10 MHz (= Sipeed のデモと同じ)
-//   shell_top (= tb/shell_top.v。シミュレーションと同じ回路で、合成では本物の AE350_SOC につながる)
-//     ROM_H*   ─▶ ahb_rom (= 16 KB、中身は ROM_HEX)
-//     DDR_H*   ─▶ ahb_sdram ─▶ SDRAM の制御 ─▶ ベースボードの SDRAM0 (= 32 MB)
-//                  SDRAM の制御は、定義 SDRAM_HS が無ければ sdram_bridge (= 20 MHz 版)、あれば sdram_ctrl_hs +
-//                  sdram_io (= 166.7 MHz 版。2 つ目の PLL。読んだデータを取る位置は SDRAM_IN_DLY / SDRAM_CAP_EDGE / SDRAM_RD_FIRST)
+//   50 MHz ─▶ ae350_pll ─▶ CORE 800 / DDR 50 / AHB 100 / APB 100 / RTC 10 MHz (Sipeed のデモと同じ)
+//   shell_top (tb/shell_top.v。シミュレーションと同じ回路で、合成では本物の AE350_SOC につながる)
+//     ROM_H*   ─▶ ahb_rom (16 KB、内容は ROM_HEX)
+//     DDR_H*   ─▶ ahb_sdram ─▶ SDRAM コントローラ ─▶ ベースボードの SDRAM0 (32 MB)
+//                  SDRAM コントローラは、マクロ SDRAM_HS が未定義なら sdram_bridge (20 MHz 版)、定義されていれば sdram_ctrl_hs +
+//                  sdram_io (166.7 MHz 版。2 つ目の PLL を使う。読み出しデータの取り込みタイミングは SDRAM_IN_DLY、SDRAM_CAP_EDGE、SDRAM_RD_FIRST)
+//                  (MEM=ddr3 と MEM=litedram では、DDR_H* の先を SOM の DDR3 にする。下の各節を参照)
 //     EXTM_H*  ─▶ 使わない
 //
 // Ports:
 //   input  wire clk50     50 MHz の発振器
-//   input  wire btn0_n    ボタン 0 (= 押すとリセット)
-//   input  wire uart_rx   USB シリアルの受信 (= 何か 1 文字送ると、probe.c がもう一度出す)
+//   input  wire btn0_n    ボタン 0 (押すとリセット)
+//   input  wire uart_rx   USB シリアルの受信 (何か 1 文字送ると、probe.c がもう一度出力する)
 //   output wire uart_tx   USB シリアルの送信
 // =============================================================
 
@@ -34,7 +35,7 @@ module ae350_probe_top #(
     input  wire uart_rx,
     output wire uart_tx,
 
-    // ベースボードの SDRAM0 (= W9825G6KH、32 MB)
+    // ベースボードの SDRAM0 (W9825G6KH、32 MB)
     inout  wire [15:0] sdram_dq,
     output wire [12:0] sdram_addr,
     output wire [1:0]  sdram_ba,
@@ -46,7 +47,7 @@ module ae350_probe_top #(
     output wire [1:0]  sdram_dqm
 `ifdef AE350_MEM_DDR3
     ,
-    // SOM の DDR3 (= H5TQ4G63EFR が 2 個、DQ 32 bit、1 GB)。名前とピンは Sipeed の DDR3 の試験と同じ (= ddr3/ddr3.cst)
+    // SOM の DDR3 (H5TQ4G63EFR を 2 個、DQ 32 ビット、1 GB)。名前とピンは Sipeed の DDR3 のテストと同じ (ddr3/ddr3.cst)
     output wire [14:0] ddr_addr,
     output wire [2:0]  ddr_bank,
     output wire        ddr_cs,
@@ -65,8 +66,8 @@ module ae350_probe_top #(
 `endif
 `ifdef AE350_MEM_LITEDRAM
     ,
-    // SOM の DDR3 の 2 個 (= DQ 32 bit、1 GB)。LiteDRAM の制御 (= litedram_core) の口の名前のまま (= 実験。
-    // ピンは litedram/ddram.cst。1 個目は LiteX-Boards の Tang Console の定義、2 個目は Sipeed の DDR3 の試験の .cst から)
+    // SOM の DDR3 の 2 個 (DQ 32 ビット、1 GB)。名前は LiteDRAM のコントローラ (litedram_core) のポート名のまま
+    // (ピンは litedram/ddram.cst。1 個目は LiteX-Boards の Tang Console の定義、2 個目は Sipeed の DDR3 のテストの .cst から)
     output wire [14:0] ddram_a,
     output wire [2:0]  ddram_ba,
     output wire        ddram_cas_n,
@@ -92,11 +93,11 @@ module ae350_probe_top #(
     wire rtc_clk;
     wire clk20;
     wire lock;
-    wire sclk;              // SDRAM の制御のクロック (= 20 MHz 版は clk20、166.7 MHz 版は s_clk)
+    wire sclk;              // SDRAM コントローラのクロック (20 MHz 版は clk20、166.7 MHz 版は s_clk)
     wire lock_all;
 
 `ifdef AE350_CPU_HAZARD3
-    // Hazard3 の版を FPGA のロジックで動かすとき: CORE_CLK 40 MHz、AHB_CLK 50 MHz (= 配置配線の Fmax は 41.6 / 53.1 MHz)
+    // Hazard3 版をファブリック上で動かすとき: CORE_CLK 40 MHz、AHB_CLK 50 MHz (配置配線の Fmax は 41.6 MHz と 53.1 MHz)
     localparam integer CORE_DIV = 20;
     localparam integer AHB_DIV  = 16;
 `else
@@ -115,7 +116,7 @@ module ae350_probe_top #(
         .lock     (lock)
     );
 
-    // ボタンと PLL の lock からリセットを作る (= rtl/reset_gen.v。50 MHz で 10 ms 押されたら、離して 10 ms で解く)
+    // ボタンと PLL のロックからリセットを作る (rtl/reset_gen.v。50 MHz で 10 ms 押されたらアサートし、離して 10 ms で解除する)
     wire rst_n;
 
     reset_gen #(
@@ -129,8 +130,8 @@ module ae350_probe_top #(
     );
 
 `ifdef SDRAM_HS
-    // 実機で振って決めた値 (= 2026-11-11。立ち上がり RD_FIRST 12 で、通る遅れは約 45〜310 刻み。その真ん中)。
-    // シミュレーション (= ボードの遅れ 0) より、実機ではデータが約 1 サイクル遅れて届く
+    // 実機で値を振って決めた値 (立ち上がり、RD_FIRST 12 で、動作する遅延は約 45〜310 ステップ。その中央)。
+    // シミュレーション (ボード上の遅延 0) より、実機ではデータが約 1 サイクル遅れて届く
     `ifndef SDRAM_IN_DLY
         `define SDRAM_IN_DLY 180
     `endif
@@ -140,7 +141,7 @@ module ae350_probe_top #(
     `ifndef SDRAM_RD_FIRST
         `define SDRAM_RD_FIRST 12
     `endif
-    // 166.7 MHz 版のクロック (= 2 つ目の PLL。VCO 1000 MHz)
+    // 166.7 MHz 版のクロック (2 つ目の PLL。VCO 1000 MHz)
     wire s_clk, lock_hs;
     sdram_pll u_sdram_pll (
         .clkin (clk50), .reset (1'b0), .s_clk (s_clk), .lock (lock_hs)
@@ -148,7 +149,7 @@ module ae350_probe_top #(
     assign sclk     = s_clk;
     assign lock_all = lock & lock_hs;
     /* verilator lint_off UNUSEDSIGNAL */
-    wire unused_clk20 = clk20;   // 20 MHz 版の SDRAM のクロック (= 166.7 MHz 版では使わない)
+    wire unused_clk20 = clk20;   // 20 MHz 版の SDRAM のクロック (166.7 MHz 版では使わない)
     /* verilator lint_on UNUSEDSIGNAL */
 `else
     assign sclk     = clk20;
@@ -183,7 +184,7 @@ module ae350_probe_top #(
     );
 
 // ---------------------------------------------------------
-// DDR_H* の先: SDRAM (= ahb_sdram → sdram_bridge。シミュレーションの tb_mem の TB_SDRAM と同じ組み方)
+// DDR_H* の先: SDRAM (ahb_sdram → sdram_bridge。シミュレーションの tb_mem の TB_SDRAM と同じ構成)
 // ---------------------------------------------------------
 wire [31:0]  ddr_haddr;
 wire [1:0]   ddr_htrans;
@@ -194,8 +195,8 @@ wire [63:0]  ddr_hrdata;
 wire         ddr_hready;
 wire         ddr_hresp;
 
-// リセットは、DDR_CLK と SDRAM のクロックのそれぞれで、解くときだけ同期させる。ahb_sdram は非同期、sdram_bridge と
-// sdram_ctrl_hs は同期でリセットを受ける (= tb/tb_mem.v の TB_SDRAM と同じ形)
+// リセットは、DDR_CLK と SDRAM のクロックのそれぞれで、解除のときだけ同期させる。ahb_sdram は非同期、sdram_bridge と
+// sdram_ctrl_hs は同期でリセットを受ける (tb/tb_mem.v の TB_SDRAM と同じ構成)
 /* verilator lint_off SYNCASYNCNET */
 reg [1:0] ddr_rst_s;
 reg [1:0] sdram_rst_s;
@@ -211,11 +212,11 @@ end
 
 `ifdef AE350_MEM_DDR3
 // ---------------------------------------------------------
-// DDR_H* の先: DDR3 (= 2026-11-13、build.sh の MEM=ddr3。ahb_ddr3 → Gowin の DDR3 の IP)
-//   50 MHz ─ Gowin_PLL (= 400 MHz、版 B) ─ memory_clk ─┐
-//   50 MHz ────────────────────────────────────────── DDR3 の IP ─ clk_out (= 100 MHz) ─ ahb_ddr3 の IP の側
-//   部品の名前 (= Gowin_PLL_inst、u_ddr3) と PLL の外側 (= gowin_pll.v、pll_init.v) は、実機で動いた Sipeed の DDR3 の試験と同じ
-//   (= ddr3/ddr3.cst の INS_LOC がこの名前を指す)。SDRAM のピンは使わない (= 選ばない状態で止めておく)
+// DDR_H* の先: DDR3 (build.sh の MEM=ddr3。ahb_ddr3 → Gowin の DDR3 IP)
+//   50 MHz ─ Gowin_PLL (400 MHz、リビジョン B) ─ memory_clk ─┐
+//   50 MHz ────────────────────────────────────────── DDR3 IP ─ clk_out (100 MHz) ─ ahb_ddr3 の IP 側
+//   インスタンス名 (Gowin_PLL_inst、u_ddr3) と PLL のラッパー (gowin_pll.v、pll_init.v) は、実機で動作した Sipeed の DDR3 のテストと同じ
+//   (ddr3/ddr3.cst の INS_LOC がこの名前を指す)。SDRAM のピンは使わない (非選択の状態に固定する)
 // ---------------------------------------------------------
 wire         ddr3_memory_clk, ddr3_pll_lock, ddr3_pll_stop, ddr3_clk_x1, ddr3_calib_done;
 wire         ddr3_cmd_ready, ddr3_cmd_en, ddr3_wr_data_rdy, ddr3_wr_data_en, ddr3_rd_data_valid;
@@ -250,7 +251,7 @@ DDR3_Memory_Interface_Top u_ddr3 (
     .wr_data_rdy         (ddr3_wr_data_rdy),
     .wr_data             (ddr3_wr_data),
     .wr_data_en          (ddr3_wr_data_en),
-    .wr_data_end         (ddr3_wr_data_en),   // 1:4 なので、1 回の命令のデータは 1 サイクルで終わる (= Sipeed の試験と同じ)
+    .wr_data_end         (ddr3_wr_data_en),   // 1:4 なので、1 コマンドのデータは 1 サイクルで終わる (Sipeed のテストと同じ)
     .wr_data_mask        (ddr3_wr_data_mask),
     .rd_data             (ddr3_rd_data),
     .rd_data_valid       (ddr3_rd_data_valid),
@@ -307,7 +308,7 @@ ahb_ddr3 u_ahb_ddr3 (
     .rd_data_valid (ddr3_rd_data_valid)
 );
 
-// SDRAM のピンは使わない (= 選ばない状態で止めておく)
+// SDRAM のピンは使わない (非選択の状態に固定する)
 assign sdram_dq    = 16'hzzzz;
 assign sdram_addr  = 13'd0;
 assign sdram_ba    = 2'd0;
@@ -322,10 +323,10 @@ wire unused_ddr3 = &{1'b0, sclk, sdram_rst_s[1]};
 /* verilator lint_on UNUSEDSIGNAL */
 `elsif AE350_MEM_LITEDRAM
 // ---------------------------------------------------------
-// DDR_H* の先: LiteDRAM の DDR3 の制御 (= 2026-11-16、実験。build.sh の MEM=litedram。ahb_litedram → litedram_core)
-//   litedram_core は litedram_gen (= board/tang_console/litedram/tang_console.yml) で書き出したもので、PLL、PHY、制御、初期化と
-//   調整を行う VexRiscv を中に持つ。初期化と調整が済むと init_done が立つ。それまでは、ボードの UART に litedram_core の
-//   出力 (= 115,200 bps、初期化の記録) を出す (= 下の uart_tx)
+// DDR_H* の先: LiteDRAM の DDR3 コントローラ (build.sh の MEM=litedram。ahb_litedram → litedram_core)
+//   litedram_core は litedram_gen (board/tang_console/litedram/tang_console.yml) で生成したもので、PLL、PHY、コントローラ、初期化と
+//   レベリングを行う VexRiscv を内部に持つ。初期化とレベリングが終わると init_done が 1 になる。それまでは、ボードの UART に
+//   litedram_core の出力 (115,200 bps、初期化ログ) を出す (下の uart_tx)
 // ---------------------------------------------------------
 wire          ld_clk, ld_rst, ld_init_done, ld_uart_tx;
 wire          ld_cmd_valid, ld_cmd_ready, ld_cmd_we, ld_wdata_valid, ld_wdata_ready, ld_rdata_valid, ld_rdata_ready;
@@ -373,7 +374,7 @@ litedram_core u_litedram (
 );
 /* verilator lint_on PINCONNECTEMPTY */
 
-ahb_litedram #(.MEM_AW (30), .LINE_AW (5)) u_ahb_litedram (   // DDR3 2 個 (= 1 GB、1 語 32 byte)
+ahb_litedram #(.MEM_AW (30), .LINE_AW (5)) u_ahb_litedram (   // DDR3 2 個 (1 GB、1 ワード 32 バイト)
     .hclk        (ddr_clk),
     .hresetn     (ddr_rst_s[1]),
     .haddr       (ddr_haddr),
@@ -399,7 +400,7 @@ ahb_litedram #(.MEM_AW (30), .LINE_AW (5)) u_ahb_litedram (   // DDR3 2 個 (= 1
     .rdata_data  (ld_rdata_data)
 );
 
-// SDRAM のピンは使わない (= 選ばない状態で止めておく)
+// SDRAM のピンは使わない (非選択の状態に固定する)
 assign sdram_dq    = 16'hzzzz;
 assign sdram_addr  = 13'd0;
 assign sdram_ba    = 2'd0;
@@ -443,7 +444,7 @@ ahb_sdram #(.SDRAM_AW(25)) u_ahb_sdram (
 );
 
 `ifdef SDRAM_HS
-// 166.7 MHz 版 (= 制御は sdram_ctrl_hs、ピンは sdram_io。SDRAM のクロックも sdram_io が出す)
+// 166.7 MHz 版 (コントローラは sdram_ctrl_hs、ピンは sdram_io。SDRAM のクロックも sdram_io が出力する)
 wire [3:0]  io_cmd;
 wire [12:0] io_addr;
 wire [1:0]  io_ba, io_dqm;
@@ -486,7 +487,7 @@ sdram_bridge #(.ADDR_WIDTH(25)) u_sdram_bridge (
     .sdram_dqm   (sdram_dqm)
 );
 
-// SDRAM は命令の半 cycle 後に受ける (= rtl/sdram_bridge.v)
+// SDRAM はコマンドの半サイクル後に取り込む (rtl/sdram_bridge.v)
 assign sdram_clk = ~clk20;
 
 `endif
@@ -497,7 +498,7 @@ wire unused_sdram = s_init_done;
 `endif   // AE350_MEM_DDR3
 
     /* verilator lint_off PINCONNECTEMPTY */
-    // UART は 1,250,000 bps (= APB_CLK 100 MHz ÷ 8 ÷ 10。ボードの USB シリアル (= BL616) を通ることを確かめた速さ)
+    // UART は 1,250,000 bps (APB_CLK 100 MHz ÷ 8 ÷ 10。ボードの USB シリアル (BL616) を通ることを確かめた速度)
     shell_top #(.UART_PRESCALE (16'd10)) u_top (
         .core_clk       (core_clk),
         .ahb_clk        (ahb_clk),
@@ -544,19 +545,19 @@ wire unused_sdram = s_init_done;
     /* verilator lint_on PINCONNECTEMPTY */
 
 `ifdef AE350_NO_OBSERVER
-    // ROM がローダーのとき (= build.sh の ROM=loader): UART は CPU だけが使う (= ローダーが待っている間に OBS の行が流れ、
-    // 返事と重なると返事が落ちるため)
+    // ROM がローダーのとき (build.sh の ROM=loader): UART は CPU だけが使う (ローダーが待っている間に OBS の行が出力され、
+    // 応答と重なると応答が欠けるため)
 `ifdef AE350_MEM_LITEDRAM
-    // LiteDRAM の版は、LiteDRAM の初期化と調整が済むまで、その出力 (= 115,200 bps) を出す (= 済まなければ、記録が見える)
+    // LiteDRAM 版は、LiteDRAM の初期化とレベリングが終わるまで、その出力 (115,200 bps) を出す (終わらなければ、ログが見える)
     assign uart_tx = ld_init_done ? cpu_txd : ld_uart_tx;
 `else
     assign uart_tx = cpu_txd;
 `endif
     /* verilator lint_off UNUSEDSIGNAL */
-    wire unused_obs = &{presetn, apb_access, apb_paddr, misc};   // 観測の回路に渡す信号 (= 外したので使わない)
+    wire unused_obs = &{presetn, apb_access, apb_paddr, misc};   // 監視回路に渡す信号 (監視回路を外したので使わない)
     /* verilator lint_on UNUSEDSIGNAL */
 `else
-    // 見張り (= CPU の文字が 0.1 秒以上途切れたとき、約 1 秒ごとに状態を 1 行出す)。それ以外は CPU の文字をそのまま出す
+    // 監視回路 (CPU の文字が 0.1 秒以上途切れたとき、約 1 秒ごとに状態を 1 行出力する)。それ以外は CPU の文字をそのまま出力する
     ae350_observer u_obs (
         .clk50       (clk50),
         .lock        (lock),

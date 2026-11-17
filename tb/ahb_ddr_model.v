@@ -1,7 +1,7 @@
 // =============================================================
 // File:        tb/ahb_ddr_model.v
 // Module:      ahb_ddr_model
-// Role:        DDR_H* (= 64 bit の AHB) の先に置くデータメモリのモデル (= 段 2、2026-11-08)。
+// Role:        DDR_H* (64 ビット AHB) の先に置くデータメモリのモデル。
 //              シミュレーション専用。
 //
 // Ports:
@@ -9,22 +9,22 @@
 //   input  wire [31:0] haddr      WORDS を超える上位のビットは見ない
 //   input  wire [1:0]  htrans
 //   input  wire        hwrite
-//   input  wire [2:0]  hsize      0 = 8 bit、1 = 16 bit、2 = 32 bit、3 = 64 bit
-//   input  wire [63:0] hwdata     データフェーズの値。HADDR[2:0] と HSIZE で決まるバイトレーンだけを書く
-//   output wire [63:0] hrdata     データフェーズの間、受け付けたアドレスの 64 bit を出す
-//   output wire        hready     受け付けてから +ddr_wait=<N> サイクルだけ 0 にする (= 既定 0)
-//   output wire        hresp      +ddr_err=<16 進のアドレス> の 8 byte への転送にはエラー応答 (= 2 サイクル) を返す。それ以外は 0
+//   input  wire [2:0]  hsize      0 = 8 ビット、1 = 16 ビット、2 = 32 ビット、3 = 64 ビット
+//   input  wire [63:0] hwdata     データフェーズの値。HADDR[2:0] と HSIZE で決まるバイトレーンだけを書き込む
+//   output wire [63:0] hrdata     データフェーズの間、受け付けたアドレスの 64 ビットを出力する
+//   output wire        hready     受け付けてから +ddr_wait=<N> サイクルの間 0 にする (既定値 0)
+//   output wire        hresp      +ddr_err=<16 進のアドレス> の 8 バイトへの転送にはエラー応答 (2 サイクル) を返す。それ以外は 0
 //
 // Design Notes:
-//   - 初期値は全バイト 0xA5 (= .bss を 0 にする処理が動いたかを見分けるため)
-//   - hready はレジスタだけから作る (= htrans に組み合わせ回路で依存しない)
-//   - 書き込みはデータフェーズの最後のサイクル (= hready = 1) で行う。読み出しは組み合わせ回路
+//   - 初期値は全バイト 0xA5 (.bss を 0 にする処理が動いたかを見分けるため)
+//   - hready はレジスタだけから作る (htrans に組み合わせ回路で依存しない)
+//   - 書き込みはデータフェーズの最後のサイクル (hready = 1) で行う。読み出しは組み合わせ回路
 // =============================================================
 
 `default_nettype none
 
 module ahb_ddr_model #(
-    parameter integer WORDS = 8192      // 64 bit × 8192 = 64 KB
+    parameter integer WORDS = 8192      // 64 ビット × 8192 = 64 KB
 ) (
     input  wire        clk,
     input  wire        rst_n,
@@ -42,10 +42,10 @@ module ahb_ddr_model #(
 
     reg [63:0] mem [0:WORDS-1];
 
-    integer    rand_max;      // 0 より大きければ、待ちを転送ごとに 0〜rand_max から選ぶ (= +ddr_wait_rand)
-    integer    rand_seed;     // 乱数の種 (= +seed。DDR は seed + 1)
+    integer    rand_max;      // 0 より大きければ、ウェイトを転送ごとに 0〜rand_max からランダムに選ぶ (+ddr_wait_rand)
+    integer    rand_seed;     // 乱数の種 (+seed。DDR は seed + 1 を使う)
     reg [7:0]  wait_cycles;
-    reg [31:0] err_addr;      // この 8 byte への転送にはエラー応答を返す (= +ddr_err=<16 進>)
+    reg [31:0] err_addr;      // この 8 バイトへの転送にはエラー応答を返す (+ddr_err=<16 進>)
     reg        err_en;
     integer    i;
 
@@ -70,7 +70,7 @@ module ahb_ddr_model #(
 
     wire accept = htrans[1] && hready;
 
-    // 乱数の待ち (= $random は種を書き換えるので、呼ぶたびに次の値になる)
+    // ランダムなウェイト ($random は種を書き換えるので、呼ぶたびに次の値になる)
     function [7:0] next_wait(input [7:0] max);
         reg [31:0] r;
         /* verilator lint_off UNUSEDSIGNAL */
@@ -110,7 +110,7 @@ module ahb_ddr_model #(
         end
     end
 
-    // 書くバイトレーン
+    // 書き込むバイトレーン
     reg [7:0] strobe;
     always @(*) begin
         case (dph_size)
@@ -130,7 +130,7 @@ module ahb_ddr_model #(
         end
     end
 
-    // エラー応答は待ちの後の 2 サイクル (= 1 サイクル目は HREADY = 0、2 サイクル目は HREADY = 1。どちらも HRESP = 1)
+    // エラー応答はウェイトの後の 2 サイクル (1 サイクル目は HREADY = 0、2 サイクル目は HREADY = 1。どちらも HRESP = 1)
     assign hready = (wait_left == 8'd0) && (!dph_err || err_second);
     assign hresp  = (wait_left == 8'd0) && dph_err;
     assign hrdata = mem[dph_idx];

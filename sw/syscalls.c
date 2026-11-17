@@ -1,7 +1,7 @@
 /*
- * newlib が呼ぶシステムコール (段 3、2026-11-09)。
- * 標準出力と標準エラーは UART (= sw/uart.h) に出し、標準入力は UART から読む (= 段 3b)。
- * ファイルは無い。ヒープはリンカスクリプトの _heap_start〜_heap_end。
+ * newlib が呼ぶシステムコール。
+ * 標準出力と標準エラー出力は UART (sw/uart.h) に出し、標準入力は UART から読む。
+ * ファイルはない。ヒープはリンカスクリプトの _heap_start〜_heap_end。
  */
 
 #include <errno.h>
@@ -30,8 +30,8 @@ int _write(int fd, const char *buf, int len)
 }
 
 /*
- * 標準入力: 1 文字目は届くまで待つ。2 文字目からは、FIFO に残っている分だけ読む。
- * 改行を読んだら、そこで返す (= newlib の行バッファの読み方に合わせる)
+ * 標準入力: 1 文字目は届くまで待つ。2 文字目以降は、FIFO に残っている分だけ読む。
+ * 改行を読んだら、そこで返る (newlib の行バッファの読み方に合わせる)
  */
 int _read(int fd, char *buf, int len)
 {

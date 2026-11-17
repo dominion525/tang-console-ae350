@@ -1,14 +1,14 @@
 /*
- * SDRAM で動かすプログラムのリンカスクリプト (= 2026-11-12)。ROM のローダー (= sw/loader.c) が UART で受けて SDRAM に書き、
- * run で 0x0001_0000 へ飛ぶ。
+ * 外部メモリで動かすプログラムのリンカスクリプト。ROM のローダー (sw/loader.c) が UART で受信して外部メモリに書き込み、
+ * run で 0x0001_0000 にジャンプする。
  *
- *   0x0000_0000〜0x0000_000F  .result (= TB が結果を読む場所。シミュレーションの TB が 0x0000_0008 に周波数の比を書く)
- *   0x0001_0000〜             .text、.rodata、.init_array、.data、.bss (= 送る中身は .text から .data の終わりまで)
- *   .bss の後ろ〜0x01FF_FFFF   ヒープ (= sw/syscalls.c の _sbrk)
- *   0xA020_0000〜0xA020_FFFF  スタック (= DLM、64 KB。AE350 の中のメモリなので速い)
+ *   0x0000_0000〜0x0000_000F  .result (テストベンチが結果を読む場所。シミュレーションのテストベンチは 0x0000_0008 に周波数比を書く)
+ *   0x0001_0000〜             .text、.rodata、.init_array、.data、.bss (送る内容は .text から .data の終わりまで)
+ *   .bss の後ろ〜0x01FF_FFFF   ヒープ (sw/syscalls.c の _sbrk)
+ *   0xA020_0000〜0xA020_FFFF  スタック (DLM、64 KB。AE350 の内蔵メモリなので速い)
  *
- * .data は置き場と初期値が同じ番地なので、start.S の写しは自分の上に写すだけになる。
- * start.S は START_RETURN_TO_ROM を定義して作る (= main から戻ったら、ROM のローダーへ戻る)。
+ * .data は配置先と初期値が同じアドレスなので、start.S のコピーは同じ場所への上書きになる。
+ * start.S は START_RETURN_TO_ROM を定義してビルドする (main から戻ったら、ROM のローダーに戻る)。
  */
 
 OUTPUT_ARCH(riscv)
@@ -41,7 +41,7 @@ SECTIONS
         *(.eh_frame .eh_frame.*)
     } > SDRAM
 
-    /* newlib の __libc_init_array / exit が参照する (= start.S は呼ばないが、リンクには要る) */
+    /* newlib の __libc_init_array と exit が参照する (start.S は呼ばないが、リンクには必要) */
     .init_array :
     {
         . = ALIGN(4);
