@@ -24,7 +24,7 @@ s5, e5 = find_module(gw5a, 'DQS')
 s2, e2 = find_module(gw2a, 'DQS')
 
 merged = gw5a[0...s5] +
-         "// DQS: GW5A のモデルは空なので GW2A の prim_sim.v から差し替えた (= tools/prim_sim_gw5a.rb)\n" +
+         "// DQS: the GW5A model is empty, so it is replaced with the one from the GW2A prim_sim.v (tools/prim_sim_gw5a.rb)\n" +
          gw2a[s2...e2] + gw5a[e5..]
 
 # **PLL の出力の位相 (CLKOUTn_PE_COARSE、CLKOUTn_PE_FINE) を、初期値として設定する**。

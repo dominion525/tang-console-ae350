@@ -16,7 +16,7 @@ s.gsub!(/^report_timing .*\{sdram_clk\}.*\n/, '')
 s.sub!(/^(set_clock_groups -asynchronous .*)$/) do
   "#{Regexp.last_match(1)} -group [get_clocks {ld_sys2x}] -group [get_clocks {ld_sys}]"
 end or abort 'the input sdc has no set_clock_groups -asynchronous'
-s = "// LiteDRAM の版: litedram_core の DDR3 のクロックと、制御のクロック\n" \
+s = "// LiteDRAM build: litedram_core DDR3 clock and controller clock\n" \
     "create_clock -name ld_sys2x -period #{ddr_ns} [get_pins {u_litedram/DHCE/CLKOUT}]\n" \
     "create_clock -name ld_sys -period #{sys_ns} [get_pins {u_litedram/CLKDIV/CLKOUT}]\n" + s
 File.write(dst, s)

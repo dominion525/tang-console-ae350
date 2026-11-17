@@ -9,7 +9,7 @@ abort 'usage: ruby make_sdc_hs.rb <top.sdc> <out>' unless dst
 
 s = File.read(src)
 line20 = s[/^create_generated_clock -name sdram_clk .*\n/] or abort 'top.sdc has no sdram_clk constraint'
-s.sub!(line20, "// SDRAM の制御の 166.7 MHz 版 (= board/tang_console/sdram_pll.v。VCO 1000 MHz = 50 MHz × 20、÷ 6)\n" \
+s.sub!(line20, "// 166.7 MHz SDRAM controller clock (board/tang_console/sdram_pll.v: VCO 1000 MHz = 50 MHz x 20, / 6)\n" \
                "create_generated_clock -name s_clk -source [get_ports {clk50}] -multiply_by 10 -divide_by 3 [get_nets {s_clk}]\n")
 s.sub!('-group [get_clocks {sdram_clk}]', '-group [get_clocks {s_clk}]') or abort 'the clock groups in top.sdc do not include sdram_clk'
 File.write(dst, s)

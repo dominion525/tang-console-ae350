@@ -20,7 +20,7 @@ s.sub!(/^(set_clock_groups -asynchronous .*)$/) do
 end or
   abort 'the input sdc has no set_clock_groups -asynchronous'
 s = <<~SDC + s
-  // DDR3 の版: DDR3 のメモリのクロックと、DDR3 の IP の利用者の側のクロック
+  // DDR3 build: DDR3 memory clock and DDR3 IP user-side clock
   create_clock -name ddr3_mem -period 2.5 -waveform {0 1.25} [get_nets {ddr3_memory_clk}]
   create_clock -name ddr3_sys -period 10 -waveform {0 5} [get_pins {u_ddr3/gw3_top/u_ddr_phy_top/fclkdiv/CLKOUT}]
 SDC

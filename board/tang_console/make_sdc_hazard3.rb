@@ -17,7 +17,7 @@ s.sub!(/-multiply_by 2 -divide_by 1 \[get_nets \{ahb_clk\}\]/,
        '-multiply_by 1 -divide_by 1 [get_nets {ahb_clk}]') or abort 'the input sdc has no ahb_clk constraint'
 # CPU、バス、SDRAM コントローラのクリティカルパスを、クロックごとにレポートに出す (全体の上位 25 本には、違反していないクロックの
 # 経路が出ないため。report_timing を書くと全体の表が出なくなるので、SDRAM コントローラのクロック (s_clk か sdram_clk) も追加する)
-s << "\n// Hazard3 の版: 遅い経路を、クロックごとに出す\n"
+s << "\n// Hazard3 version: report the critical paths of each clock\n"
 sdram_clk = s.include?('-name s_clk ') ? 's_clk' : 'sdram_clk'
 ['core_clk', 'ahb_clk', sdram_clk].each do |c|
   s << "report_timing -setup -from_clock [get_clocks {#{c}}] -to_clock [get_clocks {#{c}}] -max_paths 25 -max_common_paths 1\n"

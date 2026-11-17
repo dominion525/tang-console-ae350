@@ -17,7 +17,7 @@ inst = "DHCE DHCE(\n"
 abort "expected exactly one \"DHCE DHCE(\", found #{s.scan(inst).size}" unless s.scan(inst).size == 1
 
 s.sub!(cen, ".CEN    (crg_stop_retimed),   // retime_litedram_stop.rb\n")
-s.sub!(inst, "// retime_litedram_stop.rb: crg_stop を、DHCE が CEN を受けるのと同じ sys2x_i_clk の立ち下がりで受け直す\n" \
+s.sub!(inst, "// retime_litedram_stop.rb: retime crg_stop on the falling edge of sys2x_i_clk, the same edge on which DHCE samples CEN\n" \
              "reg crg_stop_retimed = 1'd0;\n" \
              "always @(negedge sys2x_i_clk) crg_stop_retimed <= crg_stop;\n\n" + inst)
 File.write(path, s)
