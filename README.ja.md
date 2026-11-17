@@ -58,6 +58,11 @@ tarball には libgloss のマニュアル（porting.info）が含まれてお�
     openFPGALoader -b tangconsole build/board/ae350_probe/impl/pnr/ae350_probe.fs
 
 Gowin EDA Education 版 1.9.11.03 で、チップのリビジョン B 向けにビルドしています。
+**動作を確認したのは、チップのリビジョン B の Tang Console 138K だけです。**
+リビジョン C のボードでは確認していません。
+リビジョン C のボードで試す場合は、`board/tang_console/build.tcl` の `-device_version` を C に変えてビルドします。
+DDR3 版では、DDR3 の IP と PLL の設定も C に変えます（「IP の生成」を参照）。
+
 ROM はブロック RAM（内容は `sw/probe.c`）で、データとスタックは AE350 内蔵の DLM に置きます。
 DDR3 は使いません。
 
@@ -203,7 +208,8 @@ IP 本体は Gowin のツールが生成するファイルなので、リポジ�
 3. 同じフォルダに `ddr3_memory_interface.v` が生成されます。
    「Decode Process failed」と表示されることがありますが、生成されないのはシミュレーション用の `.vo` だけで、合成には使いません。
 
-チップのリビジョン C のボードでは、`.ipc` の `target_device` を `gw5ast138c-007` にして生成します（`build.tcl` と `board/tang_console/ddr3/gowin_pll.mod` の `-device_version` も C に変えます）。
+チップのリビジョン C のボードでは、`.ipc` の `target_device` を `gw5ast138c-007` にして生成し、`board/tang_console/ddr3/gowin_pll.mod` の `-device_version` も C に変えます（`build.tcl` の変更は「実機」の節を参照）。
+この手順は、リビジョン C のボードでは確認していません。
 DDR3 用 PLL の本体（`gowin_pll_mod.v`）は、`build.sh` が `board/tang_console/ddr3/gowin_pll.mod` から Gowin の GowinModgen で出力先に生成します。
 
 設定ファイル、PLL のラッパー（`gowin_pll.v`、`pll_init.v`）、ピン制約（`ddr3.cst`）の出典は、Sipeed の TangMega-138K-example の `ddr_memory/ddr_memory_test_uart`（Apache-2.0。Tang Console 138K で動作する DDR3 のテスト）です。

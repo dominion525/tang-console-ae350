@@ -58,6 +58,11 @@ The libraries themselves are not affected.
     openFPGALoader -b tangconsole build/board/ae350_probe/impl/pnr/ae350_probe.fs
 
 The design is built with Gowin EDA Education 1.9.11.03 for chip revision B.
+**It has been verified only on a Tang Console 138K with chip revision B.**
+Boards with chip revision C have not been tested.
+To try it on a revision C board, change `-device_version` in `board/tang_console/build.tcl` to C before building.
+For the DDR3 build, also change the DDR3 IP and PLL settings to C (see "Generating the IP").
+
 The ROM is block RAM holding `sw/probe.c`, and data and stack are placed in the DLM inside AE350.
 DDR3 is not used.
 
@@ -203,7 +208,8 @@ Generate it from the configuration file `board/tang_console/ddr3/ddr3_memory_int
 3. `ddr3_memory_interface.v` is generated in the same folder.
    "Decode Process failed" may appear, but only the simulation file `.vo` is missing, and synthesis does not use it.
 
-For a board with chip revision C, set `target_device` in the `.ipc` file to `gw5ast138c-007` before generating, and also change `-device_version` in `build.tcl` and `board/tang_console/ddr3/gowin_pll.mod` to C.
+For a board with chip revision C, set `target_device` in the `.ipc` file to `gw5ast138c-007` before generating, and also change `-device_version` in `board/tang_console/ddr3/gowin_pll.mod` to C (for the change to `build.tcl`, see "Running on the board").
+This procedure has not been tested on a revision C board.
 `build.sh` generates the DDR3 PLL (`gowin_pll_mod.v`) into the output directory from `board/tang_console/ddr3/gowin_pll.mod` with Gowin's GowinModgen.
 
 The configuration file, the PLL wrappers (`gowin_pll.v`, `pll_init.v`), and the pin constraints (`ddr3.cst`) are taken from `ddr_memory/ddr_memory_test_uart` in Sipeed's TangMega-138K-example (Apache-2.0; a DDR3 test that runs on the Tang Console 138K).
