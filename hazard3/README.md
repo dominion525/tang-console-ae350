@@ -2,7 +2,8 @@
 
 [日本語](README.ja.md)
 
-This is the CPU used inside the AE350 Hazard3 version (`rtl/AE350_SOC.v`).
+This is Hazard3, a RISC-V CPU core.
+It is used as the CPU inside the AE350 Hazard3 version (`rtl/AE350_SOC.v`).
 It is used in simulation and in the Hazard3 version running in the FPGA fabric (`CPU=hazard3`), and is not part of the builds that use the real AE350.
 
 | Item           | Details                                     |

@@ -58,17 +58,33 @@ The libraries themselves are not affected.
     openFPGALoader -b tangconsole build/board/ae350_probe/impl/pnr/ae350_probe.fs
 
 The design is built with Gowin EDA Education 1.9.11.03 for chip revision B.
-The ROM is block RAM holding `sw/probe.c`, and data and stack are placed in the DLM inside AE350.
+**It has been verified only on a Tang Console 138K with chip revision B.**
+Boards with chip revision C have not been tested.
+To try it on a revision C board, change `-device_version` in `board/tang_console/build.tcl` to C before building.
+For the DDR3 build, also change the DDR3 IP and PLL settings to C (see "Generating the IP").
+
+In the default build, the ROM is block RAM holding `sw/probe.c`, and data and stack are placed in the DLM inside AE350.
 DDR3 is not used.
 
+DDR_H* is connected to the SDRAM on the baseboard (32 MB).
+There are two SDRAM controllers, selected with the `SDRAM` environment variable.
+
+| Setting    | Controller                                 | Clock     |
+| ---------- | ------------------------------------------ | --------- |
+| none       | `rtl/sdram_bridge.v`                       | 20 MHz    |
+| `SDRAM=hs` | `rtl/sdram_ctrl_hs.v` and `rtl/sdram_io.v` | 166.7 MHz |
+
+Below, a build with SDRAM behind DDR_H* is called the **SDRAM build**, and the `SDRAM=hs` variant of it the **166.7 MHz build**.
+
 Output appears on the second USB serial port (`/dev/cu.usbserial-<number>1` on macOS) at 1,250,000 bps.
-The macOS `stty` command does not accept rates above 230400 bps, so the rate is set with `IOSSIOSPEED` while the port is open.
+The macOS `stty` command does not accept rates above 230400 bps, so the scripts that talk to the UART (`tools/ae350_uart.rb` and `tools/ae350_load.rb`) set the rate with the macOS `IOSSIOSPEED` call while the port is open.
+As a result, these two scripts run only on macOS.
+
 Use `tools/ae350_uart.rb` to read the output.
 The script prints whatever it receives and sends keyboard input to the board.
 It exits after the given number of seconds, or on Ctrl-C if no duration is given.
 The probe program prints its values again each time it receives a character, so send one character to read them from the beginning.
 For about 10 seconds after start-up, however, the program is measuring time and does not accept characters, so to read everything right after programming the board, wait about 15 seconds as shown below.
-`tools/ae350_uart.rb` and `tools/ae350_load.rb` rely on the macOS `IOSSIOSPEED` call to set the rate, so they run only on macOS.
 
     printf x | ruby tools/ae350_uart.rb /dev/cu.usbserial-<number>1 15
 
@@ -79,13 +95,13 @@ If the CPU stops printing for more than 0.1 s, the monitor circuit (`board/tang_
 
 ### Settings required to run the real AE350
 
-- **Place the PLL that generates CORE_CLK at `PLL_R[0]`.**
+- **CORE_CLK PLL placement**: Place the PLL that generates CORE_CLK at `PLL_R[0]`.
   AE350's CORE_CLK is supplied over dedicated routing from clkout1 of `PLL_R[0]` (Gowin MUG1031, section 8.4).
   Without this placement, synthesis and place-and-route complete without warnings, but AE350 holds HRESETN and PRESETN at 0 and never fetches an instruction.
   The placement is set with `INS_LOC "u_pll/u_pll_s8" PLL_R[0];` in `top.cst` (instance names get an `_s` suffix after synthesis).
-- **When JTAG is not used, tie `DBG_TCK`, `TMS_IN`, and `TRST_IN` to 1 and `TDI_IN` to 0.**
+- **JTAG inputs**: When JTAG is not used, tie `DBG_TCK`, `TMS_IN`, and `TRST_IN` to 1 and `TDI_IN` to 0.
   Tie `POR_N` to 1 and apply reset only through `HW_RSTN` (the same values as LiteX's gowin_ae350).
-- **Insert registers on `APB_P*` and `EXTS_H*`.**
+- **Registers on `APB_P*` and `EXTS_H*`**: Insert registers on `APB_P*` and `EXTS_H*`.
   AE350 sits at the edge of the FPGA (R0C160), and routing alone takes about 4 ns each way.
   A path that leaves AE350, passes through fabric logic, and returns to AE350 does not meet timing at 100 MHz.
   Without the registers, UART writes over `APB_P*` stalled partway through.
@@ -126,7 +142,7 @@ Programs can be sent repeatedly, overwriting the previous one, without rebuildin
 `ae350_load.rb` resets AE350 into the loader with the UART reset sequence, sends the program, verifies the length and CRC-32, and runs the program if they match.
 It then prints the UART output and sends keyboard input.
 It exits when the program returns to the loader, or on Ctrl-C.
-The UART runs at 1,250,000 bps (set with `IOSSIOSPEED` on macOS).
+The UART runs at 1,250,000 bps (for how the rate is set, see "Running on the board").
 Builds with the loader in ROM do not include the monitor circuit.
 
 ### Commands and responses
@@ -169,7 +185,7 @@ The SDRAM controller and the sequence detector itself are not reset.
 While the loader is receiving data, detection is disabled (the CTRL register in `rtl/apb_uart.v`), so a program that contains these 8 bytes does not trigger a reset.
 Sending input that contains these 8 bytes while a program is running does trigger a reset.
 
-### Tests
+### Loader tests
 
 | Command                | Description                                                                                                                                                                                                                                                              |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -203,8 +219,10 @@ Generate it from the configuration file `board/tang_console/ddr3/ddr3_memory_int
 3. `ddr3_memory_interface.v` is generated in the same folder.
    "Decode Process failed" may appear, but only the simulation file `.vo` is missing, and synthesis does not use it.
 
-For a board with chip revision C, set `target_device` in the `.ipc` file to `gw5ast138c-007` before generating, and also change `-device_version` in `build.tcl` and `board/tang_console/ddr3/gowin_pll.mod` to C.
 `build.sh` generates the DDR3 PLL (`gowin_pll_mod.v`) into the output directory from `board/tang_console/ddr3/gowin_pll.mod` with Gowin's GowinModgen.
+
+For a board with chip revision C, set `target_device` in the `.ipc` file to `gw5ast138c-007` before generating, and also change `-device_version` in `board/tang_console/ddr3/gowin_pll.mod` to C (for the change to `build.tcl`, see "Running on the board").
+This procedure has not been tested on a revision C board.
 
 The configuration file, the PLL wrappers (`gowin_pll.v`, `pll_init.v`), and the pin constraints (`ddr3.cst`) are taken from `ddr_memory/ddr_memory_test_uart` in Sipeed's TangMega-138K-example (Apache-2.0; a DDR3 test that runs on the Tang Console 138K).
 
@@ -231,7 +249,9 @@ The configuration file, the PLL wrappers (`gowin_pll.v`, `pll_init.v`), and the 
   | +0x18  | IP clock cycles until a write command is accepted |
   | +0x1C  | Number of reads served from the kept 32 bytes     |
 
-### Access speed (`sw/mem_bench.c`, data cache off, AE350 CPU cycles per access at 800 MHz)
+### Access speed
+
+AE350 CPU cycles per access at 800 MHz, measured with `sw/mem_bench.c` with the data cache off.
 
 | Access                    | DDR3         | SDRAM (166.7 MHz build) |
 | ------------------------- | ------------ | ----------------------- |
@@ -322,7 +342,9 @@ Like `rtl/ahb_ddr3.v`, this bridge moves DDR_H* transfers into the LiteDRAM cont
 It also keeps the last 32 bytes read, returns an error response for addresses beyond 1 GB, and uses the same counter layout at 0x7F00_0000 (the "IP clock" in the counters is the LiteDRAM controller clock).
 The DDR3 size and access width are parameters (`MEM_AW`, `LINE_AW`), so a single DDR3 chip (512 MB, 16 bytes) is also supported.
 
-### Access speed (`sw/mem_bench.c`, data cache off, AE350 CPU cycles per access at 800 MHz)
+### Access speed
+
+AE350 CPU cycles per access, measured under the same conditions as the DDR3 build (`sw/mem_bench.c`, data cache off, 800 MHz).
 
 | Access                    | LiteDRAM     | DDR3 (Gowin IP) | SDRAM (166.7 MHz build) |
 | ------------------------- | ------------ | --------------- | ----------------------- |
