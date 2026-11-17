@@ -557,6 +557,11 @@ module tb_mem;
     integer    rx_len;
     integer    rx_i;
 
+    localparam integer HIST_LINES = 4096;
+    localparam integer HIST_W     = 32;
+    reg [8*HIST_W-1:0] hist [0:HIST_LINES-1];   // 受信した行の先頭 32 文字 (k 文字目は [8*k +: 8])
+    integer            lines_done;               // 受信し終わった行の数
+
     // 受信し終わった行の先頭 32 文字を、+uart_script の W のために保持する
     task save_rx_line;
         reg [8*32-1:0] h;
@@ -652,10 +657,6 @@ module tb_mem;
     // ---------------------------------------------------------
     // UART の送信: +uart_script の手順 (S、F、W、P、G、B)
     // ---------------------------------------------------------
-    localparam integer HIST_LINES = 4096;
-    localparam integer HIST_W     = 32;
-    reg [8*HIST_W-1:0] hist [0:HIST_LINES-1];   // 受信した行の先頭 32 文字 (k 文字目は [8*k +: 8])
-    integer            lines_done;               // 受信し終わった行の数
 
     reg [8*256-1:0] sc_line;
     reg [8*256-1:0] sc_arg;      // 引数 (右詰めの文字列。$fopen にそのまま渡せる)
