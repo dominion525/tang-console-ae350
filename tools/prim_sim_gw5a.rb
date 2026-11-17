@@ -10,7 +10,7 @@
 # 書き出したファイルは Gowin のものなのでコミットしない (Makefile が build/ に作る)。
 def find_module(src, name)
   start = src.index(/^\s*module\s+#{name}\b/) or abort "#{name} が見つからない"
-  stop = src.index(/^\s*endmodule\b/, start) or abort "#{name} の endmodule が見つからない"
+  stop = src.index(/^\s*endmodule\b/, start) or abort "endmodule of #{name} not found"
   stop = src.index("\n", stop) || src.size
   [start, stop + 1]
 end
@@ -37,18 +37,18 @@ pll = merged[sp...ep]
 (0..6).each do |n|
   { "fine_#{n}" => "CLKOUT#{n}_PE_FINE", "coarse_#{n}" => "CLKOUT#{n}_PE_COARSE" }.each do |reg, param|
     from = "\n#{reg} = 0;\n"
-    abort "PLL の initial に「#{reg} = 0;」が 1 か所だけある前提が崩れた (= #{pll.scan(from).size} か所)" unless pll.scan(from).size == 1
+    abort "expected exactly one \"#{reg} = 0;\" in the PLL initial block, found #{pll.scan(from).size}" unless pll.scan(from).size == 1
     pll.sub!(from, "\n#{reg} = (DYN_PE#{n}_SEL == \"FALSE\") ? #{param} : 0;   // prim_sim_gw5a.rb\n")
   end
   # 同じ always @(*) は、固定の設定では動的な側の分岐が定数で消え、きっかけが 1 つも残らない (Icarus が
   # 「@* found no sensitivities」を出す)。動的な側が読む fine_dyn_n と coarse_dyn_n を、きっかけとして明示する
   from = "\n// clkout#{n}\n//\nalways @(*)\n"
-  abort "PLL に clkout#{n} の always @(*) が 1 か所だけある前提が崩れた (= #{pll.scan(from).size} か所)" unless pll.scan(from).size == 1
+  abort "expected exactly one always @(*) for clkout#{n} in the PLL, found #{pll.scan(from).size}" unless pll.scan(from).size == 1
   pll.sub!(from, "\n// clkout#{n}\n//\nalways @(fine_dyn_#{n} or coarse_dyn_#{n})   // prim_sim_gw5a.rb\n")
 end
 merged[sp...ep] = pll
 
 File.write(out_path, merged)
-puts "#{out_path}: GW5A の DQS (#{gw5a[s5...e5].lines.size} 行) を GW2A の DQS (#{gw2a[s2...e2].lines.size} 行) に差し替えた"
-puts "#{out_path}: PLL の位相の初期値 (= fine_0〜6、coarse_0〜6 の 14 か所) を、固定の指定の値にした"
-puts "#{out_path}: PLL の位相を読む always @(*) (= clkout0〜6 の 7 か所) のきっかけを、fine_dyn_n / coarse_dyn_n にした"
+puts "#{out_path}: replaced the GW5A DQS (#{gw5a[s5...e5].lines.size} lines) with the GW2A DQS (#{gw2a[s2...e2].lines.size} lines)"
+puts "#{out_path}: set the initial PLL phase values (fine_0-6 and coarse_0-6, 14 places) to the static settings"
+puts "#{out_path}: made the always @(*) blocks that read the PLL phase (clkout0-6, 7 places) sensitive to fine_dyn_n / coarse_dyn_n"

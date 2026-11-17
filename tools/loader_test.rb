@@ -126,7 +126,7 @@ RUN a0000000
 when 'hello'
   bin, dis, script, expected = ARGV
   h = File.binread(bin)
-  main = File.read(dis)[/^([0-9a-f]{8}) <main>:$/, 1] or abort 'hello.dis に main が無い'
+  main = File.read(dis)[/^([0-9a-f]{8}) <main>:$/, 1] or abort 'main not found in hello.dis'
   File.write(script, <<-S)
 W READY
 G #{GAP}
@@ -148,5 +148,5 @@ READY: send one line
 received: abc
   E
 else
-  abort '使い方は先頭のコメント'
+  abort 'see the comment at the top of this file for usage'
 end

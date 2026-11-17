@@ -6,19 +6,19 @@
 # (ahb_ddr3 は DDR_CLK と IP のクロックの間をトグルで乗せ換える。テストの制約も、400 MHz と分周したクロックの間を除外している)
 
 src, dst = ARGV
-abort 'usage: ruby make_sdc_ddr3.rb <元の指定> <out>' unless dst
+abort 'usage: ruby make_sdc_ddr3.rb <input sdc> <output sdc>' unless dst
 
 s = File.read(src)
 # SDRAM の 20 MHz のクロック (clk20) は DDR3 版では使わないので、合成で配線が消える。その制約と、非同期グループの
 # sdram_clk を外す (make_sdc_hazard3.rb が rtc_clk を外すのと同じ)
-s.sub!(/^create_generated_clock -name sdram_clk .*\n/, '') or abort '元の指定に sdram_clk の指定が無い'
-s.sub!(' -group [get_clocks {sdram_clk}]', '') or abort '元の指定のグループに sdram_clk が無い'
+s.sub!(/^create_generated_clock -name sdram_clk .*\n/, '') or abort 'the input sdc has no sdram_clk constraint'
+s.sub!(' -group [get_clocks {sdram_clk}]', '') or abort 'the clock groups in the input sdc do not include sdram_clk'
 # Hazard3 版 (make_sdc_hazard3.rb) が追加する、sdram_clk のクリティカルパスをレポートに出す行も外す
 s.gsub!(/^report_timing .*\{sdram_clk\}.*\n/, '')
 s.sub!(/^(set_clock_groups -asynchronous .*)$/) do
   "#{Regexp.last_match(1)} -group [get_clocks {ddr3_mem}] -group [get_clocks {ddr3_sys}]"
 end or
-  abort '元の指定に set_clock_groups -asynchronous が無い'
+  abort 'the input sdc has no set_clock_groups -asynchronous'
 s = <<~SDC + s
   // DDR3 の版: DDR3 のメモリのクロックと、DDR3 の IP の利用者の側のクロック
   create_clock -name ddr3_mem -period 2.5 -waveform {0 1.25} [get_nets {ddr3_memory_clk}]

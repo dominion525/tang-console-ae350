@@ -13,7 +13,7 @@
 GOWIN_PRIM ?= /Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/IDE/simlib/gw5a/prim_sim.v
 
 # newlib の場所は NEWLIB で指定する (既定値は持たない。作り方は README)。newlib を使うプログラムをビルドするときだけ、場所を確かめる
-NEWLIB_CHECK = $(if $(wildcard $(NEWLIB)/include/stdio.h),,$(error NEWLIB に newlib の場所を指定する (= <場所>/include と <場所>/lib/rv32imac/ilp32 があるところ。作り方は README)))
+NEWLIB_CHECK = $(if $(wildcard $(NEWLIB)/include/stdio.h),,$(error set NEWLIB to the newlib install location, the directory containing include and lib/rv32imac/ilp32 (see README for how to build it)))
 
 HZ3_SOC      := rtl/AE350_SOC.v
 HZ3_SOC_SRCS := $(HZ3_SOC) rtl/ae350_fabric.v rtl/ae350_reset_sync.v rtl/ae350_plic.v rtl/ae350_plmt.v

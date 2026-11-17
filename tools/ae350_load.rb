@@ -22,7 +22,7 @@ READY       = 'READY ae350 loader'
 RESET_SEQ   = [0x1B, 0x1B, 0x61, 0x65, 0x33, 0x35, 0x30, 0x21].pack('C*') # ESC ESC "ae350!"
 
 port, bin, at = ARGV
-abort '使い方: ruby tools/ae350_load.rb <ポート> <.bin> [番地]' if port.nil? || bin.nil?
+abort 'usage: ruby tools/ae350_load.rb <port> <.bin> [address]' if port.nil? || bin.nil?
 data = File.binread(bin)
 addr = (at || '00010000').to_i(16)
 
@@ -70,12 +70,12 @@ wait_for = lambda do |want, sec|
     return nil if l.nil?
     return l if l.start_with?(want)
 
-    abort "ローダー: #{l}" if l.start_with?('ERR')
+    abort "loader: #{l}" if l.start_with?('ERR')
   end
 end
 
 expect = lambda do |want, sec|
-  wait_for.call(want, sec) or abort "ローダーが応えない (= #{want} を #{sec} 秒待った)"
+  wait_for.call(want, sec) or abort "no response from the loader (waited #{sec} s for #{want})"
 end
 
 # リセットシーケンスを送って READY を待つ。速度を設定した直後や、ビットストリームを書き込んだ直後は、USB シリアルの変換チップ (BL616) が
@@ -83,11 +83,11 @@ end
 ready = ->(sec) { !wait_for.call(READY, sec).nil? }
 sleep 0.1
 got_ready = (1..3).any? do |n|
-  warn "合図を送り直す (= #{n} 回目)" if n > 1
+  warn "resending the reset sequence (attempt #{n})" if n > 1
   sp.write(RESET_SEQ)
   ready.call(1.5)
 end
-abort 'ローダーが応えない (= 合図を 3 回送ったが READY ae350 loader が来ない)' unless got_ready
+abort 'no response from the loader (sent the reset sequence 3 times but got no READY ae350 loader)' unless got_ready
 sp.write(format("load %08x %08x\n", addr, data.bytesize))
 expect.call('GO', 2)
 t0 = Time.now
@@ -95,9 +95,9 @@ sp.write(data)
 # 送信にかかる時間 (1 バイト 10 ビット) と、読み直しにかかる時間に余裕を見る
 ok = expect.call('OK', data.bytesize * 10.0 / BAUD + 5)
 len, crc = ok.split[1, 2].map { |x| x.to_i(16) }
-abort format('長さが合わない (= 送った %d byte、ローダー %d byte)', data.bytesize, len) if len != data.bytesize
-abort format('CRC-32 が合わない (= 送った %08x、ローダー %08x)', Zlib.crc32(data), crc) if crc != Zlib.crc32(data)
-warn format('送った: %d byte、CRC-32 %08x、%.2f 秒', data.bytesize, crc, Time.now - t0)
+abort format('length mismatch (sent %d bytes, loader reports %d bytes)', data.bytesize, len) if len != data.bytesize
+abort format('CRC-32 mismatch (sent %08x, loader reports %08x)', Zlib.crc32(data), crc) if crc != Zlib.crc32(data)
+warn format('sent: %d bytes, CRC-32 %08x, %.2f s', data.bytesize, crc, Time.now - t0)
 
 sp.write(format("run %08x\n", addr))
 expect.call('RUN', 2)
@@ -127,10 +127,10 @@ begin
     pending << chunk
     pending = pending[-(READY.bytesize + 2)..] || pending if pending.bytesize > 4096
     if pending.include?(READY)
-      warn 'ローダーに戻った'
+      warn 'returned to the loader'
       break
     end
   end
 rescue Interrupt
-  warn '終わる (= Ctrl-C)'
+  warn 'exiting (Ctrl-C)'
 end

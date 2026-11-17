@@ -6,10 +6,10 @@
 #   ruby tools/gowin_pll_stub.rb <prim_sim.v> <出力>
 
 src, out = ARGV
-abort '使い方: ruby tools/gowin_pll_stub.rb <prim_sim.v> <出力>' if src.nil? || out.nil?
+abort 'usage: ruby tools/gowin_pll_stub.rb <prim_sim.v> <output>' if src.nil? || out.nil?
 
 lines = File.readlines(src)
-start = lines.index { |l| l =~ /^module PLL\s*\(/ } or abort 'module PLL が無い'
+start = lines.index { |l| l =~ /^module PLL\s*\(/ } or abort 'module PLL not found'
 
 head = []
 i = start
@@ -33,10 +33,10 @@ while i < lines.size
   end
   i += 1
 end
-abort '出力が無い' if outputs.empty?
+abort 'no outputs found' if outputs.empty?
 
 File.write(out, <<~V)
   // tools/gowin_pll_stub.rb が #{File.basename(src)} の module PLL から作った、中身の無いモジュール (= lint のため)
   #{head.join}#{decls.join}#{outputs.map { |o| "assign #{o} = 1'b0;\n" }.join}endmodule
 V
-puts "#{out}: 宣言 #{decls.size} 行、出力 #{outputs.join(' ')}"
+puts "#{out}: #{decls.size} declaration lines, outputs #{outputs.join(' ')}"

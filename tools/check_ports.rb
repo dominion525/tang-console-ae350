@@ -15,7 +15,7 @@ MODULE = 'AE350_SOC'
 def module_body(path)
   lines = File.readlines(path, chomp: true)
   start = lines.index { |l| l =~ /^\s*module\s+#{MODULE}\b/ }
-  abort "#{path}: module #{MODULE} が見つからない" unless start
+  abort "#{path}: module #{MODULE} not found" unless start
   stop = lines[start..].index { |l| l =~ /^\s*endmodule\b/ }
   lines[start, stop]
 end
@@ -30,7 +30,7 @@ def ports(path)
   module_body(path).each_with_object({}) do |line, h|
     m = decl.match(line.sub(%r{\s*//.*$}, '')) or next
     dir, width, name = m.captures
-    abort "#{path}: #{name} が 2 回宣言されている" if h.key?(name)
+    abort "#{path}: #{name} is declared twice" if h.key?(name)
     h[name] = [dir, normalize_width(width)]
   end
 end
@@ -42,15 +42,15 @@ prim = ports(prim_path)
 hz3 = ports(hz3_path)
 
 errors = []
-(prim.keys - hz3.keys).each { |n| errors << "Hazard3 の版に無い: #{n} #{prim[n].join(' ')}" }
-(hz3.keys - prim.keys).each { |n| errors << "プリミティブに無い: #{n} #{hz3[n].join(' ')}" }
+(prim.keys - hz3.keys).each { |n| errors << "missing in the Hazard3 version: #{n} #{prim[n].join(' ')}" }
+(hz3.keys - prim.keys).each { |n| errors << "missing in the primitive: #{n} #{hz3[n].join(' ')}" }
 (prim.keys & hz3.keys).each do |n|
-  errors << "違う: #{n} プリミティブ #{prim[n].join(' ')} / Hazard3 の版 #{hz3[n].join(' ')}" if prim[n] != hz3[n]
+  errors << "mismatch: #{n} primitive #{prim[n].join(' ')} / Hazard3 version #{hz3[n].join(' ')}" if prim[n] != hz3[n]
 end
 
-puts "プリミティブ #{prim.size} 本 / Hazard3 の版 #{hz3.size} 本"
+puts "primitive: #{prim.size} ports / Hazard3 version: #{hz3.size} ports"
 if errors.empty?
-  puts 'ポートは一致した'
+  puts 'ports match'
 else
   puts errors
   exit 1

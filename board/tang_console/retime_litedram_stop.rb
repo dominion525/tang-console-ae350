@@ -12,13 +12,13 @@ path = ARGV[0] or abort 'usage: ruby retime_litedram_stop.rb <litedram_core.v>'
 s = File.read(path)
 
 cen = ".CEN    (crg_stop),\n"
-abort "DHCE の「#{cen.strip}」が 1 か所だけある前提が崩れた (= #{s.scan(cen).size} か所)" unless s.scan(cen).size == 1
+abort "expected exactly one DHCE \"#{cen.strip}\", found #{s.scan(cen).size}" unless s.scan(cen).size == 1
 inst = "DHCE DHCE(\n"
-abort "「DHCE DHCE(」が 1 か所だけある前提が崩れた (= #{s.scan(inst).size} か所)" unless s.scan(inst).size == 1
+abort "expected exactly one \"DHCE DHCE(\", found #{s.scan(inst).size}" unless s.scan(inst).size == 1
 
 s.sub!(cen, ".CEN    (crg_stop_retimed),   // retime_litedram_stop.rb\n")
 s.sub!(inst, "// retime_litedram_stop.rb: crg_stop を、DHCE が CEN を受けるのと同じ sys2x_i_clk の立ち下がりで受け直す\n" \
              "reg crg_stop_retimed = 1'd0;\n" \
              "always @(negedge sys2x_i_clk) crg_stop_retimed <= crg_stop;\n\n" + inst)
 File.write(path, s)
-puts "#{path}: DHCE の CEN を、sys2x_i_clk の立ち下がりで受け直した crg_stop にした"
+puts "#{path}: DHCE CEN now uses crg_stop retimed on the falling edge of sys2x_i_clk"

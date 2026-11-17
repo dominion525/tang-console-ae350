@@ -27,7 +27,7 @@ out=${1:-$ae/build/board}
 rom=${ROM:-probe}
 case "$rom" in
   probe|loader) ;;
-  *) echo "ROM は probe か loader" >&2; exit 1 ;;
+  *) echo "ROM must be probe or loader" >&2; exit 1 ;;
 esac
 make -C "$ae" "build/$rom.hex" || exit 1
 mkdir -p "$out"
@@ -65,14 +65,14 @@ export AE350_MEM=${MEM:-sdram}
 case "$AE350_MEM" in
   sdram) ;;
   ddr3)
-    [ "${SDRAM:-}" = hs ] && { echo "MEM=ddr3 と SDRAM=hs は一緒に使えない" >&2; exit 1; }
+    [ "${SDRAM:-}" = hs ] && { echo "MEM=ddr3 and SDRAM=hs cannot be used together" >&2; exit 1; }
     printf '`define AE350_MEM_DDR3\n' >> "$out/defines.v"
     ;;
   litedram)
-    [ "${SDRAM:-}" = hs ] && { echo "MEM=litedram と SDRAM=hs は一緒に使えない" >&2; exit 1; }
+    [ "${SDRAM:-}" = hs ] && { echo "MEM=litedram and SDRAM=hs cannot be used together" >&2; exit 1; }
     printf '`define AE350_MEM_LITEDRAM\n' >> "$out/defines.v"
     ;;
-  *) echo "MEM は sdram、ddr3、litedram のどれか" >&2; exit 1 ;;
+  *) echo "MEM must be sdram, ddr3, or litedram" >&2; exit 1 ;;
 esac
 export AE350_CPU=${CPU:-ae350}
 if [ "$AE350_CPU" = hazard3-fast ]; then
@@ -103,17 +103,17 @@ cat "$here/top.cst" > "$out/top_build.cst" || exit 1
 # $readmemh を相対パスで書くため)。Gowin のライブラリの環境変数 (下の DYLD_*) を設定する前に実行する
 if [ "$AE350_MEM" = litedram ]; then
   venv=${LITEX_VENV:-}
-  [ -n "$venv" ] && [ -x "$venv/bin/litedram_gen" ] || { echo "LITEX_VENV に、litedram_gen を入れた LiteX の仮想環境を指定する (= 作り方は README)" >&2; exit 1; }
+  [ -n "$venv" ] && [ -x "$venv/bin/litedram_gen" ] || { echo "set LITEX_VENV to a LiteX virtual environment with litedram_gen installed (see README for setup)" >&2; exit 1; }
   PATH="$venv/bin:$PATH" litedram_gen "$here/litedram/tang_console.yml" --output-dir "$out/litedram" > "$out/litedram_gen.log" 2>&1 ||
-    { echo "litedram_gen が失敗した (= $out/litedram_gen.log)" >&2; exit 1; }
+    { echo "litedram_gen failed (see $out/litedram_gen.log)" >&2; exit 1; }
   g="$out/litedram/gateware"
   sed -e "s|readmemh(\"litedram_core_rom.init\"|readmemh(\"$g/litedram_core_rom.init\"|" \
       -e "s|readmemh(\"litedram_core_sram.init\"|readmemh(\"$g/litedram_core_sram.init\"|" "$g/litedram_core.v" > "$out/litedram_core.v"
-  grep -q "$g/litedram_core_rom.init" "$out/litedram_core.v" || { echo "ROM の中身のパスを書き換えられなかった" >&2; exit 1; }
+  grep -q "$g/litedram_core_rom.init" "$out/litedram_core.v" || { echo "could not rewrite the path to the ROM contents" >&2; exit 1; }
   # DDR3 のクロックを止める信号を、DHCE が受けるクロックで受け直す (理由は retime_litedram_stop.rb の冒頭)
   ruby "$here/retime_litedram_stop.rb" "$out/litedram_core.v" || exit 1
   AE350_VEXRISCV_V="$("$venv/bin/python" -c 'import pythondata_cpu_vexriscv as v; print(v.data_location)')/VexRiscv.v"   # data_location は verilog のフォルダ
-  [ -f "$AE350_VEXRISCV_V" ] || { echo "VexRiscv.v が無い" >&2; exit 1; }
+  [ -f "$AE350_VEXRISCV_V" ] || { echo "VexRiscv.v not found" >&2; exit 1; }
   export AE350_VEXRISCV_V
   cat "$here/litedram/ddram.cst" >> "$out/top_build.cst"
 fi
@@ -126,7 +126,7 @@ if [ "$AE350_MEM" = ddr3 ]; then
   mkdir -p "$out/ddr3_pll"
   sed "s|^-path .*|-path $out/ddr3_pll/|" "$here/ddr3/gowin_pll.mod" > "$out/ddr3_pll/gowin_pll.mod"
   "$G/bin/GowinModgen" -do "$out/ddr3_pll/gowin_pll.mod" > "$out/ddr3_pll/modgen.log" 2>&1 || { cat "$out/ddr3_pll/modgen.log"; exit 1; }
-  [ -f "$out/ddr3_pll/gowin_pll_mod.v" ] || { echo "DDR3 の PLL を作れなかった" >&2; exit 1; }
-  [ -f "$here/ddr3/ddr3_memory_interface.v" ] || { echo "DDR3 の IP (= ddr3/ddr3_memory_interface.v) が無い。README.md の「DDR3 build」(= README.ja.md の「DDR3 の版」) の手順で作る" >&2; exit 1; }
+  [ -f "$out/ddr3_pll/gowin_pll_mod.v" ] || { echo "could not generate the DDR3 PLL" >&2; exit 1; }
+  [ -f "$here/ddr3/ddr3_memory_interface.v" ] || { echo "DDR3 IP (ddr3/ddr3_memory_interface.v) not found; generate it as described in the DDR3 build section of README.md" >&2; exit 1; }
 fi
 exec "$G/bin/gw_sh" "$here/build.tcl"

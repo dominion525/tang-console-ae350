@@ -17,14 +17,14 @@ class AE350UartTest < Minitest::Test
     [@port, @board].each { |s| s.close unless s.closed? }
   end
 
-  def test_ボードから届いたデータを出力に出す
+  def test_writes_data_from_board_to_output
     out = StringIO.new
     @board.write("== AE350 probe ==\r\n")
     AE350Uart.relay(@port, StringIO.new, out, 0.2)
     assert_equal "== AE350 probe ==\r\n", out.string
   end
 
-  def test_入力をボードに送る
+  def test_sends_input_to_board
     input_r, input_w = IO.pipe
     input_w.write('x')
     input_w.close
@@ -32,7 +32,7 @@ class AE350UartTest < Minitest::Test
     assert_equal 'x', @board.read_nonblock(16)
   end
 
-  def test_入力が終わっても受信を続ける
+  def test_keeps_receiving_after_input_ends
     out = StringIO.new
     input_r, input_w = IO.pipe
     input_w.close
@@ -43,25 +43,25 @@ class AE350UartTest < Minitest::Test
     assert_equal 'after', out.string
   end
 
-  def test_秒数を指定するとその時間で終わる
+  def test_stops_after_given_seconds
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     AE350Uart.relay(@port, StringIO.new, StringIO.new, 0.3)
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
     assert_in_delta 0.3, elapsed, 0.1
   end
 
-  def test_秒数を指定しないとポートが閉じるまで続ける
+  def test_runs_until_port_closes_without_seconds
     out = StringIO.new
     t = Thread.new { AE350Uart.relay(@port, StringIO.new, out, nil) }
     @board.write('end')
     sleep 0.1
     assert t.alive?
     @board.close
-    assert t.join(1), 'ポートが閉じても終わらなかった'
+    assert t.join(1), 'did not stop after the port closed'
     assert_equal 'end', out.string
   end
 
-  def test_すでに届いているデータを読み捨てる
+  def test_discards_pending_data
     @board.write('garbage')
     sleep 0.05
     AE350Uart.discard_pending(@port)
