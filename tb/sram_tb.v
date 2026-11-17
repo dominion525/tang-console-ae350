@@ -74,9 +74,9 @@ module sram_tb;
                 @(posedge clk);
                 while (!hready) @(posedge clk);
                 if (i > 0 && !t_write[i-1] && hrdata !== t_data[i-1]) begin
-                    $fatal(1, "構成 %0d: %0d 番目の読み出し (0x%08x) が 0x%08x、期待は 0x%08x", cfg, i - 1, t_addr[i-1], hrdata, t_data[i-1]);
+                    $fatal(1, "config %0d: read %0d (0x%08x) returned 0x%08x, expected 0x%08x", cfg, i - 1, t_addr[i-1], hrdata, t_data[i-1]);
                 end
-                if (i > 0 && hresp) $fatal(1, "構成 %0d: %0d 番目がエラー応答", cfg, i - 1);
+                if (i > 0 && hresp) $fatal(1, "config %0d: transfer %0d got an error response", cfg, i - 1);
                 // i 番目のデータフェーズ (i + 1 番目のアドレスフェーズを重ねる)
                 hwdata <= t_write[i] ? t_data[i] : 32'd0;
                 if (i + 1 < N) begin
@@ -92,7 +92,7 @@ module sram_tb;
             @(posedge clk);
             while (!hready) @(posedge clk);
             if (!t_write[N-1] && hrdata !== t_data[N-1]) begin
-                $fatal(1, "構成 %0d: 最後の読み出しが 0x%08x、期待は 0x%08x", cfg, hrdata, t_data[N-1]);
+                $fatal(1, "config %0d: last read returned 0x%08x, expected 0x%08x", cfg, hrdata, t_data[N-1]);
             end
         end
     endtask
@@ -112,7 +112,7 @@ module sram_tb;
             sel = cfg[0];
             run_pipeline();
         end
-        $display("sram_tb: 合格");
+        $display("sram_tb: PASS");
         $finish;
     end
 

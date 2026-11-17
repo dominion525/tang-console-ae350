@@ -303,7 +303,7 @@ coremark-sim: $(SIM) $(BUILD)/coremark_sim.hex
 	grep -q '^UART: \[0\]crcmatrix     : 0x1fd7$$' $(BUILD)/coremark_sim.log
 	grep -q '^UART: \[0\]crcstate      : 0x8e3a$$' $(BUILD)/coremark_sim.log
 	! grep -q '^UART: \[0\]ERROR' $(BUILD)/coremark_sim.log
-	@echo "coremark-sim: CRC は正しい"
+	@echo "coremark-sim: CRC is correct"
 
 .PHONY: test-loader
 test-loader: $(SIM_SDRAM) $(BUILD)/loader_sim.hex $(BUILD)/ilm_min.bin $(BUILD)/sdram_hang.bin $(BUILD)/hello.bin tools/loader_test.rb
@@ -426,33 +426,33 @@ test-sdram: $(SIM_SDRAM) $(BUILD)/stage3.hex $(BUILD)/stage4.hex $(BUILD)/stage5
 test-random: $(SIM) $(BUILD)/stage2.hex $(BUILD)/stage3.hex $(BUILD)/stage4.hex $(BUILD)/stage5.hex sw/stage3_input.txt sw/stage3_expected.txt sw/stage4_expected.txt
 	for seed in 1 2 3; do \
 		$(SIM) +rom=$(BUILD)/stage2.hex $(STAGE2_ERR) $(RAND) +seed=$$seed > $(BUILD)/stage2_rand$$seed.log 2>&1 || { cat $(BUILD)/stage2_rand$$seed.log; exit 1; }; \
-		grep '^合格' $(BUILD)/stage2_rand$$seed.log; \
+		grep '^PASS' $(BUILD)/stage2_rand$$seed.log; \
 		$(SIM) +rom=$(BUILD)/stage3.hex +uart_in=sw/stage3_input.txt $(RAND) +seed=$$seed > $(BUILD)/stage3_rand$$seed.log 2>&1 || { cat $(BUILD)/stage3_rand$$seed.log; exit 1; }; \
 		sed -n 's/^UART: //p' $(BUILD)/stage3_rand$$seed.log | diff sw/stage3_expected.txt - || exit 1; \
 		$(SIM) +rom=$(BUILD)/stage4.hex $(RAND) +seed=$$seed > $(BUILD)/stage4_rand$$seed.log 2>&1 || { cat $(BUILD)/stage4_rand$$seed.log; exit 1; }; \
 		sed -n 's/^UART: //p' $(BUILD)/stage4_rand$$seed.log | diff sw/stage4_expected.txt - || exit 1; \
 		$(SIM) +rom=$(BUILD)/stage5.hex $(STAGE5_EXTM) $(RAND) +seed=$$seed > $(BUILD)/stage5_rand$$seed.log 2>&1 || { cat $(BUILD)/stage5_rand$$seed.log; exit 1; }; \
 		sed -n 's/^UART: //p' $(BUILD)/stage5_rand$$seed.log | diff sw/stage5_expected.txt - || exit 1; \
-		echo "種 $$seed: 段 2〜5 合格"; \
+		echo "seed $$seed: stage2-stage5 PASS"; \
 	done
 
 # 実機の値を読むプログラムをシミュレーションで実行する (出力の形式を、実機で動かす前に確かめるため)。実機の構成と同じく、
 # DDR_H* の先を SDRAM の経路にしたシミュレータで実行する
 .PHONY: run-probe
 run-probe: $(SIM_SDRAM) $(BUILD)/probe.hex
-	$(SIM_SDRAM) +rom=$(BUILD)/probe.hex $(SDRAM_RUN) > $(BUILD)/probe.log 2>&1; status=$$?; grep '^UART: \|^結果\|Fatal' $(BUILD)/probe.log; exit $$status
+	$(SIM_SDRAM) +rom=$(BUILD)/probe.hex $(SDRAM_RUN) > $(BUILD)/probe.log 2>&1; status=$$?; grep '^UART: \|^result\|Fatal' $(BUILD)/probe.log; exit $$status
 
 .PHONY: bench
 bench: $(SIM) $(BUILD)/bench.hex
-	$(SIM) +rom=$(BUILD)/bench.hex > $(BUILD)/bench.log 2>&1; status=$$?; grep '^UART: \|^結果' $(BUILD)/bench.log; exit $$status
+	$(SIM) +rom=$(BUILD)/bench.hex > $(BUILD)/bench.log 2>&1; status=$$?; grep '^UART: \|^result' $(BUILD)/bench.log; exit $$status
 
-# 動作の途中でリセットをかけ、リセットの後に stage4 が最初から正しく動くことを確かめる (「途中のリセット」の行より後の
+# 動作の途中でリセットをかけ、リセットの後に stage4 が最初から正しく動くことを確かめる (「reset during run」の行より後の
 # UART の出力を比べる)。AHB_CLK の 200000 サイクル目は、stage4 の PLIC の確認の途中
 .PHONY: test-reset
 test-reset: $(SIM) $(BUILD)/stage4.hex sw/stage4_expected.txt
 	$(SIM) +rom=$(BUILD)/stage4.hex +reset_at=200000 > $(BUILD)/stage4_reset.log 2>&1; status=$$?; cat $(BUILD)/stage4_reset.log; exit $$status
-	grep -q '^途中のリセット' $(BUILD)/stage4_reset.log
-	sed -n '/^途中のリセット/,$$p' $(BUILD)/stage4_reset.log | sed -n 's/^UART: //p' | diff sw/stage4_expected.txt -
+	grep -q '^reset during run' $(BUILD)/stage4_reset.log
+	sed -n '/^reset during run/,$$p' $(BUILD)/stage4_reset.log | sed -n 's/^UART: //p' | diff sw/stage4_expected.txt -
 
 # クロックの組み合わせを変えて実行する (既定のリファレンスデザインの周波数のほかに、クロック乗せ換えがどの比でも動くことを確かめる)
 #   same   すべて 100 MHz
@@ -522,7 +522,7 @@ $(SIM_IV): $(RTL_SRCS) $(TB_SRCS)
 .PHONY: test-iverilog
 test-iverilog: $(SIM_IV) $(BUILD)/stage2.hex $(BUILD)/stage3.hex $(BUILD)/stage4.hex $(BUILD)/stage5.hex sw/stage3_input.txt sw/stage3_expected.txt sw/stage4_expected.txt
 	vvp -n $(SIM_IV) +rom=$(BUILD)/stage2.hex $(STAGE2_ERR) > $(BUILD)/stage2_iv.log 2>&1; status=$$?; cat $(BUILD)/stage2_iv.log; exit $$status
-	grep -q '^合格' $(BUILD)/stage2_iv.log
+	grep -q '^PASS' $(BUILD)/stage2_iv.log
 	vvp -n $(SIM_IV) +rom=$(BUILD)/stage3.hex +uart_in=sw/stage3_input.txt > $(BUILD)/stage3_iv.log 2>&1; status=$$?; cat $(BUILD)/stage3_iv.log; exit $$status
 	sed -n 's/^UART: //p' $(BUILD)/stage3_iv.log | diff sw/stage3_expected.txt -
 	vvp -n $(SIM_IV) +rom=$(BUILD)/stage4.hex > $(BUILD)/stage4_iv.log 2>&1; status=$$?; cat $(BUILD)/stage4_iv.log; exit $$status

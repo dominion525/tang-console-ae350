@@ -99,7 +99,7 @@ module uart_reset_seq_tb;
     task expect_pulses(input integer n, input [8*48-1:0] what);
         begin
             repeat (PULSE + 40) @(posedge clk);
-            if (pulses - base != n) $fatal(1, "%0s: パルスが %0d (= %0d のはず)", what, pulses - base, n);
+            if (pulses - base != n) $fatal(1, "%0s: %0d pulses (expected %0d)", what, pulses - base, n);
             base = pulses;
         end
     endtask
@@ -111,61 +111,61 @@ module uart_reset_seq_tb;
         repeat (3) @(posedge clk);
         rst_n = 1'b1;
         repeat (3) @(posedge clk);
-        if (rst_out_n !== 1'b1) $fatal(1, "リセットの後に rst_out_n が 1 でない");
+        if (rst_out_n !== 1'b1) $fatal(1, "rst_out_n is not 1 after reset");
 
         // 1
         send_seq(0, 8);
-        expect_pulses(1, "1 合図");
-        if (width != PULSE) $fatal(1, "1 合図: パルスの長さが %0d (= %0d のはず)", width, PULSE);
-        $display("1 合図: 合格 (= 長さ %0d)", width);
+        expect_pulses(1, "1 sequence");
+        if (width != PULSE) $fatal(1, "1 sequence: pulse width %0d (expected %0d)", width, PULSE);
+        $display("1 sequence: PASS (width %0d)", width);
 
         // 2
         send_seq(0, 7);
         send_byte(8'h00, 1'b0);
-        expect_pulses(0, "2 頭の 7 byte");
-        $display("2 頭の 7 byte: 合格");
+        expect_pulses(0, "2 first 7 bytes");
+        $display("2 first 7 bytes: PASS");
 
         // 3
         for (pos = 0; pos < 8; pos = pos + 1) begin
             for (k = 0; k < 8; k = k + 1) send_byte((k == pos) ? 8'h00 : SEQ[63 - 8 * k -: 8], 1'b0);
-            expect_pulses(0, "3 1 byte 違い");
+            expect_pulses(0, "3 one byte different");
         end
-        $display("3 1 byte 違い (= 8 か所): 合格");
+        $display("3 one byte different (8 positions): PASS");
 
         // 4
         send_byte(8'h1B, 1'b0);
         send_seq(0, 8);
         expect_pulses(1, "4 1B 1B 1B");
-        $display("4 1B 1B 1B: 合格");
+        $display("4 1B 1B 1B: PASS");
 
         // 5
         send_seq(0, 3);
         send_seq(0, 8);
-        expect_pulses(1, "5 1B 1B 61 で切れる");
-        $display("5 1B 1B 61 で切れる: 合格");
+        expect_pulses(1, "5 cut off after 1B 1B 61");
+        $display("5 cut off after 1B 1B 61: PASS");
 
         // 6
         send_seq(0, 4);
         send_byte(SEQ[63 - 8 * 4 -: 8], 1'b1);   // 5 バイト目を、ストップビット 0 で送る
         send_seq(5, 8);
-        expect_pulses(0, "6 ストップビット 0");
+        expect_pulses(0, "6 stop bit 0");
         send_seq(0, 8);
-        expect_pulses(1, "6 その後の合図");
-        $display("6 ストップビット 0: 合格");
+        expect_pulses(1, "6 sequence afterwards");
+        $display("6 stop bit 0: PASS");
 
         // 7
         send_seq(0, 8);
         repeat (PULSE + 40) @(posedge clk);
         send_seq(0, 8);
-        expect_pulses(2, "7 2 回");
-        $display("7 2 回: 合格");
+        expect_pulses(2, "7 twice");
+        $display("7 twice: PASS");
 
         // 8
         send_seq(0, 4);
         repeat (100000) @(posedge clk);
         send_seq(4, 8);
-        expect_pulses(1, "8 途中で長く止まる");
-        $display("8 途中で長く止まる: 合格");
+        expect_pulses(1, "8 long pause midway");
+        $display("8 long pause midway: PASS");
 
         // 9 (最後の 1 バイトを送っている途中でパルスが出るのを待ち、その 4 サイクル後に rst_n をアサートする)
         send_seq(0, 7);
@@ -177,25 +177,25 @@ module uart_reset_seq_tb;
             @(posedge clk);
             k = k + 1;
         end
-        if (rst_out_n !== 1'b0) $fatal(1, "9: 合図の後にパルスが出ていない");
+        if (rst_out_n !== 1'b0) $fatal(1, "9: no pulse after the sequence");
         repeat (4) @(posedge clk);
-        if (rst_out_n !== 1'b0) $fatal(1, "9: パルスが 4 サイクルで終わった");
+        if (rst_out_n !== 1'b0) $fatal(1, "9: pulse ended after 4 cycles");
         rst_n = 1'b0;
         #1;
-        if (rst_out_n !== 1'b1) $fatal(1, "9: rst_n で rst_out_n が 1 に戻らない");
+        if (rst_out_n !== 1'b1) $fatal(1, "9: rst_out_n does not return to 1 on rst_n");
         repeat (3) @(posedge clk);
         rst_n = 1'b1;
         repeat (PULSE * 3) @(posedge clk);
-        if (pulses != 0 || rst_out_n !== 1'b1) $fatal(1, "9: rst_n の後にパルスが出た");
-        $display("9 パルスの途中で rst_n: 合格");
+        if (pulses != 0 || rst_out_n !== 1'b1) $fatal(1, "9: pulse after rst_n");
+        $display("9 rst_n during pulse: PASS");
         base = pulses;
 
         // 10
         hold = 1'b1;
         send_seq(0, 8);
-        expect_pulses(0, "10 hold = 1 の間の合図");
+        expect_pulses(0, "10 sequence while hold = 1");
         hold = 1'b0;
-        $display("10 hold = 1 の間の合図: 合格");
+        $display("10 sequence while hold = 1: PASS");
 
         // 11
         send_seq(0, 4);
@@ -203,12 +203,12 @@ module uart_reset_seq_tb;
         repeat (4) @(posedge clk);
         hold = 1'b0;
         send_seq(4, 8);
-        expect_pulses(0, "11 途中で hold");
+        expect_pulses(0, "11 hold midway");
         send_seq(0, 8);
-        expect_pulses(1, "11 その後の合図");
-        $display("11 途中で hold: 合格");
+        expect_pulses(1, "11 sequence afterwards");
+        $display("11 hold midway: PASS");
 
-        $display("uart_reset_seq_tb: 合格");
+        $display("uart_reset_seq_tb: PASS");
         $finish;
     end
 

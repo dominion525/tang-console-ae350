@@ -179,7 +179,7 @@ module sdram_tb;
                     // エラー応答の 1 サイクル目 (HREADY 0)。次のエッジで 2 サイクル目 (HREADY 1、HRESP 1)
                     @(posedge hclk);
                     #1;
-                    if (!(hready && hresp)) $fatal(1, "エラー応答の 2 サイクル目の形が違う (hready=%b hresp=%b)", hready, hresp);
+                    if (!(hready && hresp)) $fatal(1, "unexpected second cycle of error response (hready=%b hresp=%b)", hready, hresp);
                 end else begin
                     @(posedge hclk);
                     #1;
@@ -197,7 +197,7 @@ module sdram_tb;
         begin
             addr_phase(ad, 1'b1, size);
             data_phase(wd, 1'b1);
-            if (rd_err) $fatal(1, "書き込み 0x%08x がエラー応答", ad);
+            if (rd_err) $fatal(1, "write 0x%08x got an error response", ad);
             m = lane_mask(ad[2:0], size);
             for (k = 0; k < 8; k = k + 1) if (m[k]) shadow_write({ad[31:3], 3'd0} + k, wd[k*8 +: 8]);
         end
@@ -209,11 +209,11 @@ module sdram_tb;
         begin
             addr_phase(ad, 1'b0, size);
             data_phase(64'd0, 1'b1);
-            if (rd_err) $fatal(1, "読み出し 0x%08x がエラー応答", ad);
+            if (rd_err) $fatal(1, "read 0x%08x got an error response", ad);
             m = lane_mask(ad[2:0], size);
             for (k = 0; k < 8; k = k + 1) begin
                 if (m[k] && rd_data[k*8 +: 8] !== shadow_read({ad[31:3], 3'd0} + k)) begin
-                    $fatal(1, "読み出し 0x%08x (HSIZE %0d) の byte %0d が %02x、写しは %02x", ad, size, k,
+                    $fatal(1, "read 0x%08x (HSIZE %0d) byte %0d is %02x, copy is %02x", ad, size, k,
                            rd_data[k*8 +: 8], shadow_read({ad[31:3], 3'd0} + k));
                 end
             end
@@ -230,7 +230,7 @@ module sdram_tb;
         begin
             addr_phase(STAT_BASE + 4 * k, 1'b0, 3'd2);
             data_phase(64'd0, 1'b1);
-            if (rd_err) $fatal(1, "カウンタ +0x%02x の読み出しがエラー応答", 4 * k);
+            if (rd_err) $fatal(1, "read of counter +0x%02x got an error response", 4 * k);
             v = k[0] ? rd_data[63:32] : rd_data[31:0];
         end
     endtask
@@ -267,10 +267,10 @@ module sdram_tb;
         rst_n = 1'b1;
 
         // 1: 初期化前に来た読み出し (sdram_bridge は初期化が終わるまで受け付けない)
-        if (init_done) $fatal(1, "初期化が早すぎる (= この確認の前提が崩れた)");
+        if (init_done) $fatal(1, "initialization finished too early (the premise of this check no longer holds)");
         ahb_read_check(32'h0000_0010, 3'd3);
-        if (!init_done) $fatal(1, "初期化の前に読み出しが終わった");
-        $display("1 初期化の前の読み出し: 合格");
+        if (!init_done) $fatal(1, "read completed before initialization");
+        $display("1 read before initialization: PASS");
 
         // 2: HSIZE 0〜3 とアドレスの下位のすべての組み合わせ
         for (sz = 0; sz < 4; sz = sz + 1) begin
@@ -282,7 +282,7 @@ module sdram_tb;
         for (sz = 0; sz < 4; sz = sz + 1) begin
             for (off = 0; off < 64; off = off + (1 << sz)) ahb_read_check(32'h0000_0100 + off, sz[2:0]);
         end
-        $display("2 HSIZE と番地の下位の組み合わせ: 合格");
+        $display("2 HSIZE and low address combinations: PASS");
 
         // 3: 16 バイトのラインの上半分と下半分
         ahb_write(32'h0000_0200, 3'd3, 64'h1111_2222_3333_4444);
@@ -290,20 +290,20 @@ module sdram_tb;
         ahb_read_check(32'h0000_0200, 3'd3);
         ahb_read_check(32'h0000_0208, 3'd3);
         ahb_read_check(32'h0000_020C, 3'd2);
-        $display("3 行の上下: 合格");
+        $display("3 upper and lower halves of a line: PASS");
 
         // 4: 32 MB の範囲外 (エラー応答。SDRAM の内容は変わらない)
         addr_phase(32'h0200_0000, 1'b0, 3'd3);
         data_phase(64'd0, 1'b1);
-        if (!rd_err) $fatal(1, "32 MB の外の読み出しがエラー応答にならない");
+        if (!rd_err) $fatal(1, "read outside 32 MB did not get an error response");
         addr_phase(32'h0200_0200, 1'b1, 3'd3);
         data_phase(64'hDEAD_BEEF_DEAD_BEEF, 1'b1);
-        if (!rd_err) $fatal(1, "32 MB の外の書き込みがエラー応答にならない");
+        if (!rd_err) $fatal(1, "write outside 32 MB did not get an error response");
         addr_phase(32'h8000_0000, 1'b0, 3'd2);
         data_phase(64'd0, 1'b1);
-        if (!rd_err) $fatal(1, "0x8000_0000 の読み出しがエラー応答にならない");
+        if (!rd_err) $fatal(1, "read of 0x8000_0000 did not get an error response");
         check_region(32'h0000_0200, 16);   // 下位 25 ビットが同じアドレスの内容は変わっていない
-        $display("4 32 MB の外のエラー応答: 合格");
+        $display("4 rejection outside 32 MB: PASS");
 
         // 5: 間を空けずに続ける (データフェーズの終わりのエッジで、次のアドレスフェーズを出す)
         addr_phase(32'h0000_0300, 1'b1, 3'd3);
@@ -323,20 +323,20 @@ module sdram_tb;
         @(posedge hclk);
         #1;
         while (!hready) begin @(posedge hclk); #1; end
-        if (hrdata !== 64'hAAAA_0000_BBBB_1111) $fatal(1, "続けた転送の読み出しが %016x", hrdata);
+        if (hrdata !== 64'hAAAA_0000_BBBB_1111) $fatal(1, "back-to-back read returned %016x", hrdata);
         @(posedge hclk);
         for (i = 0; i < 8; i = i + 1) begin
             shadow_write(32'h0000_0300 + i, pat_byte(64'hAAAA_0000_BBBB_1111, i));
             shadow_write(32'h0000_0308 + i, pat_byte(64'hCCCC_2222_DDDD_3333, i));
         end
         check_region(32'h0000_0300, 16);
-        $display("5 間を空けない転送: 合格");
+        $display("5 back-to-back transfers: PASS");
 
         // 6: 32 MB の最上位
         ahb_write(32'h01FF_FFF8, 3'd3, 64'hFEDC_BA98_7654_3210);
         ahb_write(32'h01FF_FFF0, 3'd1, 64'h0000_0000_0000_BEEF);
         check_region(32'h01FF_FFF0, 16);
-        $display("6 32 MB の一番上: 合格");
+        $display("6 top of 32 MB: PASS");
 
         // 7: ランダムなアドレスと HSIZE (下位 4 KB と、最上位の 4 KB)
         for (r = 0; r < 300; r = r + 1) begin
@@ -349,7 +349,7 @@ module sdram_tb;
         end
         check_region(32'h0000_0000, 4096);
         check_region(32'h01FF_F000, 4096);
-        $display("7 乱数の読み書き: 合格");
+        $display("7 random reads and writes: PASS");
 
         // 8: 転送を待っている途中のリセット (SDRAM の内容は残る。リセットの後も読み書きが正しい)
         addr_phase(32'h0000_0400, 1'b1, 3'd3);
@@ -364,7 +364,7 @@ module sdram_tb;
         ahb_write(32'h0000_0400, 3'd3, 64'h1112_1314_1516_1718);
         check_region(32'h0000_0400, 8);
         check_region(32'h0000_0000, 256);
-        $display("8 途中のリセット: 合格");
+        $display("8 reset mid-transfer: PASS");
 
         // 9: カウンタ (数が決まる転送を出し、前後の差を見る。カウンタを読む転送、カウンタへの書き込み、エラー応答は数えない)
         for (i = 0; i < 7; i = i + 1) stat_read(i, st_before[i]);
@@ -375,31 +375,31 @@ module sdram_tb;
         ahb_read_check(32'h0000_0508, 3'd3);
         addr_phase(STAT_BASE, 1'b1, 3'd2);                            // カウンタへの書き込み (無視され、OKAY が返る)
         data_phase(64'hFFFF_FFFF_FFFF_FFFF, 1'b1);
-        if (rd_err) $fatal(1, "カウンタへの書き込みがエラー応答");
+        if (rd_err) $fatal(1, "write to a counter got an error response");
         addr_phase(STAT_BASE + 32'h20, 1'b0, 3'd2);                  // カウンタの範囲のすぐ外 (エラー応答)
         data_phase(64'd0, 1'b1);
-        if (!rd_err) $fatal(1, "0x%08x (= カウンタの範囲のすぐ外) がエラー応答にならない", STAT_BASE + 32'h20);
+        if (!rd_err) $fatal(1, "0x%08x (just outside the counter range) did not get an error response", STAT_BASE + 32'h20);
         for (i = 0; i < 7; i = i + 1) stat_read(i, st_after[i]);
-        if (st_after[0] - st_before[0] != 2)  $fatal(1, "読みの転送の数の差が %0d (= 2 のはず)", st_after[0] - st_before[0]);
-        if (st_after[2] - st_before[2] != 3)  $fatal(1, "書きの転送の数の差が %0d (= 3 のはず)", st_after[2] - st_before[2]);
-        if (st_after[6] - st_before[6] != 13) $fatal(1, "書いた byte の数の差が %0d (= 1 + 4 + 8 = 13 のはず)", st_after[6] - st_before[6]);
+        if (st_after[0] - st_before[0] != 2)  $fatal(1, "read transfer count delta is %0d (expected 2)", st_after[0] - st_before[0]);
+        if (st_after[2] - st_before[2] != 3)  $fatal(1, "write transfer count delta is %0d (expected 3)", st_after[2] - st_before[2]);
+        if (st_after[6] - st_before[6] != 13) $fatal(1, "bytes written delta is %0d (expected 1 + 4 + 8 = 13)", st_after[6] - st_before[6]);
         for (i = 1; i < 6; i = i + 2) begin
-            if (st_after[i] == st_before[i]) $fatal(1, "カウンタ +0x%02x (= サイクル数) が増えていない", 4 * i);
+            if (st_after[i] == st_before[i]) $fatal(1, "counter +0x%02x (cycle count) did not increase", 4 * i);
         end
-        if (st_after[4] == st_before[4]) $fatal(1, "カウンタ +0x10 (= 行の読みの sclk のサイクル数) が増えていない");
+        if (st_after[4] == st_before[4]) $fatal(1, "counter +0x10 (sclk cycles for line reads) did not increase");
         // AE350 を待たせた時間は、SDRAM コントローラが動いた時間より長い (間にクロック乗せ換えがあるため)
         if ((st_after[1] - st_before[1]) * HCLK_PS < (st_after[4] - st_before[4]) * SCLK_PS)
-            $fatal(1, "読みで待たせた時間 %0d ps が、行の読みの時間 %0d ps より短い",
+            $fatal(1, "read stall time %0d ps is shorter than line read time %0d ps",
                    (st_after[1] - st_before[1]) * HCLK_PS, (st_after[4] - st_before[4]) * SCLK_PS);
         if ((st_after[3] - st_before[3]) * HCLK_PS < (st_after[5] - st_before[5]) * SCLK_PS)
-            $fatal(1, "書きで待たせた時間 %0d ps が、書きの時間 %0d ps より短い",
+            $fatal(1, "write stall time %0d ps is shorter than write time %0d ps",
                    (st_after[3] - st_before[3]) * HCLK_PS, (st_after[5] - st_before[5]) * SCLK_PS);
         stat_read(7, st_after[0]);
-        if (st_after[0] != 32'd0) $fatal(1, "カウンタ +0x1C が %08x (= 0 のはず)", st_after[0]);
-        $display("9 カウンタ: 合格 (= 読み 2 回で待たせた DDR_CLK %0d、行の読みの sclk %0d / 書き 3 回で待たせた DDR_CLK %0d、書きの sclk %0d)",
+        if (st_after[0] != 32'd0) $fatal(1, "counter +0x1C is %08x (expected 0)", st_after[0]);
+        $display("9 counters: PASS (2 reads: DDR_CLK stalled %0d, line read sclk %0d / 3 writes: DDR_CLK stalled %0d, write sclk %0d)",
                  st_after[1] - st_before[1], st_after[4] - st_before[4], st_after[3] - st_before[3], st_after[5] - st_before[5]);
 
-        $display("sdram_tb: 合格 (= 読み出しの確認 %0d 回)", n_checks);
+        $display("sdram_tb: PASS (%0d read checks)", n_checks);
         $finish;
     end
 

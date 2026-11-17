@@ -79,30 +79,30 @@ module sdram_io_tb;
         dqm  <= 2'b01;
         @(posedge s_clk);                 // エッジ n
         #0.5;
-        if ({cs_n, ras_n, cas_n, we_n} === 4'b0011) $fatal(1, "1: 縁 n で、もう出ている");
+        if ({cs_n, ras_n, cas_n, we_n} === 4'b0011) $fatal(1, "1: already output at edge n");
         @(posedge s_clk);                 // エッジ n + 1
         #0.5;
-        if ({cs_n, ras_n, cas_n, we_n} === 4'b0011) $fatal(1, "1: 縁 n + 1 で、もう出ている");
+        if ({cs_n, ras_n, cas_n, we_n} === 4'b0011) $fatal(1, "1: already output at edge n + 1");
         @(posedge s_clk);                 // エッジ n + 2
         #0.5;
         if ({cs_n, ras_n, cas_n, we_n} !== 4'b0011 || a !== 13'h1ABC || b !== 2'b10 || m !== 2'b01) begin
-            $fatal(1, "1: 縁 n + 2 で出ていない (cmd %b addr %h ba %b dqm %b)", {cs_n, ras_n, cas_n, we_n}, a, b, m);
+            $fatal(1, "1: not output at edge n + 2 (cmd %b addr %h ba %b dqm %b)", {cs_n, ras_n, cas_n, we_n}, a, b, m);
         end
         @(negedge s_clk);
         #0.5;
-        if ({cs_n, ras_n, cas_n, we_n} !== 4'b0011) $fatal(1, "1: 半周期後に変わった");
-        $display("1 出力の遅れ: 合格");
+        if ({cs_n, ras_n, cas_n, we_n} !== 4'b0011) $fatal(1, "1: changed half a cycle later");
+        $display("1 output delay: PASS");
 
         // 2: SDRAM のクロックは s_clk の反転
         for (i = 0; i < 4; i = i + 1) begin
             @(posedge s_clk);
             #0.5;
-            if (ck !== 1'b0) $fatal(1, "2: s_clk が 1 の間に SDRAM のクロックが 1");
+            if (ck !== 1'b0) $fatal(1, "2: SDRAM clock is 1 while s_clk is 1");
             @(negedge s_clk);
             #0.5;
-            if (ck !== 1'b1) $fatal(1, "2: s_clk が 0 の間に SDRAM のクロックが 0");
+            if (ck !== 1'b1) $fatal(1, "2: SDRAM clock is 0 while s_clk is 0");
         end
-        $display("2 SDRAM のクロック: 合格");
+        $display("2 SDRAM clock: PASS");
 
         // 3: DQ の出力と出力許可 (同じ遅延)
         @(negedge s_clk);
@@ -113,14 +113,14 @@ module sdram_io_tb;
         dq_oe  <= 1'b0;
         @(posedge s_clk);                 // エッジ n + 1
         #0.5;
-        if (dq0 !== 16'hzzzz) $fatal(1, "3: 縁 n + 1 で、もう DQ を出している (%h)", dq0);
+        if (dq0 !== 16'hzzzz) $fatal(1, "3: DQ already driven at edge n + 1 (%h)", dq0);
         @(posedge s_clk);                 // エッジ n + 2
         #0.5;
-        if (dq0 !== 16'hBEEF) $fatal(1, "3: 縁 n + 2 で DQ が %h", dq0);
+        if (dq0 !== 16'hBEEF) $fatal(1, "3: DQ is %h at edge n + 2", dq0);
         @(posedge s_clk);                 // エッジ n + 3 (出力しない状態に戻した値)
         #0.5;
-        if (dq0 !== 16'hzzzz) $fatal(1, "3: 出さないに戻した後も DQ を出している (%h)", dq0);
-        $display("3 DQ の出力と許可: 合格");
+        if (dq0 !== 16'hzzzz) $fatal(1, "3: DQ still driven after output was disabled (%h)", dq0);
+        $display("3 DQ output and enable: PASS");
 
         // 4 と 5: ピンの値を半周期ごとに変える (立ち下がりの前に 1234、立ち上がりの前に 5678)
         repeat (2) @(posedge s_clk);
@@ -135,17 +135,17 @@ module sdram_io_tb;
         drive_v  <= 16'h9ABC;
         @(posedge s_clk);                 // エッジ m + 1
         #0.5;
-        if (dq_in0 === 16'h5678 || dq_in1 === 16'h1234) $fatal(1, "4/5: 縁 m + 1 で、もう出ている");
+        if (dq_in0 === 16'h5678 || dq_in1 === 16'h1234) $fatal(1, "4/5: already output at edge m + 1");
         @(posedge s_clk);                 // エッジ m + 2
         #0.5;
-        if (dq_in0 === 16'h5678) $fatal(1, "4: 縁 m + 2 で、もう出ている");
-        if (dq_in1 !== 16'h1234) $fatal(1, "5: 立ち下がりで取った値が、縁 m + 2 の後に %h", dq_in1);
+        if (dq_in0 === 16'h5678) $fatal(1, "4: already output at edge m + 2");
+        if (dq_in1 !== 16'h1234) $fatal(1, "5: value captured on the falling edge is %h after edge m + 2", dq_in1);
         @(posedge s_clk);                 // エッジ m + 3
         #0.5;
-        if (dq_in0 !== 16'h5678) $fatal(1, "4: 立ち上がりで取った値が、縁 m + 3 の後に %h", dq_in0);
+        if (dq_in0 !== 16'h5678) $fatal(1, "4: value captured on the rising edge is %h after edge m + 3", dq_in0);
         drive_en <= 1'b0;
-        $display("4 立ち上がりで取る: 合格");
-        $display("5 立ち下がりで取る: 合格");
+        $display("4 capture on rising edge: PASS");
+        $display("5 capture on falling edge: PASS");
 
         // 6: エッジの 0.5 ns 前に値を変える。遅らせない側 (構成 0) は新しい値を、1 ns 遅らせた側 (構成 2) は古い値を取り込む
         repeat (2) @(posedge s_clk);
@@ -159,12 +159,12 @@ module sdram_io_tb;
         drive_v  <= 16'h0000;
         repeat (3) @(posedge s_clk);      // エッジ m + 3
         #0.5;
-        if (dq_in0 !== 16'hF0F0) $fatal(1, "6: 遅らせない側が %h (= F0F0 を取るはず)", dq_in0);
-        if (dq_in2 !== 16'h0F0F) $fatal(1, "6: 1 ns 遅らせた側が %h (= 0F0F を取るはず)", dq_in2);
+        if (dq_in0 !== 16'hF0F0) $fatal(1, "6: undelayed side is %h (should capture F0F0)", dq_in0);
+        if (dq_in2 !== 16'h0F0F) $fatal(1, "6: 1 ns delayed side is %h (should capture 0F0F)", dq_in2);
         drive_en <= 1'b0;
-        $display("6 IODELAY: 合格");
+        $display("6 IODELAY: PASS");
 
-        $display("sdram_io_tb: 合格");
+        $display("sdram_io_tb: PASS");
         $finish;
     end
 

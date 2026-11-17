@@ -48,7 +48,7 @@ module ahb_rom_model #(
         if ($value$plusargs("rom=%s", path)) begin
             $readmemh(path, mem);
         end else begin
-            $display("ahb_rom_model: +rom=<hex> が無い");
+            $display("ahb_rom_model: +rom=<hex> is missing");
             $finish;
         end
         if (!$value$plusargs("rom_wait=%d", wait_cycles)) wait_cycles = 8'd0;

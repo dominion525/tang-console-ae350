@@ -17,7 +17,7 @@
 //   +ddr_wait=<N>       DDR のウェイトサイクル数 (既定値 0)
 //   +max_cycles=<N>     AHB_CLK でこのサイクル数のうちに結果が書き込まれなければ失敗 (既定値 2000000)
 //   +core_hp / +ahb_hp / +apb_hp / +ddr_hp / +rtc_hp   各クロックの半周期 (ps)
-//   +reset_at=<N>       AHB_CLK の N サイクル目に 1 回だけリセットをかけ、「途中のリセット」の行を出力する
+//   +reset_at=<N>       AHB_CLK の N サイクル目に 1 回だけリセットをかけ、「reset during run」の行を出力する
 //   +uart_in=<ファイル>   リセットの後、ファイルの内容を UART の RXD に 1 文字ずつ送る。次の 2 文字は送らずに
 //                       制御に使う:
 //                         `  プログラムが「READY」で始まる行を UART に出力するまで待つ (N 個目の ` は N 行目の READY を待つ)
@@ -39,7 +39,7 @@
 //                       リセットの前に DDR のモデルに書き込む (sw/stage4_test.c が mcycle と mtime の比と照合する)
 //
 // 結果:
-//   0x0000_600D         合格。UART が送信し終わってから、終了コード 0 で終わる (+uart_in の送り残しは見ない)
+//   0x0000_600D         合格 (PASS を表示する)。UART が送信し終わってから、終了コード 0 で終わる (+uart_in の送り残しは見ない)
 //   それ以外             失敗した確認の番号 (sw/stage*_test.c)。UART が送信し終わってから $fatal で終わる
 //
 // バスの形の検査 (違反すれば $fatal):
@@ -200,17 +200,17 @@ module tb_mem;
             m   = lane_mask(off[2:0], sz);
             if (r[16]) begin
                 extm_xfer(BG_BASE + {20'd0, off}, 1'b1, sz, d, rd, err);
-                if (err) $fatal(1, "EXTM 背景: 書き込みがエラー応答 (0x%08x)", BG_BASE + {20'd0, off});
+                if (err) $fatal(1, "EXTM background: write got an error response (0x%08x)", BG_BASE + {20'd0, off});
                 for (k = 0; k < 8; k = k + 1) begin
                     if (m[k*8]) bg_shadow[bidx + k] = d[k*8 +: 8];
                 end
                 extm_bg_writes = extm_bg_writes + 1;
             end else begin
                 extm_xfer(BG_BASE + {20'd0, off}, 1'b0, sz, 64'd0, rd, err);
-                if (err) $fatal(1, "EXTM 背景: 読み出しがエラー応答 (0x%08x)", BG_BASE + {20'd0, off});
+                if (err) $fatal(1, "EXTM background: read got an error response (0x%08x)", BG_BASE + {20'd0, off});
                 for (k = 0; k < 8; k = k + 1) begin
                     if (m[k*8] && rd[k*8 +: 8] !== bg_shadow[bidx + k]) begin
-                        $fatal(1, "EXTM 背景: 0x%08x の値 %h が写し %h と違う", BG_BASE + {20'd0, off[11:3], 3'd0} + k,
+                        $fatal(1, "EXTM background: value %h at 0x%08x differs from the copy %h", BG_BASE + {20'd0, off[11:3], 3'd0} + k,
                                rd[k*8 +: 8], bg_shadow[bidx + k]);
                     end
                 end
@@ -252,7 +252,7 @@ module tb_mem;
         extm_fd = 0;
         if ($value$plusargs("extm_cmd=%s", extm_path)) begin
             extm_fd = $fopen(extm_path, "r");
-            if (extm_fd == 0) $fatal(1, "+extm_cmd のファイルを開けない");
+            if (extm_fd == 0) $fatal(1, "cannot open the +extm_cmd file");
         end
         wait (rst_n);
         repeat (8) @(posedge ahb_clk);
@@ -270,22 +270,22 @@ module tb_mem;
                 end else if (tok == "w" || tok == "we") begin
                     extm_n = $fscanf(extm_fd, "%h %d %h", ca, csz, cd);
                     extm_xfer(ca, 1'b1, csz, cd, crd, cerr);
-                    if (cerr != (tok == "we")) $fatal(1, "EXTM: %0s 0x%08x の応答が違う (エラー %b)", tok, ca, cerr);
+                    if (cerr != (tok == "we")) $fatal(1, "EXTM: unexpected response to %0s 0x%08x (error %b)", tok, ca, cerr);
                     extm_cmds = extm_cmds + 1;
                 end else if (tok == "r") begin
                     extm_n = $fscanf(extm_fd, "%h %d %h", ca, csz, cd);
                     extm_xfer(ca, 1'b0, csz, 64'd0, crd, cerr);
                     cm = lane_mask(ca[2:0], csz);
-                    if (cerr) $fatal(1, "EXTM: r 0x%08x がエラー応答", ca);
-                    if ((crd & cm) !== (cd & cm)) $fatal(1, "EXTM: r 0x%08x の値 %h が期待 %h と違う", ca, crd & cm, cd & cm);
+                    if (cerr) $fatal(1, "EXTM: r 0x%08x got an error response", ca);
+                    if ((crd & cm) !== (cd & cm)) $fatal(1, "EXTM: r 0x%08x returned %h, expected %h", ca, crd & cm, cd & cm);
                     extm_cmds = extm_cmds + 1;
                 end else if (tok == "re") begin
                     extm_n = $fscanf(extm_fd, "%h %d", ca, csz);
                     extm_xfer(ca, 1'b0, csz, 64'd0, crd, cerr);
-                    if (!cerr) $fatal(1, "EXTM: re 0x%08x がエラー応答でない", ca);
+                    if (!cerr) $fatal(1, "EXTM: re 0x%08x did not get an error response", ca);
                     extm_cmds = extm_cmds + 1;
                 end else begin
-                    $fatal(1, "EXTM: 知らない命令 %0s", tok);
+                    $fatal(1, "EXTM: unknown command %0s", tok);
                 end
                 if (extm_bg) extm_bg_op();
                 extm_n = $fscanf(extm_fd, "%s", tok);
@@ -531,7 +531,7 @@ module tb_mem;
         // DDR のモデルの内容はそのまま残る (本物の DRAM と同じ)
         if ($value$plusargs("reset_at=%d", reset_at)) begin
             wait (cycles == reset_at);
-            $display("途中のリセット (AHB_CLK %0d サイクル)", reset_at);
+            $display("reset during run (AHB_CLK cycle %0d)", reset_at);
             rst_n = 1'b0;
             repeat (4) @(posedge ahb_clk);
             rst_n = 1'b1;
@@ -630,10 +630,10 @@ module tb_mem;
         in_bad_stop = 1'b0;
         if ($value$plusargs("uart_in=%s", in_path)) begin
             in_fd = $fopen(in_path, "rb");
-            if (in_fd == 0) $fatal(1, "+uart_in のファイルを開けない");
+            if (in_fd == 0) $fatal(1, "cannot open the +uart_in file");
             in_c = $fgetc(in_fd);
             while (in_c != -1) begin
-                if (in_len >= IN_MAX) $fatal(1, "+uart_in のファイルが %0d byte を超えた", IN_MAX);
+                if (in_len >= IN_MAX) $fatal(1, "the +uart_in file exceeds %0d bytes", IN_MAX);
                 in_buf[in_len] = in_c[7:0];
                 in_len         = in_len + 1;
                 in_c           = $fgetc(in_fd);
@@ -672,9 +672,9 @@ module tb_mem;
     initial begin
         lines_done = 0;
         if ($value$plusargs("uart_script=%s", sc_path)) begin
-            if ($test$plusargs("uart_in")) $fatal(1, "+uart_script と +uart_in は一緒に使えない");
+            if ($test$plusargs("uart_in")) $fatal(1, "+uart_script and +uart_in cannot be used together");
             sc_fd = $fopen(sc_path, "r");
-            if (sc_fd == 0) $fatal(1, "+uart_script のファイルを開けない");
+            if (sc_fd == 0) $fatal(1, "cannot open the +uart_script file");
             sc_pos = 0;
             sc_gap = 0;
             wait (rst_n);
@@ -700,7 +700,7 @@ module tb_mem;
                     end
                     8'h46: begin   // F
                         sc_ffd = $fopen(sc_arg, "rb");
-                        if (sc_ffd == 0) $fatal(1, "+uart_script の F のファイルを開けない");
+                        if (sc_ffd == 0) $fatal(1, "cannot open the file for F in +uart_script");
                         sc_c = $fgetc(sc_ffd);
                         while (sc_c != -1) begin
                             send_byte(sc_c[7:0], 1'b0);
@@ -710,11 +710,11 @@ module tb_mem;
                         $fclose(sc_ffd);
                     end
                     8'h57: begin   // W
-                        if (sc_len > HIST_W) $fatal(1, "+uart_script の W の文字が %0d 文字を超えた", HIST_W);
+                        if (sc_len > HIST_W) $fatal(1, "the W string in +uart_script exceeds %0d characters", HIST_W);
                         sc_hit = 0;
                         while (sc_hit == 0) begin
                             wait (lines_done > sc_pos);
-                            if (sc_pos >= HIST_LINES) $fatal(1, "UART の行が %0d 行を超えた", HIST_LINES);
+                            if (sc_pos >= HIST_LINES) $fatal(1, "UART output exceeds %0d lines", HIST_LINES);
                             sc_hit = 1;
                             for (sc_k = 0; sc_k < sc_len; sc_k = sc_k + 1)
                                 if (hist[sc_pos][8 * sc_k +: 8] != sc_ch(sc_k)) sc_hit = 0;
@@ -728,14 +728,14 @@ module tb_mem;
                         end
                     end
                     8'h47: begin   // G
-                        if ($sscanf(sc_arg, "%d", sc_gap) != 1) $fatal(1, "+uart_script の G の数が読めない");
+                        if ($sscanf(sc_arg, "%d", sc_gap) != 1) $fatal(1, "cannot parse the number for G in +uart_script");
                     end
                     8'h50: begin   // P
-                        if ($sscanf(sc_arg, "%d", sc_cyc) != 1) $fatal(1, "+uart_script の P の数が読めない");
+                        if ($sscanf(sc_arg, "%d", sc_cyc) != 1) $fatal(1, "cannot parse the number for P in +uart_script");
                         repeat (sc_cyc) @(posedge apb_clk);
                     end
                     8'h23: ;       // # (何もしない)
-                    default: $fatal(1, "+uart_script の手順 %c が分からない", sc_cmd);
+                    default: $fatal(1, "unknown command %c in +uart_script", sc_cmd);
                 endcase
                 sc_n = $fgets(sc_line, sc_fd);
             end
@@ -772,10 +772,10 @@ module tb_mem;
             if (rom_accept) rom_reads <= rom_reads + 1;
             rom_dph <= rom_accept || (rom_dph && !rom_hready);
             if (rom_hwrite) begin
-                $fatal(1, "ROM_HWRITE が 1 になった (サイクル %0d)", cycles);
+                $fatal(1, "ROM_HWRITE became 1 (cycle %0d)", cycles);
             end
             if (cycles >= max_cycles) begin
-                $fatal(1, "%0d サイクルで終わらなかった", max_cycles);
+                $fatal(1, "did not finish within %0d cycles", max_cycles);
             end
         end
     end
@@ -808,11 +808,11 @@ module tb_mem;
             ddr_dph <= ddr_accept || (ddr_dph && !ddr_hready);
             // CPU のスタックが、EXTM_H* の背景の転送の範囲 (0x0000_A000〜0x0000_AFFF) まで伸びていない
             if (extm_bg && ddr_accept && ddr_hwrite && ddr_haddr[31:12] == 20'h0000A && !u_top.u_ae350.u_fabric.b_extm) begin
-                $fatal(1, "CPU が EXTM_H* の背景の範囲 (0x%08x) に書いた (= スタックがこの範囲まで伸びた。例外が重なったときにも起きる)", ddr_haddr);
+                $fatal(1, "CPU wrote to the EXTM_H* background range (0x%08x) (the stack grew into this range; nested exceptions can also cause this)", ddr_haddr);
             end
             if (ddr_hready) begin
                 if (result_dph) begin
-                    $display("結果 0x%08x (AHB_CLK %0d サイクル、ROM の読み出し %0d 回、DDR の読み出し %0d 回、DDR の書き込み %0d 回、APB の読み出し %0d 回、APB の書き込み %0d 回)",
+                    $display("result 0x%08x (AHB_CLK %0d cycles, ROM reads %0d, DDR reads %0d, DDR writes %0d, APB reads %0d, APB writes %0d)",
                              ddr_hwdata[31:0], cycles, rom_reads, ddr_reads, ddr_writes, apb_reads, apb_writes);
                     finished    <= 1'b1;
                     result_code <= ddr_hwdata[31:0];
@@ -850,20 +850,20 @@ module tb_mem;
             end
 
             if (apb_penable && !apb_psel) begin
-                $fatal(1, "APB: PSEL = 0 なのに PENABLE = 1");
+                $fatal(1, "APB: PENABLE = 1 while PSEL = 0");
             end
             if (apb_access && !(apb_prev_setup || apb_prev_wait)) begin
-                $fatal(1, "APB: SETUP を経ずに ACCESS に入った");
+                $fatal(1, "APB: entered ACCESS without SETUP");
             end
             if (apb_prev_setup && !apb_access) begin
-                $fatal(1, "APB: SETUP の次が ACCESS でない");
+                $fatal(1, "APB: SETUP was not followed by ACCESS");
             end
             if (apb_prev_wait && !apb_access) begin
-                $fatal(1, "APB: PREADY を待っている ACCESS を途中でやめた");
+                $fatal(1, "APB: ACCESS was abandoned while waiting for PREADY");
             end
             if (apb_access && (apb_paddr != apb_prev_paddr || apb_pwrite != apb_prev_pwrite ||
                                (apb_pwrite && apb_pwdata != apb_prev_pwdata))) begin
-                $fatal(1, "APB: ACCESS の間に PADDR / PWRITE / PWDATA が変わった");
+                $fatal(1, "APB: PADDR, PWRITE, or PWDATA changed during ACCESS");
             end
             apb_prev_setup  <= apb_setup;
             apb_prev_wait   <= apb_access && !apb_pready;
@@ -874,14 +874,14 @@ module tb_mem;
             // 結果が書き込まれた後、UART が送信し終わり、受信側も 1 文字を受信し終わってから止める
             // (失敗したときも、プログラムが直前に出力した行を残すため)
             if (finished && !uart_pending && rx_state == RX_IDLE) begin
-                if (rx_len != 0) $display("UART: (改行で終わらなかった %0d 文字は表示していない)", rx_len);
+                if (rx_len != 0) $display("UART: (%0d characters without a trailing newline not shown)", rx_len);
                 if (result_code == RESULT_PASS) begin
                     if (extm_cmds != 0 || extm_bg)
-                        $display("EXTM: 手順 %0d 件、背景 読み %0d 回 / 書き %0d 回", extm_cmds, extm_bg_reads, extm_bg_writes);
-                    $display("合格");
+                        $display("EXTM: %0d commands, background reads %0d / writes %0d", extm_cmds, extm_bg_reads, extm_bg_writes);
+                    $display("PASS");
                     $finish;
                 end else begin
-                    $fatal(1, "失敗: 確認 %0d", result_code);
+                    $fatal(1, "FAIL: check %0d", result_code);
                 end
             end
         end
@@ -898,25 +898,25 @@ module tb_mem;
 
     always @(posedge ahb_clk) begin
         if (rst_n) begin
-            if ((^rom_htrans) === 1'bx) $fatal(1, "不定値: ROM_HTRANS");
-            if (rom_htrans[1] && (^rom_haddr) === 1'bx) $fatal(1, "不定値: ROM_HADDR");
-            if ((^{exts_htrans, u_top.exts_hsel}) === 1'bx) $fatal(1, "不定値: EXTS_HTRANS / HSEL");
-            if (exts_htrans[1] && (^{u_top.exts_haddr, u_top.exts_hwrite, u_top.exts_hsize}) === 1'bx) $fatal(1, "不定値: EXTS_HADDR / HWRITE / HSIZE");
-            if ((^{u_top.u_ae350.mtip, u_top.u_ae350.meip}) === 1'bx) $fatal(1, "不定値: PLMT / PLIC の割り込み");
+            if ((^rom_htrans) === 1'bx) $fatal(1, "unknown value: ROM_HTRANS");
+            if (rom_htrans[1] && (^rom_haddr) === 1'bx) $fatal(1, "unknown value: ROM_HADDR");
+            if ((^{exts_htrans, u_top.exts_hsel}) === 1'bx) $fatal(1, "unknown value: EXTS_HTRANS / HSEL");
+            if (exts_htrans[1] && (^{u_top.exts_haddr, u_top.exts_hwrite, u_top.exts_hsize}) === 1'bx) $fatal(1, "unknown value: EXTS_HADDR / HWRITE / HSIZE");
+            if ((^{u_top.u_ae350.mtip, u_top.u_ae350.meip}) === 1'bx) $fatal(1, "unknown value: PLMT / PLIC interrupt");
         end
     end
 
     always @(posedge ddr_clk) begin
         if (rst_n) begin
-            if ((^ddr_htrans) === 1'bx) $fatal(1, "不定値: DDR_HTRANS");
-            if (ddr_htrans[1] && (^{ddr_haddr, ddr_hwrite, ddr_hsize}) === 1'bx) $fatal(1, "不定値: DDR_HADDR / HWRITE / HSIZE");
+            if ((^ddr_htrans) === 1'bx) $fatal(1, "unknown value: DDR_HTRANS");
+            if (ddr_htrans[1] && (^{ddr_haddr, ddr_hwrite, ddr_hsize}) === 1'bx) $fatal(1, "unknown value: DDR_HADDR / HWRITE / HSIZE");
         end
     end
 
     always @(posedge apb_clk) begin
         if (rst_n) begin
-            if ((^{apb_psel, uart_tx}) === 1'bx) $fatal(1, "不定値: APB_PSEL / UART の TXD");
-            if (apb_psel && (^{apb_paddr, apb_pwrite, apb_penable}) === 1'bx) $fatal(1, "不定値: APB_PADDR / PWRITE / PENABLE");
+            if ((^{apb_psel, uart_tx}) === 1'bx) $fatal(1, "unknown value: APB_PSEL / UART TXD");
+            if (apb_psel && (^{apb_paddr, apb_pwrite, apb_penable}) === 1'bx) $fatal(1, "unknown value: APB_PADDR / PWRITE / PENABLE");
         end
     end
 
@@ -927,7 +927,7 @@ module tb_mem;
         if (!rst_n) begin
             // 何もしない
         end else if ({2'b0, rom_busy} + {2'b0, ddr_busy} + {2'b0, apb_psel} + {2'b0, exts_busy} > 3'd1) begin
-            $fatal(1, "ROM_H* / DDR_H* / APB_P* / EXTS_H* のうち 2 つ以上が同時に転送の途中にある (ROM %b、DDR %b、APB %b、EXTS %b)",
+            $fatal(1, "two or more of ROM_H*, DDR_H*, APB_P*, and EXTS_H* are mid-transfer at the same time (ROM %b, DDR %b, APB %b, EXTS %b)",
                    rom_busy, ddr_busy, apb_psel, exts_busy);
         end
     end
@@ -956,7 +956,7 @@ module tb_mem;
                     if (rx_count != 16'd0) begin
                         rx_count <= rx_count - 16'd1;
                     end else if (uart_tx) begin
-                        $fatal(1, "UART: スタートビットが途中で 1 に戻った");
+                        $fatal(1, "UART: start bit returned to 1 midway");
                     end else begin
                         rx_state <= RX_DATA;
                         rx_count <= UART_BIT_LAST;
@@ -977,7 +977,7 @@ module tb_mem;
                     if (rx_count != 16'd0) begin
                         rx_count <= rx_count - 16'd1;
                     end else if (!uart_tx) begin
-                        $fatal(1, "UART: ストップビットが 0");
+                        $fatal(1, "UART: stop bit is 0");
                     end else begin
                         rx_state <= RX_IDLE;
                         if (rx_shift == 8'h0A) begin
@@ -990,7 +990,7 @@ module tb_mem;
                             rx_line[rx_len] <= rx_shift;
                             rx_len          <= rx_len + 1;
                         end else begin
-                            $fatal(1, "UART: 1 行が %0d 文字を超えた", RX_LINE_MAX);
+                            $fatal(1, "UART: a line exceeds %0d characters", RX_LINE_MAX);
                         end
                     end
                 end

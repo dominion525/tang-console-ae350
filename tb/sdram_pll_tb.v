@@ -31,12 +31,12 @@ module sdram_pll_tb;
         #200000;
         pll_rst = 1'b0;
         wait (lock);
-        $display("1 lock: 合格 (%0t)", $time);
+        $display("1 lock: PASS (%0t)", $time);
         repeat (20) @(posedge s_clk);
         @(negedge s_clk);
-        if (period != 6000 || high != 3000) $fatal(1, "2: 周期 %0d ps、High %0d ps", period, high);
-        $display("2 周期 6.0 ns、High 3.0 ns: 合格");
-        $display("sdram_pll_tb: 合格");
+        if (period != 6000 || high != 3000) $fatal(1, "2: period %0d ps, high %0d ps", period, high);
+        $display("2 period 6.0 ns, high 3.0 ns: PASS");
+        $display("sdram_pll_tb: PASS");
         $finish;
     end
 

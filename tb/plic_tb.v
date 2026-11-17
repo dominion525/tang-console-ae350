@@ -104,7 +104,7 @@ module plic_tb;
 
     task expect32(input [31:0] got, input [31:0] want, input integer no);
         begin
-            if (got !== want) $fatal(1, "確認 %0d: 0x%08x を期待したが 0x%08x", no, want, got);
+            if (got !== want) $fatal(1, "check %0d: expected 0x%08x, got 0x%08x", no, want, got);
         end
     endtask
 
@@ -164,7 +164,7 @@ module plic_tb;
         wr(1, A_THRESHOLD, 32'd3);
         src[7] = 1'b1;
         repeat (2) @(posedge clk); #1;
-        if (meip_nothr) $fatal(1, "確認 12: 優先度 1 は しきい値 3 では通知されないはず");
+        if (meip_nothr) $fatal(1, "check 12: priority 1 should not be notified at threshold 3");
         rd(1, A_CLAIM, v);              expect32(v, 32'd7, 13);          // 通知はないが、claim は番号を返す
         src[7] = 1'b0;
         wr(1, A_CLAIM, 32'd7);
@@ -196,7 +196,7 @@ module plic_tb;
         wr(0, A_CLAIM, 32'd6);
         wr(0, A_CLAIM, 32'd7);
 
-        $display("plic_tb: 合格");
+        $display("plic_tb: PASS");
         $finish;
     end
 
