@@ -10,9 +10,9 @@
 int main(void)
 {
     printf("hello from SDRAM (main 0x%08lx)\n", (unsigned long)(uintptr_t)main);
-    printf("READY 1 行を送ってください\n");
+    printf("READY: send one line\n");
     char buf[64];
-    if (fgets(buf, sizeof buf, stdin) != NULL) printf("受けた行: %s", buf);
-    else printf("受けた行: (無い)\n");
+    if (fgets(buf, sizeof buf, stdin) != NULL) printf("received: %s", buf);
+    else printf("received: (none)\n");
     return 0x600D;
 }

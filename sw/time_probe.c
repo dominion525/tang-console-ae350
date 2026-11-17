@@ -42,7 +42,7 @@ static void cache_enable(void)
 
 static void measure(const char *label)
 {
-    printf("-- %s (mcache_ctl %08lx, 例外 %lu)\n", label, (unsigned long)rd_csr_7ca(), (unsigned long)trap_cause);
+    printf("-- %s (mcache_ctl %08lx, exception %lu)\n", label, (unsigned long)rd_csr_7ca(), (unsigned long)trap_cause);
     trap_cause = 0;
     for (int k = 0; k < 3; k++) {
         uint32_t c0 = rd_mcycle();
@@ -85,9 +85,9 @@ static uint32_t read_after_uart(int n, int wait_idle)
 
 int main(void)
 {
-    measure("キャッシュを入れる前");
+    measure("before enabling the cache");
     cache_enable();
-    measure("キャッシュを入れた後");
+    measure("after enabling the cache");
 
     /* 測っている間は printf を使わない (結果は配列に保持し、後で出力する) */
     static const int ns[] = {0, 1, 2, 3, 4, 8};
@@ -102,11 +102,11 @@ int main(void)
         }
         idle[k] = read_after_uart(8, 1);
     }
-    printf("\n-- 直前に UART へ n 文字書いてから mtime を読むのにかかった mcycle (= 3 回)\n");
+    printf("\n-- mcycle to read mtime right after writing n characters to the UART (3 runs)\n");
     for (int j = 0; j < 6; j++) {
         printf("n=%d  %8lu %8lu %8lu\n", ns[j], (unsigned long)r[j][0], (unsigned long)r[j][1], (unsigned long)r[j][2]);
     }
-    printf("n=8 で送り終わるのを待ってから  %8lu %8lu %8lu\n", (unsigned long)idle[0], (unsigned long)idle[1],
+    printf("n=8, after waiting for TX idle  %8lu %8lu %8lu\n", (unsigned long)idle[0], (unsigned long)idle[1],
            (unsigned long)idle[2]);
     return 0x600D;
 }

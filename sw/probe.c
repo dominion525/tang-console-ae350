@@ -2,10 +2,10 @@
  * 実機の値を読むプログラム (board/tang_console/ の構成で動かす)。
  *
  * Hazard3 版を作るときに資料だけでは決めきれなかった値と、本物の AE350 の仕様を読み出し、UART に 1 行ずつ出力する。
- * 読むと例外になるもの (存在しない CSR、エラー応答を返すアドレス) は、mcause を「例外」として出力する。
+ * 読むと例外になるもの (存在しない CSR、エラー応答を返すアドレス) は、mcause を「exception」として出力する。
  * 出力し終わった後、UART に何か 1 文字送ると、もう一度出力する。
  *
- * 行の形式: <名前> <値 (16 進 8 桁)>   か   <名前> 例外 <mcause>
+ * 行の形式: <名前> <値 (16 進 8 桁)>   か   <名前> exception <mcause>
  *
  * Hazard3 版でも実行できる (make run-probe)。そのときは最後に DDR の 0x0000_0000 に 0x600D を書き込み、
  * テストベンチを止める (実機の DDR_H* の先には何もないので、書き込んでも何も起きない)。
@@ -29,7 +29,7 @@ static void put_line(const char *name, uint32_t v)
 {
     put_str(name);
     if (trap_cause != 0) {
-        put_str(" 例外 ");
+        put_str(" exception ");
         put_hex(trap_cause);
     } else {
         put_str(" ");
@@ -123,7 +123,7 @@ static void put_num(const char *name, uint32_t v) { trap_cause = 0; put_line(nam
 /* 割り込みは CPU に通さない (mie は 0 のまま)。PLIC のレジスタだけで動作を調べる */
 static void plic_behavior(void)
 {
-    put_str("-- PLIC の挙動\r\n");
+    put_str("-- PLIC behavior\r\n");
     trap_cause = 0;
     w32(PLIC_EN0, 0); w32(PLIC_EN1, 0); w32(PLIC_TH0, 0); w32(PLIC_TH1, 0);
     for (uint32_t id = 1; id < 32; id = id + 1) w32(PLIC_PRIO(id), 1);
@@ -135,7 +135,7 @@ static void plic_behavior(void)
         if (c == 0) break;
         w32(PLIC_CL0, c);
     }
-    put_num("空にした後の pending", r32(PLIC_PEND));
+    put_num("pending after clearing", r32(PLIC_PEND));
 
     /* 1. GP_INT の 16 本がどのソースか (1 にして pending を読み、0 に戻してから claim と complete で片付ける) */
     uint32_t gp0_src = 0;
@@ -152,21 +152,21 @@ static void plic_behavior(void)
         put_num(" pending", pend);
         put_num("    claim", id);
     }
-    put_num("片付けた後の pending", r32(PLIC_PEND));
+    put_num("pending after cleanup", r32(PLIC_PEND));
 
     /* 2. レベルの再通知: GP0 を 1 にしたまま claim と complete を行い、また pending になるか */
     w32(GPINT, 1);
     settle();
     uint32_t id = r32(PLIC_CL0);
-    put_num("gp0 を立てたまま claim", id);
-    put_num("  claim の直後の pending", r32(PLIC_PEND));
+    put_num("claim with gp0 held high", id);
+    put_num("  pending right after claim", r32(PLIC_PEND));
     w32(PLIC_CL0, id);
     settle();
-    put_num("  complete の後の pending", r32(PLIC_PEND));
+    put_num("  pending after complete", r32(PLIC_PEND));
     w32(GPINT, 0);
     id = r32(PLIC_CL0);
     w32(PLIC_CL0, id);
-    put_num("  片付けの claim", id);
+    put_num("  cleanup claim", id);
 
     /* 3. enable を 0 にしてから complete したとき、有効か (有効なら、1 のままの GP0 がまた pending になる) */
     w32(GPINT, 1);
@@ -176,47 +176,47 @@ static void plic_behavior(void)
     w32(PLIC_CL0, id);
     w32(PLIC_EN0, 0xFFFFFFFEu);
     settle();
-    put_num("enable を落として complete した後の pending", r32(PLIC_PEND));
+    put_num("pending after complete with enable cleared", r32(PLIC_PEND));
     w32(PLIC_CL0, id);
     settle();
-    put_num("enable を戻して complete した後の pending", r32(PLIC_PEND));
+    put_num("pending after complete with enable restored", r32(PLIC_PEND));
     w32(GPINT, 0);
     id = r32(PLIC_CL0);
     w32(PLIC_CL0, id);
 
     /* 4. pending に書き込んで 1 にする (ソース 5) */
     w32(PLIC_PEND, 1u << 5);
-    put_num("pending に bit 5 を書いた後", r32(PLIC_PEND));
+    put_num("after writing bit 5 to pending", r32(PLIC_PEND));
     id = r32(PLIC_CL0);
     put_num("  claim", id);
     w32(PLIC_CL0, id);
-    put_num("  complete の後の pending", r32(PLIC_PEND));
+    put_num("  pending after complete", r32(PLIC_PEND));
 
     /* 5. claim はしきい値で絞られるか (priority 1、threshold 2) */
     w32(PLIC_TH0, 2);
     w32(PLIC_PEND, 1u << 5);
     id = r32(PLIC_CL0);
-    put_num("threshold 2 で priority 1 を claim", id);
+    put_num("claim priority 1 at threshold 2", id);
     if (id != 0) w32(PLIC_CL0, id);
     w32(PLIC_TH0, 0);
     id = r32(PLIC_CL0);
-    put_num("  threshold 0 に戻して claim", id);
+    put_num("  claim after restoring threshold 0", id);
     if (id != 0) w32(PLIC_CL0, id);
 
     /* 6. PREEMPT: priority 2 のソースを claim したときの threshold と PPS、complete の後 */
     w32(PLIC, 1);
-    put_num("feature に 1 を書いた後", r32(PLIC));
+    put_num("after writing 1 to feature", r32(PLIC));
     w32(PLIC_PRIO(5), 2);
     w32(PLIC_PEND, 1u << 5);
     id = r32(PLIC_CL0);
-    put_num("PREEMPT で claim", id);
+    put_num("claim with PREEMPT", id);
     put_num("  threshold", r32(PLIC_TH0));
     put_num("  PPS", r32(PLIC_PPS0));
     w32(PLIC_CL0, id);
-    put_num("  complete の後の threshold", r32(PLIC_TH0));
-    put_num("  complete の後の PPS", r32(PLIC_PPS0));
+    put_num("  threshold after complete", r32(PLIC_TH0));
+    put_num("  PPS after complete", r32(PLIC_PPS0));
     w32(PLIC_CL0, 5);
-    put_num("  PPS が空で complete した後の threshold", r32(PLIC_TH0));
+    put_num("  threshold after complete with empty PPS", r32(PLIC_TH0));
     w32(PLIC, 0);
     w32(PLIC_PRIO(5), 1);
     w32(PLIC_TH0, 0);
@@ -225,15 +225,15 @@ static void plic_behavior(void)
     w32(PLIC_EN0, 0);
     w32(PLIC_EN1, 1u << 5);
     w32(PLIC_PEND, 1u << 5);
-    put_num("ターゲット 0 の claim (= enable 0)", r32(PLIC_CL0));
+    put_num("target 0 claim (enable 0)", r32(PLIC_CL0));
     id = r32(PLIC_CL1);
-    put_num("ターゲット 1 の claim", id);
+    put_num("target 1 claim", id);
     w32(PLIC_CL1, id);
-    put_num("  complete の後の pending", r32(PLIC_PEND));
+    put_num("  pending after complete", r32(PLIC_PEND));
 w32(PLIC_EN1, 0);
 
 /* 8. PPS の幅 (ターゲット 0 の 8 ワードと、ターゲット 1 の先頭) */
-put_str("-- PLIC の PPS とターゲット 1\r\n");
+put_str("-- PLIC PPS and target 1\r\n");
 for (uint32_t k = 0; k < 8; k = k + 1) {
     put_str("pps t0 word");
     uart_putc((char)("0123456789abcdef"[k]));
@@ -244,27 +244,27 @@ wb_line("pps t1 0x201400", PLIC + 0x201400u);
 /* 9. ターゲット 1 の通知は mip のどこに出るか (ターゲット 0 と比べる。割り込みは通さない) */
 w32(PLIC_PRIO(5), 1);
 w32(PLIC_EN0, 0); w32(PLIC_EN1, 0); w32(PLIC_TH0, 0); w32(PLIC_TH1, 0);
-put_num("mip (何も立てない)", READ_CSR(0x344));
+put_num("mip (nothing pending)", READ_CSR(0x344));
 w32(PLIC_EN0, 1u << 5);
 w32(PLIC_PEND, 1u << 5);
 settle();
-put_num("mip (ターゲット 0 に通知)", READ_CSR(0x344));
+put_num("mip (notify target 0)", READ_CSR(0x344));
 w32(PLIC_EN0, 0);
 w32(PLIC_EN1, 1u << 5);
 settle();
-put_num("mip (ターゲット 1 に通知)", READ_CSR(0x344));
+put_num("mip (notify target 1)", READ_CSR(0x344));
 
 /* 10. ターゲット 1 の PREEMPT (feature はターゲットで共通) */
 w32(PLIC, 1);
 w32(PLIC_PRIO(5), 2);
 id = r32(PLIC_CL1);
-put_num("ターゲット 1 で PREEMPT の claim", id);
+put_num("target 1 claim with PREEMPT", id);
 put_num("  threshold t1", r32(PLIC_TH1));
 put_num("  pps t1", r32(PLIC + 0x201400u));
 put_num("  threshold t0", r32(PLIC_TH0));
 w32(PLIC_CL1, id);
-put_num("  complete の後の threshold t1", r32(PLIC_TH1));
-put_num("  complete の後の pps t1", r32(PLIC + 0x201400u));
+put_num("  threshold t1 after complete", r32(PLIC_TH1));
+put_num("  pps t1 after complete", r32(PLIC + 0x201400u));
 w32(PLIC, 0);
 w32(PLIC_PRIO(5), 1);
 w32(PLIC_TH1, 0);
@@ -293,8 +293,8 @@ static void sdram_stat(uint32_t *v)
 static void sdram_stat_lines(const char *what, const uint32_t *a, const uint32_t *b)
 {
     static const char *const names[SDRAM_STAT_N] = {
-        "読みの転送の数", "読みで待たせた DDR_CLK", "書きの転送の数", "書きで待たせた DDR_CLK",
-        "行の読みの SDRAM のクロック", "書きの SDRAM のクロック", "SDRAM に書いた byte の数",
+        "read transfers", "DDR_CLK stalled on reads", "write transfers", "DDR_CLK stalled on writes",
+        "SDRAM clocks for line reads", "SDRAM clocks for writes", "bytes written to SDRAM",
     };
     for (uint32_t k = 0; k < SDRAM_STAT_N; k = k + 1) {
         put_str(what);
@@ -314,18 +314,18 @@ static void sdram_check(void)
      * 書き込むのはこの確認の中だけなので、無効にする前にキャッシュからライトバックするものはない
      */
     CLEAR_CSR(0x7CA, MCACHE_DC_EN);
-    put_str("-- DDR_H* の先の SDRAM (= 0x0000_0000、32 MB)\r\n");
+    put_str("-- SDRAM behind DDR_H* (0x0000_0000, 32 MB)\r\n");
     trap_cause = 0;
     store_word_4byte(0x00001000u, 0x11223344u);
     store_word_4byte(0x00001004u, 0x55667788u);
     *(volatile uint16_t *)0x00001002u = 0xBEEF;
     *(volatile uint8_t *)0x00001005u = 0xAB;
     store_word_4byte(0x01FFFFFCu, 0xCAFEF00Du);
-    put_line("書き込みの例外", 0);
-    mem_line("0x00001000 (= 0x11223344 の上位 2 byte に 0xbeef)", 0x00001000u);
-    mem_line("0x00001004 (= 0x55667788 の byte 1 に 0xab)", 0x00001004u);
-    mem_line("0x01fffffc (= 32 MB の一番上、0xcafef00d)", 0x01FFFFFCu);
-    mem_line("0x02000000 (= 32 MB の外。例外 5 になる)", 0x02000000u);
+    put_line("exception on write", 0);
+    mem_line("0x00001000 (0x11223344 with upper 2 bytes 0xbeef)", 0x00001000u);
+    mem_line("0x00001004 (0x55667788 with byte 1 0xab)", 0x00001004u);
+    mem_line("0x01fffffc (top of 32 MB, 0xcafef00d)", 0x01FFFFFCu);
+    mem_line("0x02000000 (outside 32 MB, raises exception 5)", 0x02000000u);
 
     /*
      * 1 MB 先に、アドレスから決まる値とその反転を書き込んで読み返す (一致しないワードの数を出す)。実機では 64 KB、
@@ -358,12 +358,12 @@ static void sdram_check(void)
         }
     }
     trap_cause = 0;
-    put_line("照合した語の数 (= 2 通り)", words * 2u);
-    put_line("照合で違った語の数", bad);
-    put_line("32 bit の書き 1024 回の mcycle", c_wr);
-    put_line("32 bit の読み 1024 回の mcycle (= 照合を含む)", c_rd);
-    sdram_stat_lines("書き 1024 回の", s_w0, s_w1);
-    sdram_stat_lines("読み 1024 回の", s_r0, s_r1);
+    put_line("words checked (2 patterns)", words * 2u);
+    put_line("mismatched words", bad);
+    put_line("mcycle for 1024 32-bit writes", c_wr);
+    put_line("mcycle for 1024 32-bit reads (including check)", c_rd);
+    sdram_stat_lines("1024 writes:", s_w0, s_w1);
+    sdram_stat_lines("1024 reads:", s_r0, s_r1);
     SET_CSR(0x7CA, MCACHE_DC_EN);
     trap_cause = 0;
 }
@@ -399,7 +399,7 @@ static void report(void)
     mem_line("plic 0x002000 enable", 0xE4002000u);
     mem_line("plic 0x200000 threshold", 0xE4200000u);
 
-put_str("-- PLIC の書けるビット (= 全部 1 を書いて読み返し、元に戻す)\r\n");
+put_str("-- PLIC writable bits (write all ones, read back, restore)\r\n");
 wb_line("priority1", 0xE4000004u);
 wb_line("priority31", 0xE400007Cu);
 wb_line("enable t0 0x002000", 0xE4002000u);
@@ -435,54 +435,54 @@ wb_line("pending 0x001000", 0xE4001000u);
         uint32_t t1  = read_mem(0xE6000000u);
         uint32_t c1b = READ_CSR(0xB00);
         trap_cause = 0;
-        put_str(pass == 0 ? "(1 回目)\r\n" : "(2 回目)\r\n");
-        put_line("mcycle の差", c1 - c0);
-        put_line("mtime の差", t1 - t0);
-        put_line("始まりの mtime を読む間の mcycle", c0b - c0);
-        put_line("終わりの mtime を読む間の mcycle", c1b - c1);
+        put_str(pass == 0 ? "(1st run)\r\n" : "(2nd run)\r\n");
+        put_line("mcycle delta", c1 - c0);
+        put_line("mtime delta", t1 - t0);
+        put_line("mcycle while reading mtime at start", c0b - c0);
+        put_line("mcycle while reading mtime at end", c1b - c1);
     }
 
-    put_str("-- AE350 の中の APB\r\n");
+    put_str("-- APB inside AE350\r\n");
     mem_line("smu 0x00", 0xF0100000u);
     mem_line("smu 0x04", 0xF0100004u);
     mem_line("uart1 0x00", 0xF0200000u);
     mem_line("uart2 0x00", 0xF0300000u);
     mem_line("pit 0x00", 0xF0400000u);
 
-    put_str("-- APB_P* の PADDR\r\n");
+    put_str("-- APB_P* PADDR\r\n");
     trap_cause = 0;
     store_word_4byte(0xF800F010u, 0x12345678u);
-    put_line("書き込み 0xf800f010 の結果", 0);
-    mem_line("  届いた PADDR", 0xF800F000u);
-    mem_line("  届いた PSTRB", 0xF800F004u);
-    mem_line("  届いた PWDATA", 0xF800F008u);
+    put_line("result of write to 0xf800f010", 0);
+    mem_line("  received PADDR", 0xF800F000u);
+    mem_line("  received PSTRB", 0xF800F004u);
+    mem_line("  received PWDATA", 0xF800F008u);
     store_byte(0xF800F023u, 0xAB);
-    mem_line("書き込み 0xf800f023 (1 byte) の PADDR", 0xF800F000u);
+    mem_line("PADDR of write to 0xf800f023 (1 byte)", 0xF800F000u);
     mem_line("  PSTRB", 0xF800F004u);
     mem_line("  PWDATA", 0xF800F008u);
     *(volatile uint16_t *)0xF800F012u = 0xBEEF;
-    mem_line("書き込み 0xf800f012 (2 byte) の PADDR", 0xF800F000u);
+    mem_line("PADDR of write to 0xf800f012 (2 bytes)", 0xF800F000u);
     mem_line("  PSTRB", 0xF800F004u);
     mem_line("  PWDATA", 0xF800F008u);
     trap_cause = 0;
-    put_line("読み出し 0xf800f01d (1 byte) の PADDR の下位", *(volatile uint8_t *)0xF800F01Du);
+    put_line("low PADDR of read from 0xf800f01d (1 byte)", *(volatile uint8_t *)0xF800F01Du);
     trap_cause = 0;
-    put_line("読み出し 0xf800f01e (2 byte) の PADDR の下位", *(volatile uint16_t *)0xF800F01Eu);
+    put_line("low PADDR of read from 0xf800f01e (2 bytes)", *(volatile uint16_t *)0xF800F01Eu);
     trap_cause = 0;
-    put_line("読み出し 0xf800f01f (1 byte) の PADDR の下位", *(volatile uint8_t *)0xF800F01Fu);
-    mem_line("読み出し 0xf800f00c の PADDR", 0xF800F00Cu);
-    mem_line("読み出し 0xf800ffec の PADDR", 0xF800FFECu);
+    put_line("low PADDR of read from 0xf800f01f (1 byte)", *(volatile uint8_t *)0xF800F01Fu);
+    mem_line("PADDR of read from 0xf800f00c", 0xF800F00Cu);
+    mem_line("PADDR of read from 0xf800ffec", 0xF800FFECu);
 
-    put_str("-- EXTS_H* の先の RAM (= 0xE800_0000、4 KB)\r\n");
+    put_str("-- RAM behind EXTS_H* (0xE800_0000, 4 KB)\r\n");
     trap_cause = 0;
     store_word_4byte(0xE8000000u, 0x11223344u);
     store_word_4byte(0xE8000FFCu, 0x55667788u);
     *(volatile uint16_t *)0xE8000002u = 0xBEEF;
     *(volatile uint8_t *)0xE8000FFDu = 0xAB;
-    put_line("書き込みの例外", 0);
-    mem_line("0xe8000000 (= 0x11223344 の上位 2 byte に 0xbeef)", 0xE8000000u);
-    mem_line("0xe8000ffc (= 0x55667788 の byte 1 に 0xab)", 0xE8000FFCu);
-    mem_line("0xe8001000 (= RAM の外。例外 5 になる)", 0xE8001000u);
+    put_line("exception on write", 0);
+    mem_line("0xe8000000 (0x11223344 with upper 2 bytes 0xbeef)", 0xE8000000u);
+    mem_line("0xe8000ffc (0x55667788 with byte 1 0xab)", 0xE8000FFCu);
+    mem_line("0xe8001000 (outside the RAM, raises exception 5)", 0xE8001000u);
 
     sdram_check();
 
@@ -522,7 +522,7 @@ static void ticks(void)
 {
     (void)READ_CSR(0xFC2);
     uint64_t gap = (trap_cause != 0) ? 20000u : 800000000u;
-    put_str("-- 時間\r\n");
+    put_str("-- time\r\n");
     for (uint32_t n = 0; n < 10; n = n + 1) {
         uint64_t c0 = mcycle64();
         uint64_t t0 = mtime64();
@@ -538,7 +538,7 @@ static void ticks(void)
         while (mcycle64() - c0 < gap) {
         }
     }
-    put_str("-- 時間 end\r\n");
+    put_str("-- time end\r\n");
 }
 
 int main(void)

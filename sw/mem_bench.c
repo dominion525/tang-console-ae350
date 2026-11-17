@@ -38,7 +38,7 @@ static volatile uintptr_t base0 = BASE;
 
 static void report(const char *name, uint32_t cyc)
 {
-    printf("%-26s mcycle %8lu  1 回あたり x100 %lu\n", name, (unsigned long)cyc, (unsigned long)((uint64_t)cyc * 100u / N));
+    printf("%-26s mcycle %8lu  per access x100 %lu\n", name, (unsigned long)cyc, (unsigned long)((uint64_t)cyc * 100u / N));
 }
 
 /* DDR_H* の先の回路のカウンタ (8 ワード) */
@@ -54,13 +54,13 @@ static void snap(uint32_t *v)
 /* カウンタの前後の差を、1 回あたり (100 倍) で出力する */
 static void report_stat(const char *name, const uint32_t *a, const uint32_t *b)
 {
-    static const char *const ddr3[8] = {"読みの数", "読みで待たせた DDR_CLK", "書きの数", "書きで待たせた DDR_CLK",
-                                        "読みの命令が受けられるまでの IP のクロック", "読みの命令から値が来るまでの IP のクロック",
-                                        "書きの命令が受けられるまでの IP のクロック", "覚えている 32 byte から返した読み"};
-    static const char *const sdram[8] = {"読みの数", "読みで待たせた DDR_CLK", "書きの数", "書きで待たせた DDR_CLK",
-                                         "行の読みの SDRAM のクロック", "書きの SDRAM のクロック", "SDRAM に書いた byte", "0"};
+    static const char *const ddr3[8] = {"reads", "DDR_CLK stalled on reads", "writes", "DDR_CLK stalled on writes",
+                                        "IP clocks until read command accepted", "IP clocks from read command to data",
+                                        "IP clocks until write command accepted", "reads served from kept 32 bytes"};
+    static const char *const sdram[8] = {"reads", "DDR_CLK stalled on reads", "writes", "DDR_CLK stalled on writes",
+                                         "SDRAM clocks for line reads", "SDRAM clocks for writes", "bytes written to SDRAM", "0"};
     const char *const *nm = (stat_base == STAT_DDR3) ? ddr3 : sdram;
-    printf("  %s のカウンタの差 (= 1 回あたり x100)\n", name);
+    printf("  %s counter deltas (per access x100)\n", name);
     for (int i = 0; i < 8; i++) {
         uint32_t d = b[i] - a[i];
         printf("    %-44s %8lu  (x100 %lu)\n", nm[i], (unsigned long)d, (unsigned long)((uint64_t)d * 100u / N));
@@ -106,22 +106,22 @@ int main(void)
     snap(s5);
     uint32_t rds = c1 - c0;
 
-    printf("-- DDR_H* の先のメモリ (= 0x%08lx から、データのキャッシュなし、N = %lu)\n", (unsigned long)b, (unsigned long)N);
-    printf("カウンタ: %s\n", stat_base == STAT_DDR3 ? "ahb_ddr3 (= 0x7F00_0000)" : "ahb_sdram (= 0x0300_0000)");
-    report("シーケンシャル書き込み", wr);
-    report_stat("シーケンシャル書き込み", s0, s1);
-    report("シーケンシャル読み出し", rd);
-    report_stat("シーケンシャル読み出し", s2, s3);
-    report("ランダム読み出し (4 KB 間隔)", rds);
-    report_stat("ランダム読み出し (4 KB 間隔)", s4, s5);
+    printf("-- memory behind DDR_H* (from 0x%08lx, data cache off, N = %lu)\n", (unsigned long)b, (unsigned long)N);
+    printf("counters: %s\n", stat_base == STAT_DDR3 ? "ahb_ddr3 (0x7F00_0000)" : "ahb_sdram (0x0300_0000)");
+    report("sequential write", wr);
+    report_stat("sequential write", s0, s1);
+    report("sequential read", rd);
+    report_stat("sequential read", s2, s3);
+    report("random read (4 KB stride)", rds);
+    report_stat("random read (4 KB stride)", s4, s5);
     int bad = 0;
     for (uint32_t i = 0; i < N; i++) {
         if (got[i] != i) {
-            if (bad < 8) printf("違う: %lu 語目 %08lx (期待 %08lx)\n", (unsigned long)i, (unsigned long)got[i], (unsigned long)i);
+            if (bad < 8) printf("mismatch: word %lu %08lx (expected %08lx)\n", (unsigned long)i, (unsigned long)got[i], (unsigned long)i);
             bad++;
         }
     }
-    printf("シーケンシャル読み出しで読んだ値の照合: 違った数 %d / %lu\n", bad, (unsigned long)N);
-    printf("ランダム読み出しで読んだ値の和 %08lx\n", (unsigned long)sum);
+    printf("sequential read data check: mismatches %d / %lu\n", bad, (unsigned long)N);
+    printf("sum of random read data %08lx\n", (unsigned long)sum);
     return 0x600D;
 }

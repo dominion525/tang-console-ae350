@@ -135,7 +135,7 @@ W GO
 F #{bin}
 W OK
 S run #{format('%08x', LOAD_AT)}
-W READY 1
+W READY:
 S abc
   S
   File.write(expected, <<-E)
@@ -144,8 +144,8 @@ GO
 #{ok_line(h)}
 RUN #{format('%08x', LOAD_AT)}
 hello from SDRAM (main 0x#{main})
-READY 1 行を送ってください
-受けた行: abc
+READY: send one line
+received: abc
   E
 else
   abort '使い方は先頭のコメント'

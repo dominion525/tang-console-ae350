@@ -108,8 +108,8 @@ void portable_init(core_portable *p, int *argc, char *argv[])
 {
     (void)argc;
     (void)argv;
-    if (sizeof(ee_ptr_int) != sizeof(ee_u8 *)) ee_printf("ERROR! ee_ptr_int が番地を入れられない\n");
-    if (sizeof(ee_u32) != 4) ee_printf("ERROR! ee_u32 が 32 bit でない\n");
+    if (sizeof(ee_ptr_int) != sizeof(ee_u8 *)) ee_printf("ERROR! ee_ptr_int cannot hold a pointer\n");
+    if (sizeof(ee_u32) != 4) ee_printf("ERROR! ee_u32 is not 32 bits\n");
     p->portable_id = 1;
 }
 
@@ -120,6 +120,6 @@ void portable_fini(core_portable *p)
     ee_printf("mcycle (64 bit) : %lu %lu\n", (unsigned long)(t >> 32), (unsigned long)(t & 0xFFFFFFFFu));
     uint64_t n = stop_instret - start_instret;
     ee_printf("minstret (64 bit) : %lu %lu\n", (unsigned long)(n >> 32), (unsigned long)(n & 0xFFFFFFFFu));
-    ee_printf("CPU の周波数の見立て : %lu Hz (= misa で見分けた値)\n", (unsigned long)core_hz());
+    ee_printf("Assumed CPU frequency : %lu Hz (determined from misa)\n", (unsigned long)core_hz());
     p->portable_id = 0;
 }

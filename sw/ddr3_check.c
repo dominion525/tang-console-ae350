@@ -31,7 +31,7 @@ static void check64(const char *name, uintptr_t a, uint64_t got, uint64_t want)
 {
     if (got != want) {
         errors++;
-        printf("違う %s %08lx: %08lx%08lx (期待 %08lx%08lx)\n", name, (unsigned long)a, (unsigned long)(got >> 32),
+        printf("mismatch %s %08lx: %08lx%08lx (expected %08lx%08lx)\n", name, (unsigned long)a, (unsigned long)(got >> 32),
                (unsigned long)got, (unsigned long)(want >> 32), (unsigned long)want);
     }
 }
@@ -57,12 +57,12 @@ int main(void)
     *at64(0) = pattern(0);
     for (int b = 5; b < DDR3_BITS; b++) *at64((uintptr_t)1u << b) = pattern((uintptr_t)1u << b);
     fence();
-    check64("番地の線", 0, *at64(0), pattern(0));
+    check64("address lines", 0, *at64(0), pattern(0));
     for (int b = 5; b < DDR3_BITS; b++) {
         uintptr_t a = (uintptr_t)1u << b;
-        check64("番地の線", a, *at64(a), pattern(a));
+        check64("address lines", a, *at64(a), pattern(a));
     }
-    printf("番地の線 (= 0 と 2^5〜2^%d): 違った数 %d\n", DDR3_BITS - 1, errors);
+    printf("address lines (0 and 2^5 to 2^%d): mismatches %d\n", DDR3_BITS - 1, errors);
 
     /* 同じライン (32 バイト) の中の 4 つの 8 バイト */
     int e0 = errors;
@@ -70,9 +70,9 @@ int main(void)
     for (int i = 0; i < 4; i++) *(volatile uint64_t *)(line + 8 * i) = 0x1111111111111111ull * (uint64_t)(i + 1);
     fence();
     for (int i = 0; i < 4; i++) {
-        check64("同じ行", line + 8 * i, *(volatile uint64_t *)(line + 8 * i), 0x1111111111111111ull * (uint64_t)(i + 1));
+        check64("same line", line + 8 * i, *(volatile uint64_t *)(line + 8 * i), 0x1111111111111111ull * (uint64_t)(i + 1));
     }
-    printf("同じ行の 4 つの 8 byte: 違った数 %d\n", errors - e0);
+    printf("four 8-byte words in one line: mismatches %d\n", errors - e0);
 
     /* 幅 (書き込みマスク) */
     e0 = errors;
@@ -82,18 +82,18 @@ int main(void)
     *(volatile uint16_t *)(w + 4) = 0xBEEF;
     *(volatile uint8_t *)(w + 7)  = 0xCD;
     fence();
-    check64("幅", w, *(volatile uint64_t *)w, 0xCD22BEEF5566AB88ull);   // バイト 1 = AB、バイト 4〜5 = BEEF、バイト 7 = CD
+    check64("width", w, *(volatile uint64_t *)w, 0xCD22BEEF5566AB88ull);   // バイト 1 = AB、バイト 4〜5 = BEEF、バイト 7 = CD
     *(volatile uint32_t *)(w + 4) = 0x0BADF00Du;
     fence();
-    check64("幅", w, *(volatile uint64_t *)w, 0x0BADF00D5566AB88ull);
-    printf("1 / 2 / 4 byte の書き込み: 違った数 %d\n", errors - e0);
+    check64("width", w, *(volatile uint64_t *)w, 0x0BADF00D5566AB88ull);
+    printf("byte, halfword, and word writes: mismatches %d\n", errors - e0);
 
     /* 範囲外 */
     (void)load_word_4byte((uintptr_t)1u << DDR3_BITS);
-    printf("0x%08lx を読んだ例外 %lu (= 期待 5)\n", (unsigned long)(1u << DDR3_BITS), (unsigned long)trap_cause);
+    printf("exception on reading 0x%08lx: %lu (expected 5)\n", (unsigned long)(1u << DDR3_BITS), (unsigned long)trap_cause);
     if (trap_cause != 5) errors++;
     trap_cause = 0;
 
-    printf("DDR3 の確認: %s (違った数 %d)\n", errors == 0 ? "OK" : "NG", errors);
+    printf("DDR3 check: %s (mismatches %d)\n", errors == 0 ? "OK" : "NG", errors);
     return errors == 0 ? 0x600D : 1;
 }
