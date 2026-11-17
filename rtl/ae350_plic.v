@@ -126,6 +126,25 @@ module ae350_plic #(
 
     wire preempt = feature[0];
 
+    // 組み合わせ回路 (always @(*)) が読むレジスタの配列を、定数の添字で平らなベクタに詰め直したもの。
+    // iverilog の @(*) は、配列の要素を再計算のきっかけに入れないので、配列を直接読むと、配列だけが変わったときに
+    // 組み合わせ回路の出力が更新されない。ベクタ経由で読めば、どのシミュレータでも、合成でも同じ動作になる
+    wire [PRIO_BITS*NSRC-1:0] prio_v;        // prio[i] は prio_v[PRIO_BITS*(i-1) +: PRIO_BITS]
+    wire [NSRC*NT-1:0]        enable_v;      // enable[t][i] は enable_v[NSRC*t + i - 1]
+    wire [PRIO_BITS*NT-1:0]   threshold_v;   // threshold[t] は threshold_v[PRIO_BITS*t +: PRIO_BITS]
+    wire [PRIO_N*NT-1:0]      pps_v;         // pps[t] は pps_v[PRIO_N*t +: PRIO_N]
+    genvar                    gv;
+    generate
+        for (gv = 1; gv <= NSRC; gv = gv + 1) begin : g_prio_v
+            assign prio_v[PRIO_BITS*(gv-1) +: PRIO_BITS] = prio[gv];
+        end
+        for (gv = 0; gv < NT; gv = gv + 1) begin : g_tgt_v
+            assign enable_v[NSRC*gv +: NSRC]              = enable[gv];
+            assign threshold_v[PRIO_BITS*gv +: PRIO_BITS] = threshold[gv];
+            assign pps_v[PRIO_N*gv +: PRIO_N]             = pps[gv];
+        end
+    endgenerate
+
     // アドレスがターゲット t のものか (NUM_TARGET より後ろのターゲットはない)
     function tgt_ok(input tt);
         tgt_ok = !tt || (NUM_TARGET > 1);
@@ -150,19 +169,20 @@ module ae350_plic #(
             any_id[t]      = 6'd0;
             any_prio[t]    = {PRIO_BITS{1'b0}};
             for (i = 1; i <= NSRC; i = i + 1) begin
-                if (tgt_ok(t[0]) && SRC_MASK[i] && pending[i] && enable[t][i]) begin
-                    if (prio[i] > threshold[t] && prio[i] > notify_prio[t]) begin
+                if (tgt_ok(t[0]) && SRC_MASK[i] && pending[i] && enable_v[NSRC*t + i - 1]) begin
+                    if (prio_v[PRIO_BITS*(i-1) +: PRIO_BITS] > threshold_v[PRIO_BITS*t +: PRIO_BITS] &&
+                        prio_v[PRIO_BITS*(i-1) +: PRIO_BITS] > notify_prio[t]) begin
                         notify_id[t]   = i[5:0];
-                        notify_prio[t] = prio[i];
+                        notify_prio[t] = prio_v[PRIO_BITS*(i-1) +: PRIO_BITS];
                     end
-                    if (prio[i] > any_prio[t]) begin
+                    if (prio_v[PRIO_BITS*(i-1) +: PRIO_BITS] > any_prio[t]) begin
                         any_id[t]   = i[5:0];
-                        any_prio[t] = prio[i];
+                        any_prio[t] = prio_v[PRIO_BITS*(i-1) +: PRIO_BITS];
                     end
                 end
             end
             pps_top[t] = {PRIO_BITS{1'b0}};
-            for (j = 0; j < PRIO_N; j = j + 1) if (pps[t][j]) pps_top[t] = j[PRIO_BITS-1:0];
+            for (j = 0; j < PRIO_N; j = j + 1) if (pps_v[PRIO_N*t + j]) pps_top[t] = j[PRIO_BITS-1:0];
         end
     end
 
@@ -177,6 +197,14 @@ module ae350_plic #(
 
     assign meip = (notify_id_q[0] != 6'd0);
     assign seip = (notify_id_q[1] != 6'd0);
+
+    // claim で返す番号を、読み出しの組み合わせ回路のためにベクタに詰め直したもの (上の prio_v などと同じ理由)
+    wire [6*NT-1:0] claim_id_v;   // ターゲット t の番号は claim_id_v[6*t +: 6]
+    generate
+        for (gv = 0; gv < NT; gv = gv + 1) begin : g_claim_v
+            assign claim_id_v[6*gv +: 6] = (CLAIM_ABOVE_THRESHOLD != 0) ? notify_id_q[gv] : any_id_q[gv];
+        end
+    endgenerate
 
     function [5:0] claim_id(input tt);
         claim_id = (CLAIM_ABOVE_THRESHOLD != 0) ? notify_id_q[tt] : any_id_q[tt];
@@ -279,17 +307,17 @@ module ae350_plic #(
         rdata = 32'd0;
         if (waddr == A_FEATURE) rdata = {30'd0, feature};
         if (waddr >= 22'h00_0004 && waddr <= A_PRIO_LAST && SRC_MASK[waddr[6:2]]) begin
-            rdata = {{(32-PRIO_BITS){1'b0}}, prio[waddr[6:2]]};
+            rdata = {{(32-PRIO_BITS){1'b0}}, prio_v[PRIO_BITS*({27'd0, waddr[6:2]}-32'd1) +: PRIO_BITS]};
         end
         if (waddr == A_PENDING) rdata = {pending & SRC_MASK, 1'b0};
         if (waddr == A_TRIGGER) rdata = {EDGE, 1'b0};
         if (waddr == A_NUMBER)  rdata = {NUM_TGT32[15:0], NUM_SRC32[15:0]};
         if (waddr == A_VERSION) rdata = {MAX_PRIO[15:0], VERSION};
         for (t = 0; t < NT; t = t + 1) begin
-            if (tgt_ok(t[0]) && waddr == a_enable(t[0]))    rdata = {enable[t], 1'b0};
-            if (tgt_ok(t[0]) && waddr == a_threshold(t[0])) rdata = {{(32-PRIO_BITS){1'b0}}, threshold[t]};
-            if (tgt_ok(t[0]) && waddr == a_claim(t[0]))     rdata = {26'd0, claim_id(t[0])};
-            if (tgt_ok(t[0]) && waddr == a_pps(t[0]))       rdata = {{(32-PRIO_N){1'b0}}, pps[t]};
+            if (tgt_ok(t[0]) && waddr == a_enable(t[0]))    rdata = {enable_v[NSRC*t +: NSRC], 1'b0};
+            if (tgt_ok(t[0]) && waddr == a_threshold(t[0])) rdata = {{(32-PRIO_BITS){1'b0}}, threshold_v[PRIO_BITS*t +: PRIO_BITS]};
+            if (tgt_ok(t[0]) && waddr == a_claim(t[0]))     rdata = {26'd0, claim_id_v[6*t +: 6]};
+            if (tgt_ok(t[0]) && waddr == a_pps(t[0]))       rdata = {{(32-PRIO_N){1'b0}}, pps_v[PRIO_N*t +: PRIO_N]};
         end
     end
 
