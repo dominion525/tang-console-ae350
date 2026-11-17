@@ -1,0 +1,16 @@
+timer 3
+ext 4 25 11
+prio 13 12 0
+threshold 13
+level 4 4
+disabled ok
+swpend 20
+gateway 4 4
+preempt 11 12 13
+gp 4 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25
+prio3 12 11
+plmt ok
+pps gpint ok
+apb subword ok
+ids ok
+target1 4 20
