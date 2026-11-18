@@ -65,10 +65,17 @@ localparam bit WORD_LENGTH_LIMIT = AUDIO_BIT_WIDTH <= 20 ? 1'b0 : 1'b1;
 
 logic [AUDIO_BIT_WIDTH-1:0] audio_sample_word_transfer [1:0];
 logic audio_sample_word_transfer_control = 1'd0;
-always_ff @(posedge clk_audio)
+// ae350: clk_audio をクロックとして使わず、clk_pixel で clk_audio の立ち上がりを検出して動かす (上流は always_ff @(posedge clk_audio))。
+// clk_audio は clk_pixel に同期した信号であること
+logic clk_audio_prev = 1'b0;
+always_ff @(posedge clk_pixel)
 begin
-    audio_sample_word_transfer <= audio_sample_word;
-    audio_sample_word_transfer_control <= !audio_sample_word_transfer_control;
+    clk_audio_prev <= clk_audio;
+    if (clk_audio && !clk_audio_prev)
+    begin
+        audio_sample_word_transfer <= audio_sample_word;
+        audio_sample_word_transfer_control <= !audio_sample_word_transfer_control;
+    end
 end
 
 logic [1:0] audio_sample_word_transfer_control_synchronizer_chain = 2'd0;
