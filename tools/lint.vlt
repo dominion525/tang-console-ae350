@@ -3,8 +3,10 @@
 // 取り込んだ外部のコードで、内容を変えないファイルは lint の対象にしない
 //   hazard3/hdl/              Hazard3
 //   rtl/vendor/verilog-uart/  UART の送信回路と受信回路
+//   rtl/vendor/hdmi/          HDMI の出力回路 (hdl-util/hdmi)
 lint_off -file "*hazard3/hdl/*"
 lint_off -file "*vendor/verilog-uart/*"
+lint_off -file "*vendor/hdmi/*"
 
 // 他の設計から流用したファイル (DDR_H* の先の SDRAM の経路)。sdram_bridge は流用したときの書き方 (FF の初期値) のまま、
 // SDRAM のモデルは取り込んだ外部のコード
