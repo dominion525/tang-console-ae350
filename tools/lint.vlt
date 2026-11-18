@@ -1,6 +1,6 @@
 `verilator_config
 
-// 取り込んだ外部のコードで、内容を変えないファイルは lint の対象にしない
+// 取り込んだ外部のコードは lint の対象にしない (Hazard3 と hdmi は一部を変えている。変更点はそれぞれの README)
 //   hazard3/hdl/              Hazard3
 //   rtl/vendor/verilog-uart/  UART の送信回路と受信回路
 //   rtl/vendor/hdmi/          HDMI の出力回路 (hdl-util/hdmi)

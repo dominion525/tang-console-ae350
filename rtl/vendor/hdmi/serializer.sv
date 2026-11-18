@@ -158,7 +158,23 @@ module serializer
           .FCLK( clk_pixel_x5 ),
           .RESET( reset ) );
           
-        assign tmds_clock = clk_pixel;
+        // ae350: TMDS のクロックも、データの 3 レーンと同じく OSER10 で出す (上流は assign tmds_clock = clk_pixel)。
+        // ほかのデバイス向けの経路と同じく 10'b0000011111 を送る
+        OSER10 gwSerClk(
+          .Q( tmds_clock ),
+          .D0( 1'b1 ),
+          .D1( 1'b1 ),
+          .D2( 1'b1 ),
+          .D3( 1'b1 ),
+          .D4( 1'b1 ),
+          .D5( 1'b0 ),
+          .D6( 1'b0 ),
+          .D7( 1'b0 ),
+          .D8( 1'b0 ),
+          .D9( 1'b0 ),
+          .PCLK( clk_pixel ),
+          .FCLK( clk_pixel_x5 ),
+          .RESET( reset ) );
   
     `else
         logic [9:0] tmds_reversed [NUM_CHANNELS-1:0];
