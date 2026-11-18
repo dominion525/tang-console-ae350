@@ -69,6 +69,9 @@ lint: $(PLL_STUB)
 	@# 使わない htrans[0] (ahb_sdram と同じく NONSEQ と SEQ を区別しない) の警告だけを外す
 	verilator --lint-only $(VERILATOR_FLAGS) -Wno-UNUSEDSIGNAL --top-module ahb_ddr3 rtl/ahb_ddr3.v
 	verilator --lint-only $(VERILATOR_FLAGS) -Wno-UNUSEDSIGNAL --top-module ahb_litedram rtl/ahb_litedram.v
+	@# HDMI の出力回路に渡すテストパターンと試験音 (ボードの回路に入れる前に、単体で lint にかける)
+	verilator --lint-only $(VERILATOR_FLAGS) --top-module hdmi_test_pattern rtl/hdmi_test_pattern.v
+	verilator --lint-only $(VERILATOR_FLAGS) --top-module hdmi_audio_tone rtl/hdmi_audio_tone.v
 
 # ボードの回路 (board/tang_console/top.v) の lint。Gowin のプリミティブのうち PLL は、Gowin のモデルから作った空のモジュールに、
 # IO のプリミティブ (sdram_io.v の ODDR、IDDR、IOBUF、IODELAY) はテストベンチ用のモデルに置き換える。マクロで回路が変わるので、
@@ -155,7 +158,7 @@ define run_cmp
 	sed -n 's/^UART: //p' $(BUILD)/$(2).log | diff sw/$(1)_expected.txt -
 endef
 
-test: test-plic test-sram test-sdram-unit test-sdram-io test-sdram-pll test-sdram-hs-unit test-stage2 test-stage3 test-stage4 test-stage5 test-clocks test-reset test-random test-sdram test-sdram-hs test-loader test-uart-reset test-uart-tool
+test: test-plic test-sram test-sdram-unit test-sdram-io test-sdram-pll test-sdram-hs-unit test-stage2 test-stage3 test-stage4 test-stage5 test-clocks test-reset test-random test-sdram test-sdram-hs test-loader test-uart-reset test-uart-tool test-hdmi
 
 # ROM のローダーのテスト (tools/loader_test.rb が手順と期待の出力を作る)。シミュレーション用のローダーは、タイムアウトを
 # 200,000 mcycle (250 µs) にする (実機は 1 秒)。送信は実機の 1.25 Mbps と同じ間隔で行うので、hello は数分かかる
@@ -345,6 +348,22 @@ SIM_UART_RESET := $(BUILD)/uart_reset_seq_tb/Vuart_reset_seq_tb
 $(SIM_UART_RESET): rtl/uart_reset_seq.v tb/uart_reset_seq_tb.v rtl/vendor/verilog-uart/uart_rx.v tools/lint.vlt
 	mkdir -p $(BUILD)
 	verilator --binary --timing $(VERILATOR_FLAGS) --top-module uart_reset_seq_tb -Mdir $(BUILD)/uart_reset_seq_tb rtl/uart_reset_seq.v tb/uart_reset_seq_tb.v rtl/vendor/verilog-uart/uart_rx.v
+
+# HDMI の出力回路 (rtl/vendor/hdmi/、1280×720 / 60 Hz、音声 48 kHz) のテストベンチ。テストパターンと試験音をつなぎ、
+# TMDS の値を復号して、タイミング、映像、データアイランドのパケット、音声を確かめる (tb/hdmi_tb.sv の冒頭)
+HDMI_SRCS := $(addprefix rtl/vendor/hdmi/, hdmi.sv tmds_channel.sv serializer.sv packet_picker.sv packet_assembler.sv \
+	audio_clock_regeneration_packet.sv audio_sample_packet.sv audio_info_frame.sv \
+	auxiliary_video_information_info_frame.sv source_product_description_info_frame.sv)
+SIM_HDMI := $(BUILD)/hdmi_tb/Vhdmi_tb
+
+$(SIM_HDMI): tb/hdmi_tb.sv rtl/hdmi_test_pattern.v rtl/hdmi_audio_tone.v $(HDMI_SRCS) tools/lint.vlt
+	mkdir -p $(BUILD)
+	verilator --binary --timing $(VERILATOR_FLAGS) --top-module hdmi_tb -Mdir $(BUILD)/hdmi_tb \
+		tb/hdmi_tb.sv rtl/hdmi_test_pattern.v rtl/hdmi_audio_tone.v $(HDMI_SRCS)
+
+.PHONY: test-hdmi
+test-hdmi: $(SIM_HDMI)
+	$(SIM_HDMI)
 
 .PHONY: test-uart-reset
 test-uart-reset: $(SIM_UART_RESET)

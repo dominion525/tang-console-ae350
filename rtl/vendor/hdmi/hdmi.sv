@@ -200,6 +200,16 @@ always_comb begin
         vsync <= invert ^ (cy >= screen_height + vsync_pulse_start && cy < screen_height + vsync_pulse_start + vsync_pulse_size);
 end
 
+// ae350: hsync と vsync を 1 段レジスタに入れてから TMDS の符号 (control_data、data_island_data[1:0]) に使う (上流は hsync と
+// vsync をそのまま使う)。モードと映像の値は cx から 2 段のレジスタを経るので、上流のままでは同期信号が 1 画素早く出る
+logic hsync_q = 1'b0;
+logic vsync_q = 1'b0;
+always_ff @(posedge clk_pixel)
+begin
+    hsync_q <= hsync;
+    vsync_q <= vsync;
+end
+
 localparam real VIDEO_RATE = (VIDEO_ID_CODE == 1 ? 25.2E6
     : VIDEO_ID_CODE == 2 || VIDEO_ID_CODE == 3 ? 27.027E6
     : VIDEO_ID_CODE == 4 ? 74.25E6
@@ -331,11 +341,11 @@ generate
             begin
                 mode <= data_island_guard ? 3'd4 : data_island_period ? 3'd3 : video_guard ? 3'd2 : video_data_period ? 3'd1 : 3'd0;
                 video_data <= rgb;
-                control_data <= {{1'b0, data_island_preamble}, {1'b0, video_preamble || data_island_preamble}, {vsync, hsync}}; // ctrl3, ctrl2, ctrl1, ctrl0, vsync, hsync
+                control_data <= {{1'b0, data_island_preamble}, {1'b0, video_preamble || data_island_preamble}, {vsync_q, hsync_q}}; // ctrl3, ctrl2, ctrl1, ctrl0, vsync, hsync
                 data_island_data[11:4] <= packet_data[8:1];
                 data_island_data[3] <= cx != 0;
                 data_island_data[2] <= packet_data[0];
-                data_island_data[1:0] <= {vsync, hsync};
+                data_island_data[1:0] <= {vsync_q, hsync_q};
             end
         end
     end
@@ -353,7 +363,7 @@ generate
             begin
                 mode <= video_data_period ? 3'd1 : 3'd0;
                 video_data <= rgb;
-                control_data <= {4'b0000, {vsync, hsync}}; // ctrl3, ctrl2, ctrl1, ctrl0, vsync, hsync
+                control_data <= {4'b0000, {vsync_q, hsync_q}}; // ctrl3, ctrl2, ctrl1, ctrl0, vsync, hsync
             end
         end
     end
