@@ -10,6 +10,9 @@ lint_off -file "*vendor/hdmi/*"
 // COMBDLY (always_comb の中の <=) は、ファイル単位の lint_off では抑止されないので、規則を指定して抑止する
 lint_off -rule COMBDLY -file "*vendor/hdmi/*"
 
+// Sipeed のサンプルから取り込んだ PLL の初期化回路 (board/tang_console/ddr3/pll_init.v。内容は元のまま)。HDMI の PLL でも使う
+lint_off -file "*ddr3/pll_init.v"
+
 // 他の設計から流用したファイル (DDR_H* の先の SDRAM の経路)。sdram_bridge は流用したときの書き方 (FF の初期値) のまま、
 // SDRAM のモデルは取り込んだ外部のコード
 lint_off -rule PROCASSINIT -file "*rtl/sdram_bridge.v"

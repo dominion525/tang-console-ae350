@@ -64,7 +64,8 @@ lint: $(PLL_STUB)
 	verilator --lint-only $(VERILATOR_FLAGS) --top-module shell_top $(RTL_SRCS)
 	verilator --lint-only $(VERILATOR_FLAGS) --timing --no-sched-zero-delay --top-module tb_mem $(RTL_SRCS) $(TB_SRCS)
 	verilator --lint-only $(VERILATOR_FLAGS) --top-module ae350_probe_top $(BOARD_SRCS)
-	verilator --lint-only $(VERILATOR_FLAGS) +define+SDRAM_HS +define+AE350_NO_OBSERVER +define+AHB_SDRAM_TRACE --top-module ae350_probe_top $(BOARD_SRCS)
+	verilator --lint-only $(VERILATOR_FLAGS) +define+SDRAM_HS +define+AE350_NO_OBSERVER +define+AHB_SDRAM_TRACE +define+AE350_HDMI --top-module ae350_probe_top \
+		$(BOARD_SRCS) $(HDMI_SRCS) rtl/hdmi_test_pattern.v rtl/hdmi_audio_tone.v board/tang_console/hdmi_pll.v board/tang_console/ddr3/pll_init.v
 	@# ahb_ddr3 は DDR3 の IP (暗号化されていて Verilator では読めない) につなぐので、単体で lint にかける。トップのポートになるので、
 	@# 使わない htrans[0] (ahb_sdram と同じく NONSEQ と SEQ を区別しない) の警告だけを外す
 	verilator --lint-only $(VERILATOR_FLAGS) -Wno-UNUSEDSIGNAL --top-module ahb_ddr3 rtl/ahb_ddr3.v
@@ -74,8 +75,8 @@ lint: $(PLL_STUB)
 	verilator --lint-only $(VERILATOR_FLAGS) --top-module hdmi_audio_tone rtl/hdmi_audio_tone.v
 
 # ボードの回路 (board/tang_console/top.v) の lint。Gowin のプリミティブのうち PLL は、Gowin のモデルから作った空のモジュールに、
-# IO のプリミティブ (sdram_io.v の ODDR、IDDR、IOBUF、IODELAY) はテストベンチ用のモデルに置き換える。マクロで回路が変わるので、
-# 既定の構成 (probe、20 MHz 版、監視回路あり) と、すべてを入れた構成 (166.7 MHz 版、監視回路なし、転送の記録あり) の 2 通りで実行する
+# IO のプリミティブ (sdram_io.v の ODDR、IDDR、IOBUF、IODELAY と、HDMI の出力の ELVDS_OBUF) はテストベンチ用のモデルに置き換える。マクロで回路が変わるので、
+# 既定の構成 (probe、20 MHz 版、監視回路あり) と、すべてを入れた構成 (166.7 MHz 版、監視回路なし、転送の記録あり、HDMI の出力あり) の 2 通りで実行する
 BOARD_SRCS := $(RTL_SRCS) rtl/ahb_rom.v rtl/ahb_sdram.v rtl/sdram_ctrl_hs.v rtl/sdram_io.v rtl/sdram_bridge.v rtl/reset_gen.v \
               tb/gowin_io_models.v $(PLL_STUB) board/tang_console/ae350_pll.v board/tang_console/sdram_pll.v \
               board/tang_console/ae350_observer.v board/tang_console/top.v
