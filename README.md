@@ -35,6 +35,7 @@ Pass the newlib location with `NEWLIB`; there is no default.
 | `make test-iverilog` | Run the test programs with 4-state simulation                                                                    |
 | `make coverage`      | Coverage                                                                                                         |
 | `make run-probe`     | Run the probe program on the Hazard3 version                                                                     |
+| `make test-hdmi`     | Decode and check the TMDS values from the HDMI output circuit (see "HDMI output")                                |
 
 ### Building newlib (first time only)
 
@@ -362,6 +363,62 @@ A write takes about 12 controller clock cycles until the command and data are ac
 - With `sw/ddr3_check.c`, the 1 GB address lines, the four 8-byte words within 32 bytes, and byte, halfword, and word writes all matched, and an address beyond 1 GB (0x4000_0000) raised exception 5.
 - The 1024 words read in the sequential read of `sw/mem_bench.c` matched the values written.
 - Ran hello from DDR3 (in a single-chip, 512 MB configuration).
+
+## HDMI output (test pattern on the board's HDMI connector)
+
+    HDMI=1 SDRAM=hs ROM=loader sh board/tang_console/build.sh build/board-hdmi
+
+This build sends a 1280×720 / 60 Hz (CEA-861 VIC 4) test pattern to the board's HDMI connector.
+The test pattern is eight color bars, each 160 pixels wide (from the left: white, yellow, cyan, green, magenta, red, blue, black).
+HDMI audio packets (48 kHz) are sent as well, but the audio is silent.
+The output circuit is hdl-util/hdmi (`rtl/vendor/hdmi/`) and is not connected to the CPU.
+With `HDMI=1`, the whole synthesis project is read as SystemVerilog 2017, because hdl-util/hdmi is written in SystemVerilog.
+
+| Part                 | Files                                             | Description                                                                                                                            |
+| -------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Output circuit       | `rtl/vendor/hdmi/`                                | TMDS encoding, data island packets, and the serializer using `OSER10`. Changes from upstream are listed in `rtl/vendor/hdmi/README.md` |
+| Test pattern         | `rtl/hdmi_test_pattern.v`                         | Chooses the color bar from the horizontal position                                                                                     |
+| Audio                | `rtl/hdmi_audio_tone.v`                           | The 48 kHz sampling strobe and a square-wave test tone (`top.v` sets the amplitude to 0, so it is silent)                              |
+| PLL                  | `board/tang_console/hdmi_pll.v`                   | Makes the 74.25 MHz pixel clock and the 5x clock (371.25 MHz) from 50 MHz                                                              |
+| Pins and constraints | `board/tang_console/hdmi.cst`, `make_sdc_hdmi.rb` | The four HDMI differential pairs (LVCMOS33D pseudo-differential) and K14 (DVI-A_PSV, see below); timing constraints for the two clocks |
+
+In simulation, `make test-hdmi` (included in `make test`) decodes the TMDS values from the output circuit and checks them.
+It checks the position and polarity of the sync signals, the video values, the ECC of the data island packets, the number and values of the audio samples, and N and CTS in the audio clock regeneration packets.
+
+### Verified on the board
+
+- In the `HDMI=1 SDRAM=hs ROM=loader` build, the color bars appeared on the monitor and the 1 kHz test tone played (amplitude 2048, before the audio was made silent).
+- After the amplitude was set to 0, the color bars still appeared and no sound played.
+- `HDMI=1` combined with other build options (`ROM=probe`, `CPU=hazard3`, `MEM=ddr3`, and so on) has not been tried on the board.
+
+### Pitfalls
+
+Getting the HDMI output onto a monitor stopped at the following three points.
+Each cause was confirmed from messages of the synthesis and place-and-route tools or from values measured on the board.
+A fourth setting (DVI-A_PSV), made after reading the schematic, is described at the end.
+
+**PLL VCO and PFD ranges**: the GW5AST-138 PLL needs the VCO within 650–1300 MHz and the PFD (input ÷ IDIV) within 19–81.25 MHz (the values reported by the place-and-route messages PA1019 and PA2078).
+A VCO outside the range only produces a warning (PA1019) and the bitstream is still generated; a PFD outside the range is an error (PA2078).
+74.25 MHz cannot be made from 50 MHz with integer dividers, so two PLLs are chained, with 67.5 MHz in between.
+The setting that goes through 27 MHz (VCO 1350 MHz and 1485 MHz, as in an existing HDMI design for the Tang Console 138K) exceeds the VCO range.
+There is no setting that goes through 27 MHz and stays within both ranges without fractional division.
+
+**PLL ICP and LPF**: when the charge pump current (ICP) and the loop filter resistor (LPF) were not supplied from outside, the second PLL (PFD 67.5 MHz, multiplier 11) did not lock.
+Measured on the board, the lock signal stayed at 0 and the pixel clock wandered between 61 and 63 MHz.
+The HDMI circuit is held in reset until the PLL locks, so the monitor showed "no signal".
+With `PLL_INIT` on both PLLs (`board/tang_console/ddr3/pll_init.v`, which tries candidate ICP and LPF values for the multiplier in turn), as in PLLs generated by the Gowin tools, the PLL locked at exactly 74.25 MHz.
+
+**`OSER10` reset**: the `RESET` of `OSER10` is an asynchronous reset.
+With a reset synchronized to the pixel clock, its release was checked against the 5x clock (period 2.694 ns) and failed in place and route with a recovery violation (worst -7.258 ns).
+A separate serializer reset, `serializer_reset`, was added to `hdmi.sv`, and the inverted PLL lock is connected to it asynchronously.
+
+**499 Ω on the HDMI lines (DVI-A_PSV)**: the eight HDMI lines on the board are AC-coupled through 100 nF capacitors, and on the connector side each goes to GND through a 499 Ω resistor and a transistor (Q11) (page 9 of the schematic Tang_138K_Console_V32001A).
+The gate of Q11 is FPGA pin K14 (DVI-A_PSV); when it is not driven, a 100 kΩ resistor on the board turns Q11 off and the 499 Ω resistors are disconnected.
+With `HDMI=1`, K14 is driven to 1.
+This was not the cause of the missing picture; it avoids leaving the pin in an undefined state.
+Whether the picture appears with K14 undriven has not been tried.
+
+Changes to hdl-util/hdmi itself (fixing sync signals that came one pixel early, making it readable by Verilator, and others) are listed in `rtl/vendor/hdmi/README.md`.
 
 ## License
 
