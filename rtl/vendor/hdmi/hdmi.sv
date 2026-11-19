@@ -68,6 +68,10 @@ module hdmi
     input logic clk_audio,
     // synchronous reset back to 0,0
     input logic reset,
+    // ae350: シリアライザ (Gowin では OSER10) のリセットを reset と分けた (上流は reset をそのまま渡す)。OSER10 の RESET は非同期で、
+    // 画素クロックに同期させた reset を入れると、リセットの解除が 5 倍のクロックに対して検査され、満たせない。PLL のロックの反転など、
+    // 非同期のリセットを入れる (Gowin の DVI TX IP を使う設計と同じ形)。1 でリセット
+    input logic serializer_reset,
     input logic [23:0] rgb,
     input logic [AUDIO_BIT_WIDTH-1:0] audio_sample_word [1:0],
 
@@ -380,6 +384,7 @@ generate
     end
 endgenerate
 
-serializer #(.NUM_CHANNELS(NUM_CHANNELS), .VIDEO_RATE(VIDEO_RATE)) serializer(.clk_pixel(clk_pixel), .clk_pixel_x5(clk_pixel_x5), .reset(reset), .tmds_internal(tmds_internal), .tmds(tmds), .tmds_clock(tmds_clock));
+// ae350: シリアライザには serializer_reset を渡す (上の ports の説明)
+serializer #(.NUM_CHANNELS(NUM_CHANNELS), .VIDEO_RATE(VIDEO_RATE)) serializer(.clk_pixel(clk_pixel), .clk_pixel_x5(clk_pixel_x5), .reset(serializer_reset), .tmds_internal(tmds_internal), .tmds(tmds), .tmds_clock(tmds_clock));
 
 endmodule

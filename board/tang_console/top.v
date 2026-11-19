@@ -19,6 +19,7 @@
 //   input  wire btn0_n    ボタン 0 (押すとリセット)
 //   input  wire uart_rx   USB シリアルの受信 (何か 1 文字送ると、probe.c がもう一度出力する)
 //   output wire uart_tx   USB シリアルの送信
+//   HDMI=1 (マクロ AE350_HDMI) のとき: tmds_clk_p / tmds_clk_n / tmds_d_p[2:0] / tmds_d_n[2:0]  HDMI の出力、hdmi_psv  HDMI の線の 499 Ω の有効化
 // =============================================================
 
 `default_nettype none
@@ -83,6 +84,15 @@ module ae350_probe_top #(
     output wire        ddram_ras_n,
     output wire        ddram_reset_n,
     output wire        ddram_we_n
+`endif
+`ifdef AE350_HDMI
+    ,
+    // HDMI の出力 (ピンは hdmi.cst。LVCMOS33D の ELVDS_OBUF で出す)
+    output wire        tmds_clk_p,
+    output wire        tmds_clk_n,
+    output wire [2:0]  tmds_d_p,
+    output wire [2:0]  tmds_d_n,
+    output wire        hdmi_psv      // 1 で、HDMI の線を 499 Ω で GND につなぐ (ボードの Q11。回路図の DVI-A_PSV)
 `endif
 );
 
@@ -579,6 +589,90 @@ wire unused_sdram = s_init_done;
     wire obs_txd;
     wire obs_active;
     assign uart_tx = obs_active ? obs_txd : cpu_txd;
+`endif
+
+`ifdef AE350_HDMI
+// ---------------------------------------------------------
+// HDMI の出力 (build.sh の HDMI=1)。1280×720 / 60 Hz のテストパターン (rtl/hdmi_test_pattern.v) と 48 kHz の試験音
+// (rtl/hdmi_audio_tone.v。振幅 0 の無音) を、hdl-util/hdmi (rtl/vendor/hdmi/) で出す。CPU とはつながず、HDMI の PLL のクロックだけで動く
+// ---------------------------------------------------------
+    wire hdmi_clk;       // 74.25 MHz (画素クロック)
+    wire hdmi_clk_x5;    // 371.25 MHz (OSER10 の FCLK)
+    wire hdmi_lock;
+
+    hdmi_pll u_hdmi_pll (
+        .clkin        (clk50),
+        .reset        (1'b0),
+        .clk_pixel    (hdmi_clk),
+        .clk_pixel_x5 (hdmi_clk_x5),
+        .lock         (hdmi_lock)
+    );
+
+    // HDMI の PLL がロックするまでリセットする (解除は画素クロックに同期させる)。hdmi.sv は 1 でリセット
+    wire hdmi_rst_n;
+    ae350_reset_sync u_hdmi_rst (.clk (hdmi_clk), .rst_n_in (hdmi_lock), .rst_n_out (hdmi_rst_n));
+    wire hdmi_reset = ~hdmi_rst_n;
+
+    wire               hdmi_clk_audio;
+    wire signed [15:0] hdmi_sample;
+    // 試験音は無音にする (振幅 0。HDMI の音声のパケットは送り続ける)。振幅 2048 の 1 kHz は、実機でモニタから大きな音で鳴った
+    hdmi_audio_tone #(.AMPLITUDE (0)) u_hdmi_tone (
+        .clk       (hdmi_clk),
+        .reset     (hdmi_reset),
+        .clk_audio (hdmi_clk_audio),
+        .sample    (hdmi_sample)
+    );
+
+    wire [15:0] hdmi_audio_word [1:0];
+    assign hdmi_audio_word[0] = hdmi_sample;
+    assign hdmi_audio_word[1] = hdmi_sample;
+
+    wire [10:0] hdmi_cx;
+    wire [23:0] hdmi_rgb;
+    hdmi_test_pattern u_hdmi_pattern (.clk (hdmi_clk), .cx (hdmi_cx), .rgb (hdmi_rgb));
+
+    wire [2:0] tmds;
+    wire       tmds_clock;
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire [9:0]  hdmi_cy;            // 縦の座標 (テストパターンは横の座標だけで色を決める)
+    wire [10:0] hdmi_frame_width;
+    wire [9:0]  hdmi_frame_height;
+    wire [10:0] hdmi_screen_width;
+    wire [9:0]  hdmi_screen_height;
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    hdmi #(
+        .VIDEO_ID_CODE      (4),
+        .VIDEO_REFRESH_RATE (60.0),
+        .AUDIO_RATE         (48000),
+        .AUDIO_BIT_WIDTH    (16)
+    ) u_hdmi (
+        .clk_pixel_x5      (hdmi_clk_x5),
+        .clk_pixel         (hdmi_clk),
+        .clk_audio         (hdmi_clk_audio),
+        .reset             (hdmi_reset),
+        .serializer_reset  (~hdmi_lock),   // OSER10 は PLL のロックで非同期にリセットする (rtl/vendor/hdmi/hdmi.sv の serializer_reset)
+        .rgb               (hdmi_rgb),
+        .audio_sample_word (hdmi_audio_word),
+        .tmds              (tmds),
+        .tmds_clock        (tmds_clock),
+        .cx                (hdmi_cx),
+        .cy                (hdmi_cy),
+        .frame_width       (hdmi_frame_width),
+        .frame_height      (hdmi_frame_height),
+        .screen_width      (hdmi_screen_width),
+        .screen_height     (hdmi_screen_height)
+    );
+
+    // ボードの HDMI の線の 499 Ω (AC 結合のコンデンサの後ろで GND へ) を有効にする。駆動しないと、ボードの 100 kΩ (R106) で切れる
+    assign hdmi_psv = 1'b1;
+
+    // 擬似差動の出力バッファ (クロックとデータ 3 レーン)
+    ELVDS_OBUF u_tmds_obuf [3:0] (
+        .I  ({tmds_clock, tmds}),
+        .O  ({tmds_clk_p, tmds_d_p}),
+        .OB ({tmds_clk_n, tmds_d_n})
+    );
 `endif
 
 endmodule

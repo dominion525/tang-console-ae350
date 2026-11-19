@@ -1,0 +1,22 @@
+// HDMI の出力 (build.sh の HDMI=1。build.sh が top.cst の後ろに足す)。差動の組を、LVCMOS33D (擬似差動) の ELVDS_OBUF で出す。
+// ピンは Sipeed の回路図 (Tang_138K_Console_V32001A、Rev 1.21) の SOM のコネクタ J1 (DVI-A_*) と照合した。IO_TYPE は、Tang Console 138K 用の
+// nand2mario/gbatang (src/boards/console138k.cst) と MiSTle-Dev/MiSTeryNano (src/tang/console138k/atarist.cst) と同じ
+IO_LOC  "tmds_clk_p" G15;
+IO_PORT "tmds_clk_p" PULL_MODE=NONE IO_TYPE=LVCMOS33D;
+IO_LOC  "tmds_clk_n" G16;
+IO_PORT "tmds_clk_n" PULL_MODE=NONE IO_TYPE=LVCMOS33D;
+IO_LOC  "tmds_d_p[0]" J14;
+IO_PORT "tmds_d_p[0]" PULL_MODE=NONE IO_TYPE=LVCMOS33D;
+IO_LOC  "tmds_d_n[0]" H14;
+IO_PORT "tmds_d_n[0]" PULL_MODE=NONE IO_TYPE=LVCMOS33D;
+IO_LOC  "tmds_d_p[1]" J15;
+IO_PORT "tmds_d_p[1]" PULL_MODE=NONE IO_TYPE=LVCMOS33D;
+IO_LOC  "tmds_d_n[1]" H15;
+IO_PORT "tmds_d_n[1]" PULL_MODE=NONE IO_TYPE=LVCMOS33D;
+IO_LOC  "tmds_d_p[2]" K17;
+IO_PORT "tmds_d_p[2]" PULL_MODE=NONE IO_TYPE=LVCMOS33D;
+IO_LOC  "tmds_d_n[2]" J17;
+IO_PORT "tmds_d_n[2]" PULL_MODE=NONE IO_TYPE=LVCMOS33D;
+// DVI-A_PSV (回路図の J2 の 61 番ピン、K14)。1 で、ボードの Q11 が HDMI の 8 本の線を 499 Ω で GND につなぐ
+IO_LOC  "hdmi_psv" K14;
+IO_PORT "hdmi_psv" IO_TYPE=LVCMOS33 PULL_MODE=NONE;

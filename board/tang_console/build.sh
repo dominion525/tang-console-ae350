@@ -19,6 +19,8 @@
 #                    litedram_gen で出力先に生成する)。LITEX_VENV で LiteX の仮想環境を指定する (既定値はない。作り方は README)
 #   PLACE=<値> ROUTE=<値>  配置配線のオプション (Gowin の place_option と route_option)。指定しなければ Gowin の既定値
 #                    (CPU=hazard3 MEM=ddr3 で、配置によって core_clk のタイミング違反が出たため)。Hazard3 版の PLACE の既定値は 2
+#   HDMI=1           HDMI の出力を足す (1280×720 / 60 Hz のテストパターンと、48 kHz の無音の音声。hdl-util/hdmi、HDMI の PLL は
+#                    hdmi_pll.v、ピンは hdmi.cst)。CPU とはつながない。合成は SystemVerilog 2017 の指定で行う
 #   TRACE=1          デバッグ用。ahb_sdram に、受け付けた転送の記録を入れる (rtl/ahb_sdram.v の AHB_SDRAM_TRACE)
 G=${GOWIN_IDE:-/Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/IDE}
 here=$(cd "$(dirname "$0")" && pwd)
@@ -98,6 +100,18 @@ fi
 # ピン制約と配置制約は、出力先に 1 つにまとめて作る (Gowin の合成ツールは制約ファイルを 1 つしか使わず、後から追加したものだけが
 # 有効になる。ddr3.cst だけが有効になり、clk50 と UART が別のピンに配置されたことがあった)。DDR3 版は top.cst に ddr3/ddr3.cst を追加する
 cat "$here/top.cst" > "$out/top_build.cst" || exit 1
+# HDMI=1: HDMI の出力を足す。hdl-util/hdmi の Gowin 向けのシリアライザ (OSER10) は GW_IDE のときだけ入る
+export AE350_HDMI=${HDMI:-}
+case "$AE350_HDMI" in
+  "") ;;
+  1)
+    printf '`define AE350_HDMI\n`define GW_IDE\n' >> "$out/defines.v"
+    cat "$here/hdmi.cst" >> "$out/top_build.cst" || exit 1
+    ruby "$here/make_sdc_hdmi.rb" "$AE350_SDC" "$out/top_hdmi.sdc" || exit 1
+    export AE350_SDC="$out/top_hdmi.sdc"
+    ;;
+  *) echo "HDMI must be 1 or unset" >&2; exit 1 ;;
+esac
 [ "$AE350_MEM" = ddr3 ] && cat "$here/ddr3/ddr3.cst" >> "$out/top_build.cst"
 # LiteDRAM 版: litedram_gen でコントローラを出力先に生成し、ROM の内容を絶対パスで読み込むように書き換える (生成された Verilog は
 # $readmemh を相対パスで書くため)。Gowin のライブラリの環境変数 (下の DYLD_*) を設定する前に実行する

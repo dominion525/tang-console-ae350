@@ -88,6 +88,7 @@ module hdmi_tb;
         .clk_pixel         (clk),
         .clk_audio         (clk_audio),
         .reset             (reset),
+        .serializer_reset  (reset),
         .rgb               (rgb),
         .audio_sample_word (audio_word),
         .tmds              (tmds),
