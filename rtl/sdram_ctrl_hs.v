@@ -1,14 +1,14 @@
 // =============================================================
 // File:        rtl/sdram_ctrl_hs.v
 // Module:      sdram_ctrl_hs
-// Role:        SDR SDRAM (W9825G6KH-6) のコントローラの 166.7 MHz 版。rtl/sdram_bridge.v (20 MHz 版) を元に、
-//              166.7 MHz で動くように変更したもの。上位側のポート (fill_*、we、waddr、wdata、wmask、wready、init_done) は
-//              sdram_bridge と同じなので、ahb_sdram からはどちらも同じように使える。
+// Role:        SDR SDRAM (W9825G6KH-6) のコントローラ (166.7 MHz)。上位側のポート (fill_*、we、waddr、wdata、wmask、wready、
+//              init_done) で ahb_sdram につなぐ。以前の 20 MHz で動くコントローラ (sdram_bridge。削除した) を元に、166.7 MHz で
+//              動くように変更したもの。
 //              ライン読み出しは 8 ワードのバースト。書き込みは、8 バイト (4 ワード) を、行を 1 回開いたまま、1 ワードずつの WRITE で
 //              4 回続けて書く (バイトの有効 (wmask) が 0 のバイトは DQM で外す)。どちらもオートプリチャージ付き。初期化とリフレッシュも
 //              ここで行う。
 //
-//   sdram_bridge からの変更点
+//   元にした 20 MHz のコントローラ (sdram_bridge) からの変更点
 //     - ピンを直接駆動せず、sdram_io (IO 内のレジスタ) にコマンド、アドレス、DQM、DQ と出力許可を渡し、取り込んだ DQ を受け取る
 //     - CL 3 (166.7 MHz の周期は、CL 2 の最小周期 7.5 ns より短いため)
 //     - 待ちのサイクル数、初期化とリフレッシュの間隔を、クロックの周期 (CLK_PS) から計算する
@@ -108,7 +108,7 @@ module sdram_ctrl_hs #(
     localparam [3:0] CMD_NOP = 4'b0111, CMD_ACT = 4'b0011, CMD_READ = 4'b0101, CMD_WRITE = 4'b0100,
                      CMD_PRE = 4'b0010, CMD_REF = 4'b0001, CMD_MRS = 4'b0000;
 
-    // 状態の番号は sdram_bridge と同じ (5 は sdram_bridge の S_REF。ここではリフレッシュも S_WAIT で待つので使わない)
+    // 状態の番号は元にした sdram_bridge と同じ (5 は sdram_bridge の S_REF。ここではリフレッシュも S_WAIT で待つので使わない)
     localparam S_POWER = 4'd0, S_PRE_ALL = 4'd1, S_INIT_REF = 4'd2, S_MRS = 4'd3, S_IDLE = 4'd4,
                S_RD_CMD = 4'd6, S_RD_DATA = 4'd7, S_WR_CMD = 4'd8, S_WAIT = 4'd9;
 
@@ -130,7 +130,7 @@ module sdram_ctrl_hs #(
     reg        rd_go;            // 次のクロックで、READ を出す
     reg [3:0]  wr_pend;          // これから出す WRITE (1 のビットごとに 1 回。下位のビットから、1 クロックに 1 回出す)
 
-    // ワードアドレス (バイトアドレスの上位) を {行, バンク, 列} に分ける (sdram_bridge と同じ割り当て)
+    // ワードアドレス (バイトアドレスの上位) を {行, バンク, 列} に分ける
     wire [ADDR_WIDTH-2:0] w_word = waddr[ADDR_WIDTH-1:1];
     /* verilator lint_off UNUSEDSIGNAL */
     wire unused_waddr = &{1'b0, waddr[0], w_word[1:0]};   // 8 バイト境界なので、下位 3 ビット (w_word の下位 2 ビット) は見ない

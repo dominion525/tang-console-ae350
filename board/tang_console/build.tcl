@@ -18,7 +18,6 @@ if {[info exists ::env(AE350_ROUTE_OPTION)] && $::env(AE350_ROUTE_OPTION) ne ""}
 set_option -include_path "$ae/hazard3/hdl"
 add_file $out/defines.v
 foreach f {apb_uart uart_reset_seq apb_gpint apb_paddr_probe apb_reg_slice ahb_reg_slice ahb_sram ahb_rom ahb_sdram sdram_ctrl_hs sdram_io} { add_file $ae/rtl/$f.v }
-add_file $ae/rtl/sdram_bridge.v
 add_file $ae/rtl/vendor/verilog-uart/uart_tx.v
 add_file $ae/rtl/vendor/verilog-uart/uart_rx.v
 add_file $ae/rtl/reset_gen.v

@@ -9,8 +9,7 @@ coverage_off -file "*tb/ahb_*_model.v"
 coverage_off -file "*tb/plic_tb.v"
 coverage_off -file "*tb/sram_tb.v"
 coverage_off -file "*tb/sdram_tb.v"
-// 他の設計から流用したファイル (sdram_bridge は流用した回路、SDRAM のモデルは取り込んだ外部のコード) と、SDRAM と IO のテストベンチ用のファイル
-coverage_off -file "*rtl/sdram_bridge.v"
+// SDRAM のモデル (取り込んだ外部のコード) と、SDRAM と IO のテストベンチ用のファイル
 coverage_off -file "*zeitlos/sdram_model.v"
 coverage_off -file "*tb/sdram_hs_path.v"
 coverage_off -file "*tb/gowin_io_models.v"
