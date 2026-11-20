@@ -31,7 +31,8 @@ module sdram_hs_path #(
     output wire [127:0]          fill_data,
     input  wire                  we,
     input  wire [ADDR_WIDTH-1:0] waddr,
-    input  wire [7:0]            wdata,
+    input  wire [63:0]           wdata,
+    input  wire [7:0]            wmask,
     output wire                  wready,
     output wire                  init_done
 );
@@ -43,7 +44,7 @@ module sdram_hs_path #(
 
     sdram_ctrl_hs #(.ADDR_WIDTH (ADDR_WIDTH), .RD_FIRST (RD_FIRST)) u_ctrl (
         .clk (s_clk), .rst_n (rst_n), .fill_valid (fill_valid), .fill_line (fill_line), .fill_ready (fill_ready),
-        .fill_data (fill_data), .we (we), .waddr (waddr), .wdata (wdata), .wready (wready), .init_done (init_done),
+        .fill_data (fill_data), .we (we), .waddr (waddr), .wdata (wdata), .wmask (wmask), .wready (wready), .init_done (init_done),
         .io_cmd (io_cmd), .io_addr (io_addr), .io_ba (io_ba), .io_dqm (io_dqm), .io_dq_out (io_dq_out),
         .io_dq_oe (io_dq_oe), .io_dq_in (io_dq_in)
     );

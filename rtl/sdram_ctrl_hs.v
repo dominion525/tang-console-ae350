@@ -2,9 +2,10 @@
 // File:        rtl/sdram_ctrl_hs.v
 // Module:      sdram_ctrl_hs
 // Role:        SDR SDRAM (W9825G6KH-6) のコントローラの 166.7 MHz 版。rtl/sdram_bridge.v (20 MHz 版) を元に、
-//              166.7 MHz で動くように変更したもの。上位側のポート (fill_*、we、waddr、wdata、wready、init_done) は
+//              166.7 MHz で動くように変更したもの。上位側のポート (fill_*、we、waddr、wdata、wmask、wready、init_done) は
 //              sdram_bridge と同じなので、ahb_sdram からはどちらも同じように使える。
-//              ライン読み出しは 8 ワードのバースト、書き込みは 1 ワード。どちらもオートプリチャージ付き。初期化とリフレッシュも
+//              ライン読み出しは 8 ワードのバースト。書き込みは、8 バイト (4 ワード) を、行を 1 回開いたまま、1 ワードずつの WRITE で
+//              4 回続けて書く (バイトの有効 (wmask) が 0 のバイトは DQM で外す)。どちらもオートプリチャージ付き。初期化とリフレッシュも
 //              ここで行う。
 //
 //   sdram_bridge からの変更点
@@ -42,8 +43,9 @@ module sdram_ctrl_hs #(
     output reg                   fill_ready,
     output reg  [127:0]          fill_data,
     input  wire                  we,
-    input  wire [ADDR_WIDTH-1:0] waddr,
-    input  wire [7:0]            wdata,
+    input  wire [ADDR_WIDTH-1:0] waddr,        // 8 バイト境界 (下位 3 ビットは見ない)
+    input  wire [63:0]           wdata,
+    input  wire [7:0]            wmask,        // 書き込むバイト (1 のバイトだけ書き込む。1 つ以上が 1 であること)
     output reg                   wready,
     output reg                   init_done,
 
@@ -90,15 +92,18 @@ module sdram_ctrl_hs #(
     localparam [CW-1:0] RD_LAST_C  = RD_LAST[CW-1:0];
     // 1 クロック前に決めておく判定と、判定するときの cnt の値 (判定の結果を、読み出した 16 バイト分の 128 個のレジスタや
     // アドレスのレジスタに分配する配線が長く、配置によっては s_clk のスラックがなくなったため。判定を前のクロックで済ませ、
-    // 分配する配線をレジスタから始める)。tRCD と WRITE を出すタイミングは 2 クロック以上であること (166.7 MHz では 3 と 5)
+    // 分配する配線をレジスタから始める)。tRCD と最初の WRITE を出すタイミングは 2 クロック以上であること (166.7 MHz ではどちらも 3)
     localparam integer  SHIFT_LO   = RD_FIRST - 1;
     localparam integer  SHIFT_HI   = RD_LAST - 1;
     localparam integer  RD_GO      = T_RCD - 2;
-    localparam integer  WR_GO      = T_WR_AT - 2;
     localparam [CW-1:0] SHIFT_LO_C = SHIFT_LO[CW-1:0];
     localparam [CW-1:0] SHIFT_HI_C = SHIFT_HI[CW-1:0];
     localparam [CW-1:0] RD_GO_C    = RD_GO[CW-1:0];
-    localparam [CW-1:0] WR_GO_C    = WR_GO[CW-1:0];
+    // 書き込みは、8 バイト (4 ワード) を常に 4 回の WRITE で続けて書く。最初の WRITE を出すタイミング (ACT から数える) は、
+    // 最後の WRITE (オートプリチャージ付き) が T_WR_AT より前にならないように (tRAS を守る) 決め、tRCD より前にはしない
+    localparam integer  WR_START   = max2(T_RCD, T_WR_AT - 3);
+    localparam integer  WR4_GO     = WR_START - 2;
+    localparam [CW-1:0] WR4_GO_C   = WR4_GO[CW-1:0];
 
     localparam [3:0] CMD_NOP = 4'b0111, CMD_ACT = 4'b0011, CMD_READ = 4'b0101, CMD_WRITE = 4'b0100,
                      CMD_PRE = 4'b0010, CMD_REF = 4'b0001, CMD_MRS = 4'b0000;
@@ -123,10 +128,13 @@ module sdram_ctrl_hs #(
     reg        rst_q;
     reg        rd_shift;         // 次のクロックで、読み出したワードを fill_data に取り込む
     reg        rd_go;            // 次のクロックで、READ を出す
-    reg        wr_go;            // 次のクロックで、WRITE を出す
+    reg [3:0]  wr_pend;          // これから出す WRITE (1 のビットごとに 1 回。下位のビットから、1 クロックに 1 回出す)
 
     // ワードアドレス (バイトアドレスの上位) を {行, バンク, 列} に分ける (sdram_bridge と同じ割り当て)
     wire [ADDR_WIDTH-2:0] w_word = waddr[ADDR_WIDTH-1:1];
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire unused_waddr = &{1'b0, waddr[0], w_word[1:0]};   // 8 バイト境界なので、下位 3 ビット (w_word の下位 2 ビット) は見ない
+    /* verilator lint_on UNUSEDSIGNAL */
     wire [ADDR_WIDTH-2:0] r_word = {fill_line, 3'b000};
     localparam ROW_BITS = ADDR_WIDTH - 1 - 11;
     function [12:0] pad_row(input [ROW_BITS-1:0] r);
@@ -138,7 +146,11 @@ module sdram_ctrl_hs #(
 
     reg [8:0]  col_q;
     reg [1:0]  ba_q;
-    reg [1:0]  wmask_q;
+    // 書き込み: ACT のエッジで 8 バイトとバイトの有効を受け取り、WRITE を 1 回出すたびに 16 ビット (2 バイト) ずつずらす。
+    // いつも下位の 16 ビットを出すので、何番目のワードかでデータを選ぶ回路が要らない
+    reg [63:0] wsh;
+    reg [7:0]  msh;
+    reg [1:0]  wcol;             // いま書くワードの、8 バイトの中の位置
 
     wire act_ok = (since_act >= T_RC[SAW-1:0]);
 
@@ -151,7 +163,8 @@ module sdram_ctrl_hs #(
     initial begin
         state = S_POWER; cnt = {CW{1'b0}}; init_cnt = {IW{1'b0}}; wait_n = {CW{1'b0}}; init_refs = 4'd0;
         refresh_timer = {RW{1'b0}}; refresh_due = 1'b0;
-        rst_q = 1'b0; rd_shift = 1'b0; rd_go = 1'b0; wr_go = 1'b0; rd_keep = 1'b0; since_act = {SAW{1'b1}}; dq_s = 16'd0; col_q = 9'd0; ba_q = 2'd0; wmask_q = 2'b00;
+        rst_q = 1'b0; rd_shift = 1'b0; rd_go = 1'b0; wr_pend = 4'd0; rd_keep = 1'b0; since_act = {SAW{1'b1}}; dq_s = 16'd0; col_q = 9'd0; ba_q = 2'd0;
+        wsh = 64'd0; msh = 8'd0; wcol = 2'd0;
         fill_ready = 1'b0; fill_data = 128'd0; wready = 1'b0; init_done = 1'b0;
         io_cmd = CMD_NOP; io_addr = 13'd0; io_ba = 2'd0; io_dqm = 2'b11; io_dq_out = 16'd0; io_dq_oe = 1'b0;
     end
@@ -163,7 +176,6 @@ module sdram_ctrl_hs #(
         // 1 クロック前に決めておく判定 (この 3 つの状態では、cnt は毎クロック 1 つ進む)
         rd_shift <= (state == S_RD_DATA) && (cnt >= SHIFT_LO_C) && (cnt <= SHIFT_HI_C);
         rd_go    <= (state == S_RD_CMD) && (cnt == RD_GO_C);
-        wr_go    <= (state == S_WR_CMD) && (cnt == WR_GO_C);
         if (rd_shift) fill_data <= {dq_s, fill_data[127:16]};
         if (state == S_IDLE) init_done <= 1'b1;
         if (since_act != {SAW{1'b1}}) since_act <= since_act + 1'b1;
@@ -173,6 +185,11 @@ module sdram_ctrl_hs #(
         wready     <= 1'b0;
         io_dq_oe   <= 1'b0;
         io_dqm     <= 2'b00;
+        // アドレスとバンクは、コマンドを出すクロックだけ意味がある (NOP のときは SDRAM が見ない)。値を保つ作りにすると、
+        // 値を入れる場所 (ACT、READ、WRITE、初期化) が多いため取り込みの許可の論理が深くなり、s_clk の余裕を削っていた。
+        // コマンドがないクロックは 0 にする
+        io_addr    <= 13'd0;
+        io_ba      <= 2'd0;
 
         if (refresh_timer == REFRESH_CYCLES[RW-1:0] - 1'b1) begin
             refresh_timer <= {RW{1'b0}};
@@ -242,10 +259,11 @@ module sdram_ctrl_hs #(
                     cmd(CMD_ACT);
                     io_ba     <= w_word[10:9];
                     io_addr   <= pad_row(w_word[ADDR_WIDTH-2:11]);
-                    col_q     <= w_word[8:0];
+                    col_q     <= {w_word[8:2], 2'b00};     // 8 バイト (4 ワード) の先頭の列
                     ba_q      <= w_word[10:9];
-                    io_dq_out <= {wdata, wdata};
-                    // アドレスの小さいバイトが下位 (DQ[7:0])。DQM が 1 のバイトは書き込まない
+                    wsh       <= wdata;
+                    msh       <= wmask;
+                    wcol      <= 2'd0;
                     wready    <= 1'b1;
                     since_act <= {{(SAW-1){1'b0}}, 1'b1};
                     cnt       <= {CW{1'b0}};
@@ -273,18 +291,15 @@ module sdram_ctrl_hs #(
                     state      <= S_WAIT;
                 end
             end
-            // ACT から T_WR_AT (tRCD と tRAS - tWR の大きい方) を待って WRITE (書き込む値と DQM も同じエッジで出す)
+            // ACT から WR_START を待って、4 回の WRITE を続けて出す (WRITE を出すのは、下の wr_pend の部分)。最後の WRITE を出す
+            // エッジで S_WAIT に移り、tWR とオートプリチャージの tRP を待つ
             S_WR_CMD: begin
                 cnt <= cnt + 1'b1;
-                if (wr_go) begin
-                    cmd(CMD_WRITE);
-                    io_ba    <= ba_q;
-                    io_addr  <= {3'b001, 1'b0, col_q};
-                    io_dq_oe <= 1'b1;
-                    io_dqm   <= wmask_q;
-                    cnt      <= {CW{1'b0}};
-                    wait_n   <= T_WR[CW-1:0] + T_RP[CW-1:0];   // tWR とオートプリチャージの tRP
-                    state    <= S_WAIT;
+                if (cnt == WR4_GO_C && wr_pend == 4'd0) wr_pend <= 4'b1111;
+                if (wr_pend == 4'b0001) begin
+                    cnt    <= {CW{1'b0}};
+                    wait_n <= T_WR[CW-1:0] + T_RP[CW-1:0];
+                    state  <= S_WAIT;
                 end
             end
             S_WAIT: begin
@@ -293,11 +308,22 @@ module sdram_ctrl_hs #(
             end
             default: state <= S_POWER;
         endcase
-    end
 
-    // 書き込むバイトの選択は、ACT のエッジの waddr で決まる (sdram_bridge と同じ)
-    always @(posedge clk)
-        if (state == S_IDLE) wmask_q <= waddr[0] ? 2'b01 : 2'b10;
+        // WRITE を出す (wr_pend の最下位のビットが 1 のエッジごとに 1 回。出すかどうかはレジスタだけで決まる)。書き込む値と DQM も
+        // 同じエッジで出す。アドレスの小さいバイトが下位 (DQ[7:0])。DQM が 1 のバイトは書き込まない
+        if (wr_pend[0]) begin
+            cmd(CMD_WRITE);
+            io_ba     <= ba_q;
+            io_addr   <= {2'b00, wr_pend[3:1] == 3'b000, 1'b0, col_q[8:2], wcol};   // A10 = 最後のワードならオートプリチャージ
+            io_dq_oe  <= 1'b1;
+            io_dq_out <= wsh[15:0];
+            io_dqm    <= ~msh[1:0];
+            wsh       <= {16'd0, wsh[63:16]};
+            msh       <= {2'b00, msh[7:2]};
+            wcol      <= wcol + 2'd1;
+            wr_pend   <= {1'b0, wr_pend[3:1]};
+        end
+    end
 
 endmodule
 

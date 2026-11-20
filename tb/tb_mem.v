@@ -382,7 +382,8 @@ module tb_mem;
     wire [20:0]   s_fill_line;
     wire [127:0]  s_fill_data;
     wire [24:0]   s_waddr;
-    wire [7:0]    s_wdata;
+    wire [63:0]   s_wdata;
+    wire [7:0]    s_wmask;
 
     ahb_sdram #(.SDRAM_AW(25)) u_ahb_sdram (
         .hclk       (ddr_clk),
@@ -404,6 +405,7 @@ module tb_mem;
         .we         (s_we),
         .waddr      (s_waddr),
         .wdata      (s_wdata),
+        .wmask      (s_wmask),
         .wready     (s_wready)
     );
 
@@ -411,7 +413,7 @@ module tb_mem;
     // 166.7 MHz 版の経路 (sdram_ctrl_hs → sdram_io → SDRAM のモデル。tb/sdram_hs_path.v)
     sdram_hs_path #(.ADDR_WIDTH(25), .RD_FIRST(11), .IN_DLY(160), .CAP_EDGE(0)) u_path (
         .s_clk (sdram_clk), .rst_n (srst_n), .fill_valid (s_fill_valid), .fill_line (s_fill_line),
-        .fill_ready (s_fill_ready), .fill_data (s_fill_data), .we (s_we), .waddr (s_waddr), .wdata (s_wdata),
+        .fill_ready (s_fill_ready), .fill_data (s_fill_data), .we (s_we), .waddr (s_waddr), .wdata (s_wdata), .wmask (s_wmask),
         .wready (s_wready), .init_done (s_init_done)
     );
     `define TB_SDRAM_MEM u_path.u_model.mem
@@ -432,6 +434,7 @@ module tb_mem;
         .we          (s_we),
         .waddr       (s_waddr),
         .wdata       (s_wdata),
+        .wmask       (s_wmask),
         .wready      (s_wready),
         .init_done   (s_init_done),
         .sdram_dq    (sdram_dq),

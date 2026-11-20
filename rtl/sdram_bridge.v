@@ -23,9 +23,11 @@
 //   output reg                    fill_ready    ラインを出力したサイクルに 1
 //   output reg  [127:0]           fill_data     ラインの 16 バイト。アドレスの小さいバイトが下位
 //   input  wire                   we            書き込んでほしい間 1
-//   input  wire [ADDR_WIDTH-1:0]  waddr
-//   input  wire [7:0]             wdata
-//   output reg                    wready        受け付けた次のサイクルに 1
+//   input  wire [ADDR_WIDTH-1:0]  waddr         8 バイト境界 (下位 3 ビットは見ない)
+//   input  wire [63:0]            wdata         8 バイト。アドレスの小さいバイトが下位
+//   input  wire [7:0]             wmask         書き込むバイト (1 のバイトだけ書き込む)
+//   output reg                    wready        全バイトを受け付けた次のサイクルに 1 (sdram_ctrl_hs と同じポート。この 20 MHz 版は、
+//                                               中で 1 バイトずつ書き込む)
 //   output reg                    init_done     SDRAM の初期化が終わった。一度 1 になったら 0 に戻らない。上位の非同期リセットに
 //                                               つながるので、state から組み合わせ回路で作らない (一瞬の 0 がリセットになるため)
 //
@@ -74,7 +76,8 @@ module sdram_bridge #(
     output reg  [127:0]          fill_data = 128'd0,
     input  wire                  we,
     input  wire [ADDR_WIDTH-1:0] waddr,
-    input  wire [7:0]            wdata,
+    input  wire [63:0]           wdata,
+    input  wire [7:0]            wmask,
     output reg                   wready = 1'b0,
     output reg                   init_done = 1'b0,
 
@@ -102,8 +105,49 @@ module sdram_bridge #(
     reg [15:0] dq_out = 16'd0;
     reg        dq_oe = 1'b0;
 
+    // 上位の 8 バイトとバイトの有効の書き込みを、1 バイトずつの書き込み (b_*) にして、下の状態の流れに渡す。20 MHz 版は速さを
+    // 問わないので、今までどおり 1 バイトごとに ACT からプリチャージまで行う。wready は、全バイトを受け付けた次のサイクルに 1
+    function [2:0] lowest(input [7:0] m);   // 1 のビットのうち最も下位のもの
+        integer k;
+        begin
+            lowest = 3'd0;
+            for (k = 7; k >= 0; k = k - 1) if (m[k]) lowest = k[2:0];
+        end
+    endfunction
+    reg        b_active = 1'b0;          // 1 バイトずつ書いている途中
+    reg [7:0]  b_lanes  = 8'd0;          // まだ書いていないバイト
+    reg        b_ready  = 1'b0;          // 下の状態の流れが 1 バイトを受け付けた次のサイクルに 1
+    wire [2:0] b_lane   = lowest(b_lanes);
+    wire                  b_we   = b_active;
+    wire [ADDR_WIDTH-1:0] b_addr = {waddr[ADDR_WIDTH-1:3], b_lane};
+    wire [7:0]            b_data = wdata[8 * b_lane +: 8];
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire unused_waddr = &{1'b0, waddr[2:0]};   // 8 バイト境界なので、下位 3 ビットは見ない
+    /* verilator lint_on UNUSEDSIGNAL */
+    always @(posedge clk) begin
+        wready <= 1'b0;
+        if (!rst_n) begin
+            b_active <= 1'b0;
+            b_lanes  <= 8'd0;
+        end else if (!b_active) begin
+            // wready のサイクルは、上位が we を下げる前なので、受け付けない
+            if (we && !wready) begin
+                b_active <= 1'b1;
+                b_lanes  <= wmask;
+            end
+        end else if (b_ready) begin
+            if ((b_lanes & ~(8'd1 << b_lane)) == 8'd0) begin
+                b_active <= 1'b0;
+                b_lanes  <= 8'd0;
+                wready   <= 1'b1;
+            end else begin
+                b_lanes  <= b_lanes & ~(8'd1 << b_lane);
+            end
+        end
+    end
+
     // ワードアドレス (バイトアドレスの上位) を {行, バンク, 列} に分ける
-    wire [ADDR_WIDTH-2:0] w_word = waddr[ADDR_WIDTH-1:1];
+    wire [ADDR_WIDTH-2:0] w_word = b_addr[ADDR_WIDTH-1:1];
     wire [ADDR_WIDTH-2:0] r_word = {fill_line, 3'b000};
     localparam ROW_BITS = ADDR_WIDTH - 1 - 11;
     // 行アドレスを 13 ビットに詰める (ADDR_WIDTH が 25 のときは ROW_BITS が 13 になり、0 回の繰り返しは書けないので、
@@ -132,7 +176,7 @@ module sdram_bridge #(
 
         cmd(CMD_NOP);
         fill_ready <= 1'b0;
-        wready <= 1'b0;
+        b_ready <= 1'b0;
         dq_oe <= 1'b0;
         sdram_dqm <= 2'b00;
 
@@ -196,16 +240,16 @@ module sdram_bridge #(
                     ba_q <= r_word[10:9];
                     rd_keep <= 1'b1;
                     state <= S_RD_CMD;
-                end else if (we && rst_n) begin
+                end else if (b_we && rst_n) begin
                     cmd(CMD_ACT);
                     sdram_ba <= w_word[10:9];
                     sdram_addr <= pad_row(w_word[ADDR_WIDTH-2:11]);
                     col_q <= w_word[8:0];
                     ba_q <= w_word[10:9];
-                    dq_out <= {wdata, wdata};
+                    dq_out <= {b_data, b_data};
                     sdram_dqm <= 2'b00;
                     // アドレスの小さいバイトが下位 (DQ[7:0])。DQM が 1 のバイトは書き込まない
-                    wready <= 1'b1;
+                    b_ready <= 1'b1;
                     state <= S_WR_CMD;
                 end
             S_REF: begin                        // tRC 60 ns (2 サイクル)
@@ -248,9 +292,9 @@ module sdram_bridge #(
         endcase
     end
 
-    // 書き込むバイトの選択は、ACT のサイクルの waddr で決まる
+    // 書き込むバイトの選択は、ACT のサイクルの b_addr で決まる
     always @(posedge clk)
-        if (state == S_IDLE) wmask_q <= waddr[0] ? 2'b01 : 2'b10;
+        if (state == S_IDLE) wmask_q <= b_addr[0] ? 2'b01 : 2'b10;
 endmodule
 
 `default_nettype wire
