@@ -2,7 +2,7 @@
 // File:        tb/sdram_tb.v
 // Module:      sdram_tb
 // Role:        ahb_sdram (DDR_H* を SDRAM コントローラにつなぐブリッジ) の単体テストベンチ。
-//              ahb_sdram → rtl/sdram_bridge.v → SDRAM のモデルをつなぎ、テストベンチから AHB の転送を出して確かめる。
+//              ahb_sdram → sdram_ctrl_hs → sdram_io → SDRAM のモデル (tb/sdram_hs_path.v) をつなぎ、テストベンチから AHB の転送を出して確かめる。
 //              期待と違えば $fatal で止まる。
 //
 //   1  初期化前に来た読み出しが、待たされた後に正しく完了する
@@ -29,14 +29,9 @@ module sdram_tb;
         sclk = 1'b0;
     end
     always #10 hclk = ~hclk;    // 50 MHz (DDR_CLK)
-`ifdef SDRAM_HS
-    // 166.7 MHz 版: s_clk 6 ns。読み出しデータを取り込むタイミングは、マクロ SDRAM_IN_DLY (IODELAY のステップ数) と SDRAM_CAP_EDGE で渡す
+    // s_clk 6 ns (166.7 MHz)。読み出しデータを取り込むタイミングは、マクロ SDRAM_IN_DLY (IODELAY のステップ数) と SDRAM_CAP_EDGE で渡す
     always #3 sclk = ~sclk;
     localparam integer SCLK_PS = 6000;
-`else
-    always #25 sclk = ~sclk;    // 20 MHz (SDRAM)
-    localparam integer SCLK_PS = 50000;
-`endif
     localparam integer HCLK_PS = 20000;
 
     reg rst_n = 1'b0;
@@ -67,12 +62,6 @@ module sdram_tb;
     wire [24:0]   waddr;
     wire [63:0]   wdata;
     wire [7:0]    wmask;
-`ifndef SDRAM_HS
-    wire [15:0]   dq;
-    wire [12:0]   a;
-    wire [1:0]    ba, dqm;
-    wire          cs_n, ras_n, cas_n, we_n;
-`endif
 
     ahb_sdram #(.SDRAM_AW(25)) dut (
         .hclk (hclk), .hresetn (rst_n), .haddr (haddr), .htrans (htrans), .hwrite (hwrite), .hsize (hsize),
@@ -81,7 +70,6 @@ module sdram_tb;
         .fill_data (fill_data), .we (we), .waddr (waddr), .wdata (wdata), .wmask (wmask), .wready (wready)
     );
 
-`ifdef SDRAM_HS
 `ifndef SDRAM_BOARD_PS
     `define SDRAM_BOARD_PS 0
 `endif
@@ -101,20 +89,6 @@ module sdram_tb;
         .init_done (init_done)
     );
     `define SDRAM_MEM u_path.u_model.mem
-`else
-    `define SDRAM_MEM u_model.mem
-    sdram_bridge #(.ADDR_WIDTH(25)) u_bridge (
-        .clk (sclk), .rst_n (srst_n), .fill_valid (fill_valid), .fill_line (fill_line), .fill_ready (fill_ready),
-        .fill_data (fill_data), .we (we), .waddr (waddr), .wdata (wdata), .wmask (wmask), .wready (wready), .init_done (init_done),
-        .sdram_dq (dq), .sdram_addr (a), .sdram_ba (ba), .sdram_cs_n (cs_n), .sdram_ras_n (ras_n),
-        .sdram_cas_n (cas_n), .sdram_we_n (we_n), .sdram_dqm (dqm)
-    );
-
-    sdram_model u_model (
-        .clk (~sclk), .cke (1'b1), .csn (cs_n), .rasn (ras_n), .casn (cas_n), .wen (we_n), .dqm (dqm), .ba (ba),
-        .addr (a), .dq (dq)
-    );
-`endif
 
     // ---------------------------------------------------------
     // 期待値の写し (下位 4 KB と、32 MB の最上位の 4 KB)
@@ -267,7 +241,7 @@ module sdram_tb;
         repeat (3) @(posedge hclk);
         rst_n = 1'b1;
 
-        // 1: 初期化前に来た読み出し (sdram_bridge は初期化が終わるまで受け付けない)
+        // 1: 初期化前に来た読み出し (sdram_ctrl_hs は初期化が終わるまで受け付けない)
         if (init_done) $fatal(1, "initialization finished too early (the premise of this check no longer holds)");
         ahb_read_check(32'h0000_0010, 3'd3);
         if (!init_done) $fatal(1, "read completed before initialization");
@@ -408,7 +382,7 @@ module sdram_tb;
         pat_byte = p[k*8 +: 8];
     endfunction
 
-    // バイトアドレスを、SDRAM のモデルの内容のアドレス ({バンク, 行, 列}) に変換する。sdram_bridge は {行, バンク, 列} で割り当てる
+    // バイトアドレスを、SDRAM のモデルの内容のアドレス ({バンク, 行, 列}) に変換する。sdram_ctrl_hs は {行, バンク, 列} で割り当てる
     /* verilator lint_off UNUSEDSIGNAL */
     function [31:0] mi(input [31:0] byte_addr);   // 上位とビット 0 は使わない (32 MB の 16 ビットワード)
     /* verilator lint_on UNUSEDSIGNAL */

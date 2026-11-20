@@ -353,22 +353,18 @@ module tb_mem;
     );
 
     `ifdef TB_SDRAM
-    // DDR_H* の先を、実機と同じ SDRAM の経路にする (ahb_sdram → sdram_bridge → SDRAM のモデル)。
-    // SDRAM のクロックは +sdram_hp (半周期 ps。既定値は 25000 で 20 MHz、SDRAM_HS では 3000 で 166.7 MHz)。ピンには反転して出す
+    // DDR_H* の先を、実機と同じ SDRAM の経路にする (ahb_sdram → sdram_ctrl_hs → sdram_io → SDRAM のモデル。tb/sdram_hs_path.v)。
+    // SDRAM のクロックは +sdram_hp (半周期 ps。既定値は 3000 で 166.7 MHz)
     integer sdram_hp;
     reg     sdram_clk;
     initial begin
-`ifdef SDRAM_HS
-        if (!$value$plusargs("sdram_hp=%d", sdram_hp)) sdram_hp = 3000;      // 166.7 MHz 版の既定値 (周期 6 ns)
-`else
-        if (!$value$plusargs("sdram_hp=%d", sdram_hp)) sdram_hp = 25000;
-`endif
+        if (!$value$plusargs("sdram_hp=%d", sdram_hp)) sdram_hp = 3000;      // 周期 6 ns
         sdram_clk = 1'b0;
     end
     always #(sdram_hp / 1000.0) sdram_clk = ~sdram_clk;
 
 
-    // SDRAM 側のリセット。ahb_sdram は非同期、sdram_bridge は同期でリセットを受ける
+    // SDRAM 側のリセット。ahb_sdram は非同期、sdram_ctrl_hs は同期でリセットを受ける
     /* verilator lint_off SYNCASYNCNET */
     reg [1:0] srst_s;
     /* verilator lint_on SYNCASYNCNET */
@@ -409,51 +405,14 @@ module tb_mem;
         .wready     (s_wready)
     );
 
-`ifdef SDRAM_HS
-    // 166.7 MHz 版の経路 (sdram_ctrl_hs → sdram_io → SDRAM のモデル。tb/sdram_hs_path.v)
     sdram_hs_path #(.ADDR_WIDTH(25), .RD_FIRST(11), .IN_DLY(160), .CAP_EDGE(0)) u_path (
         .s_clk (sdram_clk), .rst_n (srst_n), .fill_valid (s_fill_valid), .fill_line (s_fill_line),
         .fill_ready (s_fill_ready), .fill_data (s_fill_data), .we (s_we), .waddr (s_waddr), .wdata (s_wdata), .wmask (s_wmask),
         .wready (s_wready), .init_done (s_init_done)
     );
     `define TB_SDRAM_MEM u_path.u_model.mem
-`else
-    `define TB_SDRAM_MEM u_sdram.mem
-    wire [15:0]   sdram_dq;
-    wire [12:0]   sdram_a;
-    wire [1:0]    sdram_ba, sdram_dqm;
-    wire          sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n;
 
-    sdram_bridge #(.ADDR_WIDTH(25)) u_sdram_bridge (
-        .clk         (sdram_clk),
-        .rst_n       (srst_n),
-        .fill_valid  (s_fill_valid),
-        .fill_line   (s_fill_line),
-        .fill_ready  (s_fill_ready),
-        .fill_data   (s_fill_data),
-        .we          (s_we),
-        .waddr       (s_waddr),
-        .wdata       (s_wdata),
-        .wmask       (s_wmask),
-        .wready      (s_wready),
-        .init_done   (s_init_done),
-        .sdram_dq    (sdram_dq),
-        .sdram_addr  (sdram_a),
-        .sdram_ba    (sdram_ba),
-        .sdram_cs_n  (sdram_cs_n),
-        .sdram_ras_n (sdram_ras_n),
-        .sdram_cas_n (sdram_cas_n),
-        .sdram_we_n  (sdram_we_n),
-        .sdram_dqm   (sdram_dqm)
-    );
-
-    sdram_model u_sdram (
-        .clk (~sdram_clk), .cke (1'b1), .csn (sdram_cs_n), .rasn (sdram_ras_n), .casn (sdram_cas_n), .wen (sdram_we_n),
-        .dqm (sdram_dqm), .ba (sdram_ba), .addr (sdram_a), .dq (sdram_dq)
-    );
-`endif
-
-    // バイトアドレスの 16 ビットワードを、モデルの内容のアドレス ({バンク, 行, 列}) に変換する。sdram_bridge は {行, バンク, 列} で割り当てる
+    // バイトアドレスの 16 ビットワードを、モデルの内容のアドレス ({バンク, 行, 列}) に変換する。sdram_ctrl_hs は {行, バンク, 列} で割り当てる
     /* verilator lint_off UNUSEDSIGNAL */
     function [31:0] sdram_idx(input [31:0] byte_addr);   // 上位とビット 0 は使わない (32 MB の 16 ビットワード)
     /* verilator lint_on UNUSEDSIGNAL */

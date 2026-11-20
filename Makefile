@@ -38,8 +38,9 @@ BUILD := build
 SIM   := $(BUILD)/tb_mem/Vtb_mem
 PLL_STUB   := $(BUILD)/gowin_pll_stub.v
 
-# DDR_H* の先を、実機と同じ SDRAM の経路にしたシミュレータ (ahb_sdram → sdram_bridge → SDRAM のモデル)
-SDRAM_SRCS  := rtl/ahb_sdram.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v
+# DDR_H* の先を、実機と同じ SDRAM の経路にしたシミュレータ (ahb_sdram → sdram_ctrl_hs → sdram_io → ボード上の遅延 → SDRAM のモデル。
+# tb/sdram_hs_path.v)
+SDRAM_SRCS  := rtl/ahb_sdram.v rtl/sdram_ctrl_hs.v rtl/sdram_io.v tb/gowin_io_models.v tb/sdram_hs_path.v tb/vendor/zeitlos/sdram_model.v
 SDRAM_FLAGS := -DTB_SDRAM
 SIM_SDRAM   := $(BUILD)/tb_sdram/Vtb_mem
 
@@ -64,7 +65,7 @@ lint: $(PLL_STUB)
 	verilator --lint-only $(VERILATOR_FLAGS) --top-module shell_top $(RTL_SRCS)
 	verilator --lint-only $(VERILATOR_FLAGS) --timing --no-sched-zero-delay --top-module tb_mem $(RTL_SRCS) $(TB_SRCS)
 	verilator --lint-only $(VERILATOR_FLAGS) --top-module ae350_probe_top $(BOARD_SRCS)
-	verilator --lint-only $(VERILATOR_FLAGS) +define+SDRAM_HS +define+AE350_NO_OBSERVER +define+AHB_SDRAM_TRACE +define+AE350_HDMI --top-module ae350_probe_top \
+	verilator --lint-only $(VERILATOR_FLAGS) +define+AE350_NO_OBSERVER +define+AHB_SDRAM_TRACE +define+AE350_HDMI --top-module ae350_probe_top \
 		$(BOARD_SRCS) $(HDMI_SRCS) rtl/hdmi_test_pattern.v rtl/hdmi_audio_tone.v board/tang_console/hdmi_pll.v board/tang_console/ddr3/pll_init.v
 	@# ahb_ddr3 は DDR3 の IP (暗号化されていて Verilator では読めない) につなぐので、単体で lint にかける。トップのポートになるので、
 	@# 使わない htrans[0] (ahb_sdram と同じく NONSEQ と SEQ を区別しない) の警告だけを外す
@@ -76,8 +77,8 @@ lint: $(PLL_STUB)
 
 # ボードの回路 (board/tang_console/top.v) の lint。Gowin のプリミティブのうち PLL は、Gowin のモデルから作った空のモジュールに、
 # IO のプリミティブ (sdram_io.v の ODDR、IDDR、IOBUF、IODELAY と、HDMI の出力の ELVDS_OBUF) はテストベンチ用のモデルに置き換える。マクロで回路が変わるので、
-# 既定の構成 (probe、20 MHz 版、監視回路あり) と、すべてを入れた構成 (166.7 MHz 版、監視回路なし、転送の記録あり、HDMI の出力あり) の 2 通りで実行する
-BOARD_SRCS := $(RTL_SRCS) rtl/ahb_rom.v rtl/ahb_sdram.v rtl/sdram_ctrl_hs.v rtl/sdram_io.v rtl/sdram_bridge.v rtl/reset_gen.v \
+# 既定の構成 (probe、監視回路あり) と、すべてを入れた構成 (監視回路なし、転送の記録あり、HDMI の出力あり) の 2 通りで実行する
+BOARD_SRCS := $(RTL_SRCS) rtl/ahb_rom.v rtl/ahb_sdram.v rtl/sdram_ctrl_hs.v rtl/sdram_io.v rtl/reset_gen.v \
               tb/gowin_io_models.v $(PLL_STUB) board/tang_console/ae350_pll.v board/tang_console/sdram_pll.v \
               board/tang_console/ae350_observer.v board/tang_console/top.v
 
@@ -159,7 +160,7 @@ define run_cmp
 	sed -n 's/^UART: //p' $(BUILD)/$(2).log | diff sw/$(1)_expected.txt -
 endef
 
-test: test-plic test-sram test-sdram-unit test-sdram-io test-sdram-pll test-sdram-hs-unit test-stage2 test-stage3 test-stage4 test-stage5 test-clocks test-reset test-random test-sdram test-sdram-hs test-loader test-uart-reset test-uart-tool test-hdmi
+test: test-plic test-sram test-sdram-unit test-sdram-io test-sdram-pll test-stage2 test-stage3 test-stage4 test-stage5 test-clocks test-reset test-random test-sdram test-loader test-uart-reset test-uart-tool test-hdmi
 
 # ROM のローダーのテスト (tools/loader_test.rb が手順と期待の出力を作る)。シミュレーション用のローダーは、タイムアウトを
 # 200,000 mcycle (250 µs) にする (実機は 1 秒)。送信は実機の 1.25 Mbps と同じ間隔で行うので、hello は数分かかる
@@ -329,13 +330,13 @@ $(SIM_SDRAM): $(RTL_SRCS) $(TB_SRCS) $(SDRAM_SRCS) tools/lint.vlt
 
 SDRAM_RUN := +max_cycles=20000000
 
-# ahb_sdram の単体テストベンチ (ahb_sdram → sdram_bridge → SDRAM のモデル)
+# ahb_sdram の単体テストベンチ (SDRAM の経路は SDRAM_SRCS と同じ)
 SIM_SDRAM_UNIT := $(BUILD)/sdram_tb/Vsdram_tb
 
-$(SIM_SDRAM_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v tools/lint.vlt
+$(SIM_SDRAM_UNIT): tb/sdram_tb.v $(SDRAM_SRCS) tools/lint.vlt
 	mkdir -p $(BUILD)
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) --top-module sdram_tb -Mdir $(BUILD)/sdram_tb \
-		rtl/ahb_sdram.v tb/sdram_tb.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v
+		tb/sdram_tb.v $(SDRAM_SRCS)
 
 # sdram_io (SDRAM のピン周りの回路。166.7 MHz 版で使う) の単体テストベンチ。Gowin の IO プリミティブはテストベンチ用のモデル
 SIM_SDRAM_IO := $(BUILD)/sdram_io_tb/Vsdram_io_tb
@@ -395,38 +396,6 @@ $(BUILD)/sdram_pll_tb.vvp: board/tang_console/sdram_pll.v tb/sdram_pll_tb.v $(PR
 .PHONY: test-sdram-pll
 test-sdram-pll: $(BUILD)/sdram_pll_tb.vvp
 	vvp -n $(BUILD)/sdram_pll_tb.vvp
-
-# 166.7 MHz 版の経路 (sdram_ctrl_hs → sdram_io → ボード上の遅延 → SDRAM のモデル) で、ahb_sdram の単体テストベンチを実行する
-# +cap_phase=<0〜47> (c_clk の位相、0.125 ns ステップ)、+board_ps=<ps> (ボード上の片道の遅延)
-HS_SRCS            := rtl/sdram_ctrl_hs.v rtl/sdram_io.v tb/gowin_io_models.v tb/sdram_hs_path.v tb/vendor/zeitlos/sdram_model.v
-SIM_SDRAM_HS_UNIT  := $(BUILD)/sdram_hs_tb/Vsdram_tb
-
-$(SIM_SDRAM_HS_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v $(HS_SRCS) tools/lint.vlt
-	mkdir -p $(BUILD)
-	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) -DSDRAM_HS --top-module sdram_tb -Mdir $(BUILD)/sdram_hs_tb \
-		rtl/ahb_sdram.v tb/sdram_tb.v $(HS_SRCS)
-
-# 166.7 MHz 版の経路で、stage3〜stage5 を実行する
-SIM_SDRAM_HS := $(BUILD)/tb_sdram_hs/Vtb_mem
-
-$(SIM_SDRAM_HS): $(RTL_SRCS) $(TB_SRCS) rtl/ahb_sdram.v $(HS_SRCS) tools/lint.vlt
-	mkdir -p $(BUILD)
-	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) -DTB_SDRAM -DSDRAM_HS --top-module tb_mem -Mdir $(BUILD)/tb_sdram_hs \
-		$(RTL_SRCS) $(TB_SRCS) rtl/ahb_sdram.v $(HS_SRCS)
-
-.PHONY: test-sdram-hs
-test-sdram-hs: $(SIM_SDRAM_HS) $(BUILD)/stage3.hex $(BUILD)/stage4.hex $(BUILD)/stage5.hex sw/stage3_input.txt sw/stage3_expected.txt sw/stage4_expected.txt sw/stage5_expected.txt sw/stage5_extm.txt
-	$(SIM_SDRAM_HS) +rom=$(BUILD)/stage3.hex $(SDRAM_RUN) +uart_in=sw/stage3_input.txt > $(BUILD)/sdram_hs_stage3.log 2>&1; status=$$?; cat $(BUILD)/sdram_hs_stage3.log; exit $$status
-	sed -n 's/^UART: //p' $(BUILD)/sdram_hs_stage3.log | diff sw/stage3_expected.txt -
-	$(SIM_SDRAM_HS) +rom=$(BUILD)/stage4.hex $(SDRAM_RUN) > $(BUILD)/sdram_hs_stage4.log 2>&1; status=$$?; cat $(BUILD)/sdram_hs_stage4.log; exit $$status
-	sed -n 's/^UART: //p' $(BUILD)/sdram_hs_stage4.log | diff sw/stage4_expected.txt -
-	$(SIM_SDRAM_HS) +rom=$(BUILD)/stage5.hex $(SDRAM_RUN) $(STAGE5_EXTM) > $(BUILD)/sdram_hs_stage5.log 2>&1; status=$$?; cat $(BUILD)/sdram_hs_stage5.log; exit $$status
-	sed -n 's/^UART: //p' $(BUILD)/sdram_hs_stage5.log | diff sw/stage5_expected.txt -
-
-.PHONY: test-sdram-hs-unit
-test-sdram-hs-unit: $(SIM_SDRAM_HS_UNIT)
-	$(SIM_SDRAM_HS_UNIT) > $(BUILD)/sdram_hs_tb.log 2>&1; status=$$?; cat $(BUILD)/sdram_hs_tb.log; exit $$status
-	! grep -q -i "error\|violation" $(BUILD)/sdram_hs_tb.log
 
 .PHONY: test-sdram-unit
 test-sdram-unit: $(SIM_SDRAM_UNIT)
@@ -570,8 +539,6 @@ SIM_COV_PLIC := $(BUILD)/plic_cov/Vplic_tb
 SIM_COV_SRAM := $(BUILD)/sram_cov/Vsram_tb
 SIM_COV_SDRAM_UNIT := $(BUILD)/sdram_unit_cov/Vsdram_tb
 SIM_COV_SDRAM      := $(BUILD)/tb_sdram_cov/Vtb_mem
-SIM_COV_SDRAM_HS_UNIT := $(BUILD)/sdram_hs_unit_cov/Vsdram_tb
-SIM_COV_SDRAM_HS      := $(BUILD)/tb_sdram_hs_cov/Vtb_mem
 COV          := $(BUILD)/cov
 COV_FLAGS    := --coverage-line --coverage-toggle -Wno-UNOPTFLAT tools/coverage.vlt
 
@@ -580,25 +547,15 @@ $(SIM_COV): $(RTL_SRCS) $(TB_SRCS) tools/lint.vlt tools/coverage.vlt
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(COV_FLAGS) \
 		--top-module tb_mem -Mdir $(BUILD)/tb_cov $(RTL_SRCS) $(TB_SRCS)
 
-$(SIM_COV_SDRAM_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v tools/lint.vlt tools/coverage.vlt
+$(SIM_COV_SDRAM_UNIT): tb/sdram_tb.v $(SDRAM_SRCS) tools/lint.vlt tools/coverage.vlt
 	mkdir -p $(BUILD)
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(COV_FLAGS) --top-module sdram_tb \
-		-Mdir $(BUILD)/sdram_unit_cov rtl/ahb_sdram.v tb/sdram_tb.v rtl/sdram_bridge.v tb/vendor/zeitlos/sdram_model.v
+		-Mdir $(BUILD)/sdram_unit_cov tb/sdram_tb.v $(SDRAM_SRCS)
 
 $(SIM_COV_SDRAM): $(RTL_SRCS) $(TB_SRCS) $(SDRAM_SRCS) tools/lint.vlt tools/coverage.vlt
 	mkdir -p $(BUILD)
 	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(COV_FLAGS) $(SDRAM_FLAGS) --top-module tb_mem \
 		-Mdir $(BUILD)/tb_sdram_cov $(RTL_SRCS) $(TB_SRCS) $(SDRAM_SRCS)
-
-$(SIM_COV_SDRAM_HS_UNIT): rtl/ahb_sdram.v tb/sdram_tb.v $(HS_SRCS) tools/lint.vlt tools/coverage.vlt
-	mkdir -p $(BUILD)
-	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(COV_FLAGS) -DSDRAM_HS --top-module sdram_tb \
-		-Mdir $(BUILD)/sdram_hs_unit_cov rtl/ahb_sdram.v tb/sdram_tb.v $(HS_SRCS)
-
-$(SIM_COV_SDRAM_HS): $(RTL_SRCS) $(TB_SRCS) rtl/ahb_sdram.v $(HS_SRCS) tools/lint.vlt tools/coverage.vlt
-	mkdir -p $(BUILD)
-	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(COV_FLAGS) -DTB_SDRAM -DSDRAM_HS --top-module tb_mem \
-		-Mdir $(BUILD)/tb_sdram_hs_cov $(RTL_SRCS) $(TB_SRCS) rtl/ahb_sdram.v $(HS_SRCS)
 
 $(SIM_COV_SRAM): rtl/ahb_sram.v tb/sram_tb.v tools/lint.vlt tools/coverage.vlt
 	mkdir -p $(BUILD)
@@ -623,7 +580,7 @@ COV_RUNS := stage2_w00 stage2_w12 stage3_w00 stage3_w12 stage4_w00 stage4_w12 st
             stage5_w00 stage5_w12 stage5_odd stage5_rand1
 
 .PHONY: coverage
-coverage: $(SIM_COV) $(SIM_COV_PLIC) $(SIM_COV_SRAM) $(SIM_COV_SDRAM_UNIT) $(SIM_COV_SDRAM) $(SIM_COV_SDRAM_HS_UNIT) $(SIM_COV_SDRAM_HS) $(BUILD)/stage2.hex $(BUILD)/stage3.hex $(BUILD)/stage4.hex $(BUILD)/stage5.hex
+coverage: $(SIM_COV) $(SIM_COV_PLIC) $(SIM_COV_SRAM) $(SIM_COV_SDRAM_UNIT) $(SIM_COV_SDRAM) $(BUILD)/stage2.hex $(BUILD)/stage3.hex $(BUILD)/stage4.hex $(BUILD)/stage5.hex
 	mkdir -p $(COV)
 	$(call run_cov,stage2,stage2_w00,$(STAGE2_ERR))
 	$(call run_cov,stage2,stage2_w12,$(STAGE2_ERR) $(WAIT12))
@@ -649,9 +606,6 @@ coverage: $(SIM_COV) $(SIM_COV_PLIC) $(SIM_COV_SRAM) $(SIM_COV_SDRAM_UNIT) $(SIM
 	$(SIM_COV_SDRAM) +rom=$(BUILD)/stage3.hex $(SDRAM_RUN) $(S3_IN) +verilator+coverage+file+$(COV)/sdram_stage3.dat > $(COV)/sdram_stage3.log 2>&1 || (cat $(COV)/sdram_stage3.log; exit 1)
 	$(SIM_COV_SDRAM) +rom=$(BUILD)/stage4.hex $(SDRAM_RUN) +verilator+coverage+file+$(COV)/sdram_stage4.dat > $(COV)/sdram_stage4.log 2>&1 || (cat $(COV)/sdram_stage4.log; exit 1)
 	$(SIM_COV_SDRAM) +rom=$(BUILD)/stage5.hex $(SDRAM_RUN) $(STAGE5_EXTM) +verilator+coverage+file+$(COV)/sdram_stage5.dat > $(COV)/sdram_stage5.log 2>&1 || (cat $(COV)/sdram_stage5.log; exit 1)
-	$(SIM_COV_SDRAM_HS_UNIT) +verilator+coverage+file+$(COV)/sdram_hs_tb.dat > $(COV)/sdram_hs_tb.log 2>&1 || (cat $(COV)/sdram_hs_tb.log; exit 1)
-	$(SIM_COV_SDRAM_HS) +rom=$(BUILD)/stage4.hex $(SDRAM_RUN) +verilator+coverage+file+$(COV)/sdram_hs_stage4.dat > $(COV)/sdram_hs_stage4.log 2>&1 || (cat $(COV)/sdram_hs_stage4.log; exit 1)
 	verilator_coverage --write $(COV)/all.dat $(addprefix $(COV)/,$(addsuffix .dat,$(COV_RUNS))) $(COV)/plic_tb.dat $(COV)/sram_tb.dat \
-		$(COV)/sdram_tb.dat $(COV)/sdram_stage3.dat $(COV)/sdram_stage4.dat $(COV)/sdram_stage5.dat \
-		$(COV)/sdram_hs_tb.dat $(COV)/sdram_hs_stage4.dat
+		$(COV)/sdram_tb.dat $(COV)/sdram_stage3.dat $(COV)/sdram_stage4.dat $(COV)/sdram_stage5.dat
 	verilator_coverage --annotate $(COV)/annotated --annotate-min 1 $(COV)/all.dat

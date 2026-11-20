@@ -3,7 +3,7 @@
 // Module:      sdram_hs_path
 // Role:        シミュレーション用の、SDRAM コントローラの 166.7 MHz 版の経路。
 //              sdram_ctrl_hs → sdram_io (テストベンチ用の Gowin の IO プリミティブのモデル) → ボード上の遅延 → SDRAM のモデル。
-//              上位側のポートは sdram_bridge と同じなので、テストベンチでは sdram_bridge と SDRAM のモデルの組の代わりに置ける。
+//              上位側のポートは sdram_ctrl_hs と同じなので、テストベンチでは ahb_sdram の先にそのままつなぐ。
 //
 //   ボード上の遅延 (パラメータ BOARD_PS。既定値 0。テストベンチではマクロ SDRAM_BOARD_PS で渡す): FPGA のピンと SDRAM の間の
 //   片道の遅延。コマンド、アドレス、クロックは往路に、DQ は書き込みでは往路に、読み出しでは復路にかかる (読み出したワードは、
@@ -11,7 +11,7 @@
 //
 // Ports:
 //   input  wire s_clk / rst_n
-//   上位側のポート (sdram_bridge と同じ)
+//   上位側のポート (sdram_ctrl_hs と同じ)
 // =============================================================
 
 `timescale 1ns / 1ps

@@ -304,7 +304,7 @@ static void sdram_stat_lines(const char *what, const uint32_t *a, const uint32_t
 }
 
 /*
- * DDR_H* の先の SDRAM (0x0000_0000〜、32 MB。rtl/ahb_sdram.v → rtl/sdram_bridge.v)。
+ * DDR_H* の先の SDRAM (0x0000_0000〜、32 MB。rtl/ahb_sdram.v → rtl/sdram_ctrl_hs.v)。
  * 32、16、8 ビットの読み書き、32 MB の最上位、32 MB の外のエラー応答、4 KB の読み書きの照合、読み書きのサイクル数を確かめる
  */
 static void sdram_check(void)

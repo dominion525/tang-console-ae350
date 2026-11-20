@@ -1,7 +1,7 @@
 // =============================================================
 // File:        rtl/ahb_sdram.v
 // Module:      ahb_sdram
-// Role:        AE350 の DDR_H* (64 ビット AHB) を、SDRAM コントローラ (rtl/sdram_bridge.v) につなぐブリッジ。
+// Role:        AE350 の DDR_H* (64 ビット AHB) を、SDRAM コントローラ (rtl/sdram_ctrl_hs.v) につなぐブリッジ。
 //              ファブリック側の回路で、シミュレーションでも実機でも使う。
 //
 //   hclk (DDR_CLK) 側                               sclk (SDRAM のクロック) 側
@@ -21,7 +21,7 @@
 //     +0x08 書き込み転送の数                      +0x0C 書き込みで HREADYOUT = 0 だった DDR_CLK のサイクル数の合計
 //     +0x10 ライン読み出しの sclk のサイクル数の合計  +0x14 書き込みの sclk のサイクル数の合計
 //     +0x18 SDRAM に書き込んだバイト数              +0x1C 0
-//   - sdram_bridge は初期化が終わるまで読み書きを受け付けないので、その間の転送は待たされるだけ
+//   - sdram_ctrl_hs は初期化が終わるまで読み書きを受け付けないので、その間の転送は待たされるだけ
 //   - アドレスの幅とクロックは、パラメータと上位のトップで決める (SDRAM コントローラを差し替えやすいように、
 //     sclk 側は SDRAM コントローラのインターフェース (fill_*、we、waddr、wdata、wmask、wready) だけを使う)
 //
@@ -29,7 +29,7 @@
 //   input  wire hclk / hresetn            DDR_CLK と、AE350 が出力する DDR_RSTN
 //   AHB スレーブ (DDR_H*。hready は AE350 の DDR_HREADY で、この回路の hreadyout と同じ)
 //   input  wire sclk / srst_n              SDRAM のクロックと、その側のリセット (sclk に同期済み)
-//   SDRAM コントローラ (sdram_bridge か sdram_ctrl_hs) との接続ポート (fill_*、we、waddr、wdata、wmask、wready)
+//   SDRAM コントローラ (sdram_ctrl_hs) との接続ポート (fill_*、we、waddr、wdata、wmask、wready)
 //
 // Parameters:
 //   SDRAM_AW   SDRAM のバイトアドレスの幅 (25 なら 32 MB、W9825G6KH 1 個)
