@@ -65,7 +65,8 @@ module sdram_tb;
     wire [20:0]   fill_line;
     wire [127:0]  fill_data;
     wire [24:0]   waddr;
-    wire [7:0]    wdata;
+    wire [63:0]   wdata;
+    wire [7:0]    wmask;
 `ifndef SDRAM_HS
     wire [15:0]   dq;
     wire [12:0]   a;
@@ -77,7 +78,7 @@ module sdram_tb;
         .hclk (hclk), .hresetn (rst_n), .haddr (haddr), .htrans (htrans), .hwrite (hwrite), .hsize (hsize),
         .hwdata (hwdata), .hrdata (hrdata), .hreadyout (hready), .hresp (hresp),
         .sclk (sclk), .srst_n (srst_n), .fill_valid (fill_valid), .fill_line (fill_line), .fill_ready (fill_ready),
-        .fill_data (fill_data), .we (we), .waddr (waddr), .wdata (wdata), .wready (wready)
+        .fill_data (fill_data), .we (we), .waddr (waddr), .wdata (wdata), .wmask (wmask), .wready (wready)
     );
 
 `ifdef SDRAM_HS
@@ -96,7 +97,7 @@ module sdram_tb;
     sdram_hs_path #(.ADDR_WIDTH(25), .BOARD_PS(`SDRAM_BOARD_PS), .RD_FIRST(`SDRAM_RD_FIRST), .IN_DLY(`SDRAM_IN_DLY),
                     .CAP_EDGE(`SDRAM_CAP_EDGE)) u_path (
         .s_clk (sclk), .rst_n (srst_n), .fill_valid (fill_valid), .fill_line (fill_line),
-        .fill_ready (fill_ready), .fill_data (fill_data), .we (we), .waddr (waddr), .wdata (wdata), .wready (wready),
+        .fill_ready (fill_ready), .fill_data (fill_data), .we (we), .waddr (waddr), .wdata (wdata), .wmask (wmask), .wready (wready),
         .init_done (init_done)
     );
     `define SDRAM_MEM u_path.u_model.mem
@@ -104,7 +105,7 @@ module sdram_tb;
     `define SDRAM_MEM u_model.mem
     sdram_bridge #(.ADDR_WIDTH(25)) u_bridge (
         .clk (sclk), .rst_n (srst_n), .fill_valid (fill_valid), .fill_line (fill_line), .fill_ready (fill_ready),
-        .fill_data (fill_data), .we (we), .waddr (waddr), .wdata (wdata), .wready (wready), .init_done (init_done),
+        .fill_data (fill_data), .we (we), .waddr (waddr), .wdata (wdata), .wmask (wmask), .wready (wready), .init_done (init_done),
         .sdram_dq (dq), .sdram_addr (a), .sdram_ba (ba), .sdram_cs_n (cs_n), .sdram_ras_n (ras_n),
         .sdram_cas_n (cas_n), .sdram_we_n (we_n), .sdram_dqm (dqm)
     );

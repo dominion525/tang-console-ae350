@@ -6,7 +6,7 @@
 //
 //   hclk (DDR_CLK) 側                               sclk (SDRAM のクロック) 側
 //   AE350 の転送を受け付けて保持し、トグルで渡す ───▶  読み出し: アドレスを含む 16 バイトのラインを読み、アドレスのビット 3 で 8 バイトを選ぶ
-//                                                  書き込み: HSIZE とアドレスで決まるバイトを、1 バイトずつ書き込む (最大 8 回)
+//                                                  書き込み: 8 バイトと、HSIZE とアドレスで決まるバイトの有効 (wmask) を 1 回で渡す
 //   応答を受けて AE350 に返す              ◀───  完了したらトグルで返す
 //
 //   - AE350 に返す HREADYOUT、HRDATA、HRESP はレジスタ出力 (APB_P* と EXTS_H* で、AE350 との往復の経路が
@@ -23,13 +23,13 @@
 //     +0x18 SDRAM に書き込んだバイト数              +0x1C 0
 //   - sdram_bridge は初期化が終わるまで読み書きを受け付けないので、その間の転送は待たされるだけ
 //   - アドレスの幅とクロックは、パラメータと上位のトップで決める (SDRAM コントローラを差し替えやすいように、
-//     sclk 側は sdram_bridge のインターフェース (fill_*、we、waddr、wdata、wready) だけを使う)
+//     sclk 側は SDRAM コントローラのインターフェース (fill_*、we、waddr、wdata、wmask、wready) だけを使う)
 //
 // Ports:
 //   input  wire hclk / hresetn            DDR_CLK と、AE350 が出力する DDR_RSTN
 //   AHB スレーブ (DDR_H*。hready は AE350 の DDR_HREADY で、この回路の hreadyout と同じ)
 //   input  wire sclk / srst_n              SDRAM のクロックと、その側のリセット (sclk に同期済み)
-//   sdram_bridge との接続ポート (fill_*、we、waddr、wdata、wready)
+//   SDRAM コントローラ (sdram_bridge か sdram_ctrl_hs) との接続ポート (fill_*、we、waddr、wdata、wmask、wready)
 //
 // Parameters:
 //   SDRAM_AW   SDRAM のバイトアドレスの幅 (25 なら 32 MB、W9825G6KH 1 個)
@@ -73,8 +73,9 @@ module ahb_sdram #(
     input  wire                 fill_ready,
     input  wire [127:0]         fill_data,
     output reg                  we,
-    output wire [SDRAM_AW-1:0]  waddr,
-    output reg  [7:0]           wdata,
+    output wire [SDRAM_AW-1:0]  waddr,         // 8 バイト境界 (下位 3 ビットは 0)
+    output reg  [63:0]          wdata,
+    output reg  [7:0]           wmask,         // 書き込むバイト (1 のバイトだけ書き込む。wdata のバイトレーンと同じ並び)
     input  wire                 wready
 );
 
@@ -228,7 +229,7 @@ module ahb_sdram #(
     end
 
     // ---------------------------------------------------------
-    // SDRAM のクロック側: 1 つの転送を、ライン読み出し 1 回か、1 バイトの書き込み 1〜8 回にする
+    // SDRAM のクロック側: 1 つの転送を、ライン読み出し 1 回か、8 バイトとバイトの有効 (wmask) の書き込み 1 回にする
     // ---------------------------------------------------------
     localparam [1:0] S_IDLE  = 2'd0;
     localparam [1:0] S_READ  = 2'd1;
@@ -238,8 +239,7 @@ module ahb_sdram #(
     reg [1:0] req_s;                  // hclk 側の req_t を 2 段の FF で受ける
     reg       req_seen;
     reg       ack_t;
-    reg [7:0] s_lanes;                // まだ書き込んでいないバイトレーン
-    reg [2:0] s_lane;                 // いま書き込んでいるバイトレーン
+    reg [3:0] wbytes;                 // 書き込むバイト数 (wmask の 1 の数。カウンタに足す値を、wmask と一緒に決めておく)
 
     wire req_new = (req_s[1] != req_seen);
 
@@ -253,17 +253,17 @@ module ahb_sdram #(
         endcase
     endfunction
 
-    // 残っているバイトレーンのうち、最も下位のもの
-    function [2:0] lowest(input [7:0] m);
+    // バイトの有効のうち 1 の数 (書き込んだバイト数のカウンタに足す)
+    function [3:0] ones(input [7:0] m);
         integer k;
         begin
-            lowest = 3'd0;
-            for (k = 7; k >= 0; k = k - 1) if (m[k]) lowest = k[2:0];
+            ones = 4'd0;
+            for (k = 0; k < 8; k = k + 1) ones = ones + {3'd0, m[k]};
         end
     endfunction
 
     assign fill_line = q_addr[SDRAM_AW-1:4];
-    assign waddr     = {q_addr[SDRAM_AW-1:3], s_lane};
+    assign waddr     = {q_addr[SDRAM_AW-1:3], 3'b000};
 
     always @(posedge sclk or negedge srst_n) begin
         if (!srst_n) begin
@@ -273,28 +273,31 @@ module ahb_sdram #(
             ack_t      <= 1'b0;
             fill_valid <= 1'b0;
             we         <= 1'b0;
-            wdata      <= 8'd0;
-            s_lanes    <= 8'd0;
-            s_lane     <= 3'd0;
+            wdata      <= 64'd0;
+            wmask      <= 8'd0;
+            wbytes     <= 4'd0;
             s_rdata    <= 64'd0;
             st_s_rd_cyc   <= 32'd0;
             st_s_wr_cyc   <= 32'd0;
             st_s_wr_bytes <= 32'd0;
         end else begin
             req_s <= {req_s[0], req_t};
+            // 書き込む値とバイトの有効は、取り込みの条件を付けずに毎クロック写す。q_* は要求のトグルと同じエッジで決まり、
+            // こちらが応答を返して次の転送が来るまで変わらないので、we が 1 の間 (SDRAM コントローラが見る間) は変わらない。
+            // 条件を付けると、64 ビットの wdata などに取り込みの許可を配る配線が長くなり、s_clk の余裕を削っていた
+            wdata  <= q_wdata;
+            wmask  <= lanes(q_addr[2:0], q_size);
+            wbytes <= ones(lanes(q_addr[2:0], q_size));
             if (s_st == S_READ)            st_s_rd_cyc   <= st_s_rd_cyc + 32'd1;
             if (s_st == S_WRITE)           st_s_wr_cyc   <= st_s_wr_cyc + 32'd1;
-            if (s_st == S_WRITE && wready) st_s_wr_bytes <= st_s_wr_bytes + 32'd1;
+            if (s_st == S_WRITE && wready) st_s_wr_bytes <= st_s_wr_bytes + {28'd0, wbytes};
             case (s_st)
                 S_IDLE: begin
                     if (req_new) begin
                         req_seen <= req_s[1];
                         if (q_write) begin
-                            s_lanes <= lanes(q_addr[2:0], q_size);
-                            s_lane  <= lowest(lanes(q_addr[2:0], q_size));
-                            wdata   <= q_wdata[8 * lowest(lanes(q_addr[2:0], q_size)) +: 8];
-                            we      <= 1'b1;
-                            s_st    <= S_WRITE;
+                            we    <= 1'b1;
+                            s_st  <= S_WRITE;
                         end else begin
                             fill_valid <= 1'b1;
                             s_st       <= S_READ;
@@ -310,18 +313,11 @@ module ahb_sdram #(
                     end
                 end
                 default: begin
-                    // 1 バイトを書き終えたら、残りのバイトレーンのうち最も下位のものへ進む
+                    // SDRAM コントローラが受け付けたら (wready)、応答を返す
                     if (wready) begin
-                        if ((s_lanes & ~(8'd1 << s_lane)) == 8'd0) begin
-                            we      <= 1'b0;
-                            s_lanes <= 8'd0;
-                            ack_t   <= ~ack_t;
-                            s_st    <= S_IDLE;
-                        end else begin
-                            s_lanes <= s_lanes & ~(8'd1 << s_lane);
-                            s_lane  <= lowest(s_lanes & ~(8'd1 << s_lane));
-                            wdata   <= q_wdata[8 * lowest(s_lanes & ~(8'd1 << s_lane)) +: 8];
-                        end
+                        we    <= 1'b0;
+                        ack_t <= ~ack_t;
+                        s_st  <= S_IDLE;
                     end
                 end
             endcase

@@ -428,7 +428,8 @@ wire          s_fill_valid, s_fill_ready, s_we, s_wready, s_init_done;
 wire [20:0]   s_fill_line;
 wire [127:0]  s_fill_data;
 wire [24:0]   s_waddr;
-wire [7:0]    s_wdata;
+wire [63:0]   s_wdata;
+wire [7:0]    s_wmask;
 
 ahb_sdram #(.SDRAM_AW(25)) u_ahb_sdram (
     .hclk       (ddr_clk),
@@ -450,6 +451,7 @@ ahb_sdram #(.SDRAM_AW(25)) u_ahb_sdram (
     .we         (s_we),
     .waddr      (s_waddr),
     .wdata      (s_wdata),
+    .wmask      (s_wmask),
     .wready     (s_wready)
 );
 
@@ -463,7 +465,7 @@ wire        io_dq_oe;
 
 sdram_ctrl_hs #(.ADDR_WIDTH (25), .RD_FIRST (`SDRAM_RD_FIRST)) u_sdram_ctrl (
     .clk (s_clk), .rst_n (sdram_rst_s[1]), .fill_valid (s_fill_valid), .fill_line (s_fill_line), .fill_ready (s_fill_ready),
-    .fill_data (s_fill_data), .we (s_we), .waddr (s_waddr), .wdata (s_wdata), .wready (s_wready), .init_done (s_init_done),
+    .fill_data (s_fill_data), .we (s_we), .waddr (s_waddr), .wdata (s_wdata), .wmask (s_wmask), .wready (s_wready), .init_done (s_init_done),
     .io_cmd (io_cmd), .io_addr (io_addr), .io_ba (io_ba), .io_dqm (io_dqm), .io_dq_out (io_dq_out), .io_dq_oe (io_dq_oe),
     .io_dq_in (io_dq_in)
 );
@@ -485,6 +487,7 @@ sdram_bridge #(.ADDR_WIDTH(25)) u_sdram_bridge (
     .we          (s_we),
     .waddr       (s_waddr),
     .wdata       (s_wdata),
+    .wmask       (s_wmask),
     .wready      (s_wready),
     .init_done   (s_init_done),
     .sdram_dq    (sdram_dq),
