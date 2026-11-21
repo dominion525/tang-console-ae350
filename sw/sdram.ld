@@ -4,7 +4,8 @@
  *
  *   0x0000_0000〜0x0000_000F  .result (テストベンチが結果を読む場所。シミュレーションのテストベンチは 0x0000_0008 に周波数比を書く)
  *   0x0001_0000〜             .text、.rodata、.init_array、.data、.bss (送る内容は .text から .data の終わりまで)
- *   .bss の後ろ〜0x01FF_FFFF   ヒープ (sw/syscalls.c の _sbrk)
+ *   .bss の後ろ〜0x01BF_FFFF   ヒープ (sw/syscalls.c の _sbrk)
+ *   0x01C0_0000〜0x01FF_FFFF  ヒープに使わない (フレームバッファの表示の回路の既定の場所 0x01C0_0000〜。sw/fb.h)
  *   0xA020_0000〜0xA020_FFFF  スタック (DLM、64 KB。AE350 の内蔵メモリなので速い)
  *
  * .data は配置先と初期値が同じアドレスなので、start.S のコピーは同じ場所への上書きになる。
@@ -76,7 +77,7 @@ SECTIONS
     } > SDRAM
 
     _heap_start = ALIGN(_bss_end, 8);
-    _heap_end   = ORIGIN(SDRAM) + LENGTH(SDRAM);
+    _heap_end   = ORIGIN(SDRAM) + 28M;          /* フレームバッファ (0x01C0_0000〜) と重ならないように */
     _stack_top  = ORIGIN(DLM) + LENGTH(DLM);
 
     /DISCARD/ : { *(.comment) *(.riscv.attributes) }

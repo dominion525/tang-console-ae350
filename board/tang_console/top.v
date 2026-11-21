@@ -24,6 +24,16 @@
 
 `default_nettype none
 
+// HDMI=1 で DDR_H* の先が SDRAM の構成では、フレームバッファの表示の回路 (rtl/fb_display.v) を置く。DDR3 版 (MEM=ddr3、
+// MEM=litedram) の HDMI はカラーバーだけを出す (表示の回路とメモリの読み出しの回路は、DDR3 版にはまだない)
+`ifdef AE350_HDMI
+`ifndef AE350_MEM_DDR3
+`ifndef AE350_MEM_LITEDRAM
+`define AE350_FB
+`endif
+`endif
+`endif
+
 module ae350_probe_top #(
 `ifdef AE350_ROM_HEX
     parameter ROM_HEX = `AE350_ROM_HEX
@@ -455,11 +465,30 @@ wire [15:0] io_dq_out, io_dq_in;
 wire        io_dq_oe;
 wire        s_dr_busy, s_dr_wvalid, s_dr_done;
 wire [15:0] s_dr_wdata;
+wire        fb_dr_start;
+wire [20:0] fb_dr_addr, fb_dr_bursts;
+`ifdef AE350_FB
+// フレームバッファの表示の回路の、SDRAM の版の読み出しの回路 (表示の回路は下の HDMI の節)
+wire        fb_mreq, fb_lb_we, fb_mdone;
+wire [24:0] fb_mreq_addr;
+wire [10:0] fb_lb_waddr;
+wire [15:0] fb_lb_wdata;
+fb_sdram_reader u_fb_reader (
+    .clk (s_clk), .rst_n (sdram_rst_s[1]), .mreq (fb_mreq), .mreq_addr (fb_mreq_addr), .lb_we (fb_lb_we), .lb_waddr (fb_lb_waddr),
+    .lb_wdata (fb_lb_wdata), .mdone (fb_mdone), .dr_start (fb_dr_start), .dr_addr (fb_dr_addr), .dr_bursts (fb_dr_bursts),
+    .dr_busy (s_dr_busy), .dr_wvalid (s_dr_wvalid), .dr_wdata (s_dr_wdata), .dr_done (s_dr_done)
+);
+`else
+// 表示の回路がない構成では、表示用の読み出しのポートは使わない
+assign fb_dr_start  = 1'b0;
+assign fb_dr_addr   = 21'd0;
+assign fb_dr_bursts = 21'd0;
+`endif
 
 sdram_ctrl_hs #(.ADDR_WIDTH (25), .RD_FIRST (`SDRAM_RD_FIRST)) u_sdram_ctrl (
     .clk (s_clk), .rst_n (sdram_rst_s[1]), .fill_valid (s_fill_valid), .fill_line (s_fill_line), .fill_ready (s_fill_ready),
     .fill_data (s_fill_data), .we (s_we), .waddr (s_waddr), .wdata (s_wdata), .wmask (s_wmask), .wready (s_wready), .init_done (s_init_done),
-    .dr_start (1'b0), .dr_addr (21'd0), .dr_bursts (21'd0), .dr_busy (s_dr_busy), .dr_wvalid (s_dr_wvalid), .dr_wdata (s_dr_wdata),
+    .dr_start (fb_dr_start), .dr_addr (fb_dr_addr), .dr_bursts (fb_dr_bursts), .dr_busy (s_dr_busy), .dr_wvalid (s_dr_wvalid), .dr_wdata (s_dr_wdata),
     .dr_done (s_dr_done),
     .io_cmd (io_cmd), .io_addr (io_addr), .io_ba (io_ba), .io_dqm (io_dqm), .io_dq_out (io_dq_out), .io_dq_oe (io_dq_oe),
     .io_dq_in (io_dq_in)
@@ -473,10 +502,23 @@ sdram_io #(.IN_DLY (`SDRAM_IN_DLY), .CAP_EDGE (`SDRAM_CAP_EDGE)) u_sdram_io (
 );
 
 /* verilator lint_off UNUSEDSIGNAL */
-// 表示用の読み出しのポートは、まだ使わない (B-4 で表示の回路をつなぐ)
-wire unused_sdram = &{1'b0, s_init_done, s_dr_busy, s_dr_wvalid, s_dr_done, s_dr_wdata};
+wire unused_sdram = &{1'b0, s_init_done, s_dr_busy, s_dr_wvalid, s_dr_done, s_dr_wdata};   // 表示の回路がない構成では、dr_* は使わない
 /* verilator lint_on UNUSEDSIGNAL */
 `endif   // AE350_MEM_DDR3
+
+    // APB の 0xF800_2000〜0xF800_2FFF (フレームバッファの表示の回路の制御レジスタ。表示の回路がない構成では PSLVERR を返す)
+    wire        fb_psel, fb_penable, fb_pwrite;
+    wire [31:0] fb_paddr, fb_pwdata, fb_prdata;
+    wire [3:0]  fb_pstrb;
+    wire        fb_pready, fb_pslverr;
+`ifndef AE350_FB
+    assign fb_prdata  = 32'd0;
+    assign fb_pready  = 1'b1;
+    assign fb_pslverr = 1'b1;
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire unused_fb_apb = &{1'b0, fb_psel, fb_penable, fb_pwrite, fb_paddr, fb_pwdata, fb_pstrb};
+    /* verilator lint_on UNUSEDSIGNAL */
+`endif
 
     /* verilator lint_off PINCONNECTEMPTY */
     // UART は 1,250,000 bps (APB_CLK 100 MHz ÷ 8 ÷ 10。ボードの USB シリアル (BL616) を通ることを確かめた速度)
@@ -494,6 +536,15 @@ wire unused_sdram = &{1'b0, s_init_done, s_dr_busy, s_dr_wvalid, s_dr_done, s_dr
         .dbg_apb_access (apb_access),
         .dbg_apb_paddr  (apb_paddr),
         .dbg_misc       (misc),
+        .fb_psel        (fb_psel),
+        .fb_penable     (fb_penable),
+        .fb_pwrite      (fb_pwrite),
+        .fb_paddr       (fb_paddr),
+        .fb_pwdata      (fb_pwdata),
+        .fb_pstrb       (fb_pstrb),
+        .fb_prdata      (fb_prdata),
+        .fb_pready      (fb_pready),
+        .fb_pslverr     (fb_pslverr),
 
         .rom_haddr      (rom_haddr),
         .rom_htrans     (rom_htrans),
@@ -600,12 +651,14 @@ wire unused_sdram = &{1'b0, s_init_done, s_dr_busy, s_dr_wvalid, s_dr_done, s_dr
 
     wire [10:0] hdmi_cx;
     wire [23:0] hdmi_rgb;
+`ifndef AE350_FB
     hdmi_test_pattern u_hdmi_pattern (.clk (hdmi_clk), .cx (hdmi_cx), .rgb (hdmi_rgb));
+`endif
 
     wire [2:0] tmds;
     wire       tmds_clock;
     /* verilator lint_off UNUSEDSIGNAL */
-    wire [9:0]  hdmi_cy;            // 縦の座標 (テストパターンは横の座標だけで色を決める)
+    wire [9:0]  hdmi_cy;            // 縦の座標 (表示の回路が使う。テストパターンは横の座標だけで色を決める)
     wire [10:0] hdmi_frame_width;
     wire [9:0]  hdmi_frame_height;
     wire [10:0] hdmi_screen_width;
@@ -635,6 +688,16 @@ wire unused_sdram = &{1'b0, s_init_done, s_dr_busy, s_dr_wvalid, s_dr_done, s_dr
         .screen_height     (hdmi_screen_height)
     );
 
+`ifdef AE350_FB
+    // フレームバッファの表示の回路 (CTRL の ENABLE が 0 の間と、読み込みが間に合わなかったラインはカラーバー)
+    fb_display u_fb (
+        .pclk (apb_clk), .presetn (presetn), .psel (fb_psel), .penable (fb_penable), .pwrite (fb_pwrite), .paddr (fb_paddr),
+        .pwdata (fb_pwdata), .pstrb (fb_pstrb), .prdata (fb_prdata), .pready (fb_pready), .pslverr (fb_pslverr),
+        .vclk (hdmi_clk), .vrst_n (hdmi_rst_n), .cx (hdmi_cx), .cy (hdmi_cy), .rgb (hdmi_rgb),
+        .mclk (s_clk), .mrst_n (sdram_rst_s[1]), .mreq (fb_mreq), .mreq_addr (fb_mreq_addr), .lb_we (fb_lb_we),
+        .lb_waddr (fb_lb_waddr), .lb_wdata (fb_lb_wdata), .mdone (fb_mdone)
+    );
+`endif
     // ボードの HDMI の線の 499 Ω (AC 結合のコンデンサの後ろで GND へ) を有効にする。駆動しないと、ボードの 100 kΩ (R106) で切れる
     assign hdmi_psv = 1'b1;
 

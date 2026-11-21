@@ -66,7 +66,8 @@ lint: $(PLL_STUB)
 	verilator --lint-only $(VERILATOR_FLAGS) --timing --no-sched-zero-delay --top-module tb_mem $(RTL_SRCS) $(TB_SRCS)
 	verilator --lint-only $(VERILATOR_FLAGS) --top-module ae350_probe_top $(BOARD_SRCS)
 	verilator --lint-only $(VERILATOR_FLAGS) +define+AE350_NO_OBSERVER +define+AHB_SDRAM_TRACE +define+AE350_HDMI --top-module ae350_probe_top \
-		$(BOARD_SRCS) $(HDMI_SRCS) rtl/hdmi_test_pattern.v rtl/hdmi_audio_tone.v board/tang_console/hdmi_pll.v board/tang_console/ddr3/pll_init.v
+		$(BOARD_SRCS) $(HDMI_SRCS) rtl/hdmi_test_pattern.v rtl/hdmi_audio_tone.v board/tang_console/hdmi_pll.v board/tang_console/ddr3/pll_init.v \
+		rtl/fb_display.v rtl/fb_sdram_reader.v
 	@# ahb_ddr3 は DDR3 の IP (暗号化されていて Verilator では読めない) につなぐので、単体で lint にかける。トップのポートになるので、
 	@# 使わない htrans[0] (ahb_sdram と同じく NONSEQ と SEQ を区別しない) の警告だけを外す
 	verilator --lint-only $(VERILATOR_FLAGS) -Wno-UNUSEDSIGNAL --top-module ahb_ddr3 rtl/ahb_ddr3.v
@@ -111,6 +112,11 @@ $(BUILD)/stage4.elf: $(SW_COMMON) sw/stage4_test.c sw/syscalls.c sw/uart.h sw/ir
 $(BUILD)/stage5.elf: $(SW_COMMON) sw/stage5_test.c sw/syscalls.c sw/uart.h sw/irq.h sw/trap.h sw/ae350.ld
 	mkdir -p $(BUILD)
 	$(RISCV_PREFIX)gcc $(SW3_CFLAGS) $(SW_COMMON) sw/stage5_test.c sw/syscalls.c $(SW_LDFLAGS) $(SW3_LIBS) -o $@
+
+# フレームバッファの表示の回路のテストプログラム (make test-fb。ROM に置く)
+$(BUILD)/fb_test.elf: $(SW_COMMON) sw/fb_test.c sw/fb.h sw/syscalls.c sw/uart.h sw/trap.h sw/ae350.ld
+	mkdir -p $(BUILD)
+	$(RISCV_PREFIX)gcc $(SW3_CFLAGS) $(SW_COMMON) sw/fb_test.c sw/syscalls.c $(SW_LDFLAGS) $(SW3_LIBS) -o $@
 
 # 転送の種類ごとに、1 回あたりのサイクル数を測る (バスの構成を変える前後で比べるため)
 $(BUILD)/bench.elf: $(SW_COMMON) sw/bench.c sw/syscalls.c sw/uart.h sw/irq.h sw/ae350.ld
@@ -163,7 +169,7 @@ define run_cmp
 	sed -n 's/^UART: //p' $(BUILD)/$(2).log | diff sw/$(1)_expected.txt -
 endef
 
-test: test-plic test-sram test-sdram-unit test-sdram-io test-sdram-pll test-stage2 test-stage3 test-stage4 test-stage5 test-clocks test-reset test-random test-sdram test-loader test-uart-reset test-uart-tool test-hdmi test-fb-display
+test: test-plic test-sram test-sdram-unit test-sdram-io test-sdram-pll test-stage2 test-stage3 test-stage4 test-stage5 test-clocks test-reset test-random test-sdram test-loader test-uart-reset test-uart-tool test-hdmi test-fb-display test-fb
 
 # ROM のローダーのテスト (tools/loader_test.rb が手順と期待の出力を作る)。シミュレーション用のローダーは、タイムアウトを
 # 200,000 mcycle (250 µs) にする (実機は 1 秒)。送信は実機の 1.25 Mbps と同じ間隔で行うので、hello は数分かかる
@@ -384,6 +390,23 @@ $(SIM_FB_DISPLAY): tb/fb_display_tb.sv $(FB_SRCS) $(HDMI_SRCS) tools/lint.vlt
 test-fb-display: $(SIM_FB_DISPLAY)
 	$(SIM_FB_DISPLAY) > $(BUILD)/fb_display_tb.log 2>&1; status=$$?; cat $(BUILD)/fb_display_tb.log; exit $$status
 	! grep -q -i "error\|violation" $(BUILD)/fb_display_tb.log
+
+# CPU と表示の回路をつないだ構成 (tb_mem に TB_SDRAM と TB_FB。DDR_H* の先は SDRAM の経路)。sw/fb_test.c がフレームバッファに
+# 描いて ENABLE にし、テストベンチが先頭の 4 ラインの画素を SDRAM の内容と比べる (tb/tb_mem.v の TB_FB)。2〜3 フレームを表示するので、
+# 打ち切りのサイクル数を増やす
+FB_TB_SRCS := rtl/fb_display.v rtl/fb_sdram_reader.v rtl/hdmi_test_pattern.v rtl/hdmi_audio_tone.v $(HDMI_SRCS)
+SIM_FB     := $(BUILD)/tb_fb/Vtb_mem
+
+$(SIM_FB): $(RTL_SRCS) $(TB_SRCS) $(SDRAM_SRCS) $(FB_TB_SRCS) tools/lint.vlt
+	mkdir -p $(BUILD)
+	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) $(SDRAM_FLAGS) -DTB_FB --top-module tb_mem -Mdir $(BUILD)/tb_fb \
+		$(RTL_SRCS) $(TB_SRCS) $(SDRAM_SRCS) $(FB_TB_SRCS)
+
+.PHONY: test-fb
+test-fb: $(SIM_FB) $(BUILD)/fb_test.hex sw/fb_test_expected.txt
+	$(SIM_FB) +rom=$(BUILD)/fb_test.hex +max_cycles=10000000 > $(BUILD)/fb_test.log 2>&1; status=$$?; cat $(BUILD)/fb_test.log; exit $$status
+	sed -n 's/^UART: //p' $(BUILD)/fb_test.log | diff sw/fb_test_expected.txt -
+	grep -q "^frame buffer: " $(BUILD)/fb_test.log
 
 .PHONY: test-uart-reset
 test-uart-reset: $(SIM_UART_RESET)
