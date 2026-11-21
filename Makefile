@@ -74,6 +74,9 @@ lint: $(PLL_STUB)
 	@# HDMI の出力回路に渡すテストパターンと試験音 (ボードの回路に入れる前に、単体で lint にかける)
 	verilator --lint-only $(VERILATOR_FLAGS) --top-module hdmi_test_pattern rtl/hdmi_test_pattern.v
 	verilator --lint-only $(VERILATOR_FLAGS) --top-module hdmi_audio_tone rtl/hdmi_audio_tone.v
+	@# フレームバッファの表示の回路と、SDRAM の版の読み出しの回路 (ボードの回路に入れる前に、単体で lint にかける)
+	verilator --lint-only $(VERILATOR_FLAGS) --top-module fb_display rtl/fb_display.v rtl/hdmi_test_pattern.v
+	verilator --lint-only $(VERILATOR_FLAGS) --top-module fb_sdram_reader rtl/fb_sdram_reader.v
 
 # ボードの回路 (board/tang_console/top.v) の lint。Gowin のプリミティブのうち PLL は、Gowin のモデルから作った空のモジュールに、
 # IO のプリミティブ (sdram_io.v の ODDR、IDDR、IOBUF、IODELAY と、HDMI の出力の ELVDS_OBUF) はテストベンチ用のモデルに置き換える。マクロで回路が変わるので、
@@ -160,7 +163,7 @@ define run_cmp
 	sed -n 's/^UART: //p' $(BUILD)/$(2).log | diff sw/$(1)_expected.txt -
 endef
 
-test: test-plic test-sram test-sdram-unit test-sdram-io test-sdram-pll test-stage2 test-stage3 test-stage4 test-stage5 test-clocks test-reset test-random test-sdram test-loader test-uart-reset test-uart-tool test-hdmi
+test: test-plic test-sram test-sdram-unit test-sdram-io test-sdram-pll test-stage2 test-stage3 test-stage4 test-stage5 test-clocks test-reset test-random test-sdram test-loader test-uart-reset test-uart-tool test-hdmi test-fb-display
 
 # ROM のローダーのテスト (tools/loader_test.rb が手順と期待の出力を作る)。シミュレーション用のローダーは、タイムアウトを
 # 200,000 mcycle (250 µs) にする (実機は 1 秒)。送信は実機の 1.25 Mbps と同じ間隔で行うので、hello は数分かかる
@@ -366,6 +369,21 @@ $(SIM_HDMI): tb/hdmi_tb.sv rtl/hdmi_test_pattern.v rtl/hdmi_audio_tone.v $(HDMI_
 .PHONY: test-hdmi
 test-hdmi: $(SIM_HDMI)
 	$(SIM_HDMI)
+
+# フレームバッファの表示の回路 (hdmi.sv、fb_display、fb_sdram_reader、sdram_ctrl_hs と SDRAM のモデル。tb/fb_display_tb.sv の冒頭)
+FB_SRCS        := rtl/fb_display.v rtl/fb_sdram_reader.v rtl/hdmi_test_pattern.v rtl/hdmi_audio_tone.v rtl/ae350_reset_sync.v \
+                  rtl/sdram_ctrl_hs.v rtl/sdram_io.v tb/gowin_io_models.v tb/sdram_hs_path.v tb/vendor/zeitlos/sdram_model.v
+SIM_FB_DISPLAY := $(BUILD)/fb_display_tb/Vfb_display_tb
+
+$(SIM_FB_DISPLAY): tb/fb_display_tb.sv $(FB_SRCS) $(HDMI_SRCS) tools/lint.vlt
+	mkdir -p $(BUILD)
+	verilator --binary --timing --no-sched-zero-delay $(VERILATOR_FLAGS) --top-module fb_display_tb -Mdir $(BUILD)/fb_display_tb \
+		tb/fb_display_tb.sv $(FB_SRCS) $(HDMI_SRCS)
+
+.PHONY: test-fb-display
+test-fb-display: $(SIM_FB_DISPLAY)
+	$(SIM_FB_DISPLAY) > $(BUILD)/fb_display_tb.log 2>&1; status=$$?; cat $(BUILD)/fb_display_tb.log; exit $$status
+	! grep -q -i "error\|violation" $(BUILD)/fb_display_tb.log
 
 .PHONY: test-uart-reset
 test-uart-reset: $(SIM_UART_RESET)
