@@ -405,10 +405,18 @@ module tb_mem;
         .wready     (s_wready)
     );
 
+    // 表示用の読み出しのポートは、このテストベンチでは使わない (B-4 で表示の回路をつなぐ)
+    wire        s_dr_busy, s_dr_wvalid, s_dr_done;
+    wire [15:0] s_dr_wdata;
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire unused_dr = &{1'b0, s_dr_busy, s_dr_wvalid, s_dr_done, s_dr_wdata};
+    /* verilator lint_on UNUSEDSIGNAL */
     sdram_hs_path #(.ADDR_WIDTH(25), .RD_FIRST(11), .IN_DLY(160), .CAP_EDGE(0)) u_path (
         .s_clk (sdram_clk), .rst_n (srst_n), .fill_valid (s_fill_valid), .fill_line (s_fill_line),
         .fill_ready (s_fill_ready), .fill_data (s_fill_data), .we (s_we), .waddr (s_waddr), .wdata (s_wdata), .wmask (s_wmask),
-        .wready (s_wready), .init_done (s_init_done)
+        .wready (s_wready), .init_done (s_init_done),
+        .dr_start (1'b0), .dr_addr (21'd0), .dr_bursts (21'd0), .dr_busy (s_dr_busy), .dr_wvalid (s_dr_wvalid), .dr_wdata (s_dr_wdata),
+        .dr_done (s_dr_done)
     );
     `define TB_SDRAM_MEM u_path.u_model.mem
 
