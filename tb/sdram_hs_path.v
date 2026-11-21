@@ -11,7 +11,7 @@
 //
 // Ports:
 //   input  wire s_clk / rst_n
-//   上位側のポート (sdram_ctrl_hs と同じ)
+//   上位側のポート (sdram_ctrl_hs と同じ。表示用の読み出しのポート dr_* も含む)
 // =============================================================
 
 `timescale 1ns / 1ps
@@ -34,7 +34,14 @@ module sdram_hs_path #(
     input  wire [63:0]           wdata,
     input  wire [7:0]            wmask,
     output wire                  wready,
-    output wire                  init_done
+    output wire                  init_done,
+    input  wire                  dr_start,
+    input  wire [ADDR_WIDTH-5:0] dr_addr,
+    input  wire [ADDR_WIDTH-5:0] dr_bursts,
+    output wire                  dr_busy,
+    output wire                  dr_wvalid,
+    output wire [15:0]           dr_wdata,
+    output wire                  dr_done
 );
     wire [3:0]  io_cmd;
     wire [12:0] io_addr;
@@ -45,6 +52,8 @@ module sdram_hs_path #(
     sdram_ctrl_hs #(.ADDR_WIDTH (ADDR_WIDTH), .RD_FIRST (RD_FIRST)) u_ctrl (
         .clk (s_clk), .rst_n (rst_n), .fill_valid (fill_valid), .fill_line (fill_line), .fill_ready (fill_ready),
         .fill_data (fill_data), .we (we), .waddr (waddr), .wdata (wdata), .wmask (wmask), .wready (wready), .init_done (init_done),
+        .dr_start (dr_start), .dr_addr (dr_addr), .dr_bursts (dr_bursts), .dr_busy (dr_busy), .dr_wvalid (dr_wvalid),
+        .dr_wdata (dr_wdata), .dr_done (dr_done),
         .io_cmd (io_cmd), .io_addr (io_addr), .io_ba (io_ba), .io_dqm (io_dqm), .io_dq_out (io_dq_out),
         .io_dq_oe (io_dq_oe), .io_dq_in (io_dq_in)
     );

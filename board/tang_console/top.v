@@ -453,10 +453,14 @@ wire [12:0] io_addr;
 wire [1:0]  io_ba, io_dqm;
 wire [15:0] io_dq_out, io_dq_in;
 wire        io_dq_oe;
+wire        s_dr_busy, s_dr_wvalid, s_dr_done;
+wire [15:0] s_dr_wdata;
 
 sdram_ctrl_hs #(.ADDR_WIDTH (25), .RD_FIRST (`SDRAM_RD_FIRST)) u_sdram_ctrl (
     .clk (s_clk), .rst_n (sdram_rst_s[1]), .fill_valid (s_fill_valid), .fill_line (s_fill_line), .fill_ready (s_fill_ready),
     .fill_data (s_fill_data), .we (s_we), .waddr (s_waddr), .wdata (s_wdata), .wmask (s_wmask), .wready (s_wready), .init_done (s_init_done),
+    .dr_start (1'b0), .dr_addr (21'd0), .dr_bursts (21'd0), .dr_busy (s_dr_busy), .dr_wvalid (s_dr_wvalid), .dr_wdata (s_dr_wdata),
+    .dr_done (s_dr_done),
     .io_cmd (io_cmd), .io_addr (io_addr), .io_ba (io_ba), .io_dqm (io_dqm), .io_dq_out (io_dq_out), .io_dq_oe (io_dq_oe),
     .io_dq_in (io_dq_in)
 );
@@ -469,7 +473,8 @@ sdram_io #(.IN_DLY (`SDRAM_IN_DLY), .CAP_EDGE (`SDRAM_CAP_EDGE)) u_sdram_io (
 );
 
 /* verilator lint_off UNUSEDSIGNAL */
-wire unused_sdram = s_init_done;
+// 表示用の読み出しのポートは、まだ使わない (B-4 で表示の回路をつなぐ)
+wire unused_sdram = &{1'b0, s_init_done, s_dr_busy, s_dr_wvalid, s_dr_done, s_dr_wdata};
 /* verilator lint_on UNUSEDSIGNAL */
 `endif   // AE350_MEM_DDR3
 

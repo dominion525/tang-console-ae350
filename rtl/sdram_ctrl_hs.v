@@ -7,6 +7,19 @@
 //              ライン読み出しは 8 ワードのバースト。書き込みは、8 バイト (4 ワード) を、行を 1 回開いたまま、1 ワードずつの WRITE で
 //              4 回続けて書く (バイトの有効 (wmask) が 0 のバイトは DQM で外す)。どちらもオートプリチャージ付き。初期化とリフレッシュも
 //              ここで行う。
+//              表示用の読み出しのポート (dr_*) は、指定したアドレスから指定した長さを、1 クロックに 1 ワードずつアドレスの順に返す。
+//
+//   表示用の読み出し (dr_*)
+//     - dr_start (1 クロックのパルス) で dr_addr (16 バイト単位) から dr_bursts (16 バイト単位、1 以上) を読む。dr_busy が 1 の間の
+//       dr_start は無視する。読めたワードを dr_wvalid と dr_wdata で順に出し、最後のワードと同じクロックで dr_done を 1 にする
+//     - SDRAM の行 (1 バンクの 1 行 = 512 ワード) ごとに、ACT の tRCD 後から READ (BL 8) を 8 クロックごとに続けて出す (データが
+//       途切れずに続く)。行の最後の READ はオートプリチャージ付き。16 バイト単位なので、8 ワードのバーストが行をまたぐことはない
+//     - 1 つの行の分を出し終えたら S_IDLE に戻り、次の行の分は改めて調停を通す (行の切れ目でリフレッシュを挟めるように。
+//       1 ラインの読み出しはリフレッシュの間隔より長い)
+//     - 調停の順位 (S_IDLE): リフレッシュ > 表示の読み出し > CPU の読み出し > CPU の書き込み。表示の読み出しが残っている間、
+//       CPU は待つ
+//     - 返すワードは、READ を出したエッジから RD_FIRST の位置に印を送るシフトレジスタ (dr_mk) で数える (CPU の読み出しの
+//       rd_shift と同じタイミング)。コマンドを出す側とは独立なので、次の行の ACT とデータの返却が重なってもよい
 //
 //   元にした 20 MHz のコントローラ (sdram_bridge) からの変更点
 //     - ピンを直接駆動せず、sdram_io (IO 内のレジスタ) にコマンド、アドレス、DQM、DQ と出力許可を渡し、取り込んだ DQ を受け取る
@@ -49,6 +62,15 @@ module sdram_ctrl_hs #(
     output reg                   wready,
     output reg                   init_done,
 
+    // 表示用の読み出し
+    input  wire                  dr_start,
+    input  wire [ADDR_WIDTH-5:0] dr_addr,      // 16 バイト単位
+    input  wire [ADDR_WIDTH-5:0] dr_bursts,    // 16 バイト単位 (1 以上)
+    output reg                   dr_busy,
+    output reg                   dr_wvalid,
+    output reg  [15:0]           dr_wdata,
+    output reg                   dr_done,
+
     // sdram_io へ
     output reg  [3:0]            io_cmd,       // {cs_n, ras_n, cas_n, we_n}
     output reg  [12:0]           io_addr,
@@ -83,7 +105,7 @@ module sdram_ctrl_hs #(
     function integer max2(input integer a, input integer b);
         max2 = (a > b) ? a : b;
     endfunction
-    localparam integer CNT_MAX = max2(max2(RD_FIRST + 7, T_RFC), max2(max2(T_WR_AT, T_RCD), max2(T_WR + T_RP, T_MRD)));
+    localparam integer CNT_MAX = max2(max2(RD_FIRST + 7, T_RFC), max2(max2(T_WR_AT, T_RCD), max2(T_WR + T_RP, max2(T_MRD, 8 + T_RP))));
     localparam integer CW  = $clog2(CNT_MAX + 2);
     localparam integer IW  = $clog2(INIT_CYCLES + 1);
     localparam integer SAW = $clog2(T_RC + 1);
@@ -104,13 +126,19 @@ module sdram_ctrl_hs #(
     localparam integer  WR_START   = max2(T_RCD, T_WR_AT - 3);
     localparam integer  WR4_GO     = WR_START - 2;
     localparam [CW-1:0] WR4_GO_C   = WR4_GO[CW-1:0];
+    // 表示用の読み出し: 2 回目からの READ は 8 クロックごと (1 クロック前に決めるので 6)。行の最後の READ の後は、バーストの
+    // 8 クロックとプリチャージの tRP を待つ
+    localparam integer  DR_NEXT    = 6;
+    localparam integer  DR_WAIT    = 8 + T_RP;
+    localparam [CW-1:0] DR_NEXT_C  = DR_NEXT[CW-1:0];
+    localparam [CW-1:0] DR_WAIT_C  = DR_WAIT[CW-1:0];
 
     localparam [3:0] CMD_NOP = 4'b0111, CMD_ACT = 4'b0011, CMD_READ = 4'b0101, CMD_WRITE = 4'b0100,
                      CMD_PRE = 4'b0010, CMD_REF = 4'b0001, CMD_MRS = 4'b0000;
 
     // 状態の番号は元にした sdram_bridge と同じ (5 は sdram_bridge の S_REF。ここではリフレッシュも S_WAIT で待つので使わない)
     localparam S_POWER = 4'd0, S_PRE_ALL = 4'd1, S_INIT_REF = 4'd2, S_MRS = 4'd3, S_IDLE = 4'd4,
-               S_RD_CMD = 4'd6, S_RD_DATA = 4'd7, S_WR_CMD = 4'd8, S_WAIT = 4'd9;
+               S_RD_CMD = 4'd6, S_RD_DATA = 4'd7, S_WR_CMD = 4'd8, S_WAIT = 4'd9, S_DR_RD = 4'd10;
 
     reg [3:0]  state;
     reg [CW-1:0]  cnt;
@@ -152,7 +180,24 @@ module sdram_ctrl_hs #(
     reg [7:0]  msh;
     reg [1:0]  wcol;             // いま書くワードの、8 バイトの中の位置
 
+    // 表示用の読み出し
+    //   dr_ptr     次に READ を出す 16 バイトの位置 ({行, バンク, 列の上位 6 ビット})
+    //   dr_left    これから READ を出すバーストの数
+    //   dr_pend    READ を出していないバーストが残っている (S_IDLE で、次の行の分を始める)
+    //   dr_first   この行で、まだ READ を出していない (最初の READ は tRCD 後、2 回目からは 8 クロックごと)
+    //   dr_go      次のクロックで READ を出す (1 クロック前に決める)
+    //   dr_last_q  次の READ が、この行の最後か、読み出し全体の最後 (オートプリチャージを付け、S_IDLE に戻る)
+    //   dr_fin_q   次の READ が、読み出し全体の最後
+    //   dr_mk      READ を出したエッジからのクロック数の印 (ビット j は j + 1 クロック前に READ を出した)。dr_ml は最後の READ の印
+    localparam integer DRW = ADDR_WIDTH - 4;
+    localparam integer MKW = RD_FIRST + 7;
+    reg [DRW-1:0] dr_ptr, dr_left;
+    reg           dr_pend, dr_first, dr_go, dr_last_q, dr_fin_q;
+    reg [MKW-1:0] dr_mk, dr_ml;
+    reg           dr_take, dr_take_last;   // 次のクロックで dq_s のワードを返す (そのワードが最後)
+
     wire act_ok = (since_act >= T_RC[SAW-1:0]);
+    wire dr_read = (state == S_DR_RD) && dr_go;   // このクロックで表示の READ を出す (S_DR_RD の中の条件と同じ)
 
     task cmd(input [3:0] c);
         begin
@@ -165,6 +210,9 @@ module sdram_ctrl_hs #(
         refresh_timer = {RW{1'b0}}; refresh_due = 1'b0;
         rst_q = 1'b0; rd_shift = 1'b0; rd_go = 1'b0; wr_pend = 4'd0; rd_keep = 1'b0; since_act = {SAW{1'b1}}; dq_s = 16'd0; col_q = 9'd0; ba_q = 2'd0;
         wsh = 64'd0; msh = 8'd0; wcol = 2'd0;
+        dr_ptr = {DRW{1'b0}}; dr_left = {DRW{1'b0}}; dr_pend = 1'b0; dr_first = 1'b0; dr_go = 1'b0; dr_last_q = 1'b0; dr_fin_q = 1'b0;
+        dr_mk = {MKW{1'b0}}; dr_ml = {MKW{1'b0}}; dr_take = 1'b0; dr_take_last = 1'b0;
+        dr_busy = 1'b0; dr_wvalid = 1'b0; dr_wdata = 16'd0; dr_done = 1'b0;
         fill_ready = 1'b0; fill_data = 128'd0; wready = 1'b0; init_done = 1'b0;
         io_cmd = CMD_NOP; io_addr = 13'd0; io_ba = 2'd0; io_dqm = 2'b11; io_dq_out = 16'd0; io_dq_oe = 1'b0;
     end
@@ -177,6 +225,24 @@ module sdram_ctrl_hs #(
         rd_shift <= (state == S_RD_DATA) && (cnt >= SHIFT_LO_C) && (cnt <= SHIFT_HI_C);
         rd_go    <= (state == S_RD_CMD) && (cnt == RD_GO_C);
         if (rd_shift) fill_data <= {dq_s, fill_data[127:16]};
+
+        // 表示用の読み出し: 1 クロック前に決める判定
+        dr_go     <= (state == S_DR_RD) && (cnt == (dr_first ? RD_GO_C : DR_NEXT_C));
+        dr_fin_q  <= (dr_left == {{(DRW-1){1'b0}}, 1'b1});
+        dr_last_q <= (dr_ptr[5:0] == 6'd63) || (dr_left == {{(DRW-1){1'b0}}, 1'b1}) || !dr_pend;
+        // 返すワード: READ を出したエッジから RD_FIRST の位置で、8 ワード分 dr_take を 1 にする (CPU の読み出しの rd_shift と同じ位置)
+        dr_take      <= |dr_mk[MKW-1:RD_FIRST-1];
+        dr_take_last <= dr_ml[MKW-1];
+        dr_wvalid    <= dr_take;
+        dr_wdata     <= dq_s;
+        dr_done      <= dr_take_last;
+        if (dr_take_last) dr_busy <= 1'b0;
+        if (dr_start && !dr_busy && rst_q) begin
+            dr_busy  <= 1'b1;
+            dr_pend  <= 1'b1;
+            dr_ptr   <= dr_addr;
+            dr_left  <= dr_bursts;
+        end
         if (state == S_IDLE) init_done <= 1'b1;
         if (since_act != {SAW{1'b1}}) since_act <= since_act + 1'b1;
 
@@ -245,6 +311,16 @@ module sdram_ctrl_hs #(
                     cnt         <= {CW{1'b0}};
                     wait_n      <= T_RFC[CW-1:0];
                     state       <= S_WAIT;
+                end else if (dr_pend) begin
+                    if (act_ok) begin
+                        cmd(CMD_ACT);
+                        io_ba     <= dr_ptr[7:6];
+                        io_addr   <= pad_row(dr_ptr[DRW-1:8]);
+                        dr_first  <= 1'b1;
+                        since_act <= {{(SAW-1){1'b0}}, 1'b1};
+                        cnt       <= {CW{1'b0}};
+                        state     <= S_DR_RD;
+                    end
                 end else if (fill_valid && rst_q && act_ok) begin
                     cmd(CMD_ACT);
                     io_ba     <= r_word[10:9];
@@ -302,12 +378,43 @@ module sdram_ctrl_hs #(
                     state  <= S_WAIT;
                 end
             end
+            // 表示用の読み出し: ACT の tRCD 後から、8 クロックごとに READ を出す。行の最後か全体の最後の READ はオートプリチャージ付きで、
+            // そのエッジで S_WAIT に移り、バーストの 8 クロックとプリチャージの tRP を待つ (返すワードは dr_mk で数えるので、待たない)
+            S_DR_RD: begin
+                cnt <= cnt + 1'b1;
+                if (dr_go) begin
+                    cmd(CMD_READ);
+                    io_ba    <= dr_ptr[7:6];
+                    io_addr  <= {2'b00, dr_last_q, 1'b0, dr_ptr[5:0], 3'b000};   // A10 = オートプリチャージ
+                    dr_first <= 1'b0;
+                    dr_ptr   <= dr_ptr + 1'b1;
+                    dr_left  <= dr_left - 1'b1;
+                    cnt      <= {CW{1'b0}};
+                    if (dr_fin_q) dr_pend <= 1'b0;
+                    if (dr_last_q) begin
+                        wait_n <= DR_WAIT_C;
+                        state  <= S_WAIT;
+                    end
+                end
+            end
             S_WAIT: begin
                 cnt <= cnt + 1'b1;
                 if (cnt + 1'b1 >= wait_n) state <= S_IDLE;
             end
             default: state <= S_POWER;
         endcase
+
+        dr_mk <= {dr_mk[MKW-2:0], dr_read};
+        dr_ml <= {dr_ml[MKW-2:0], dr_read && dr_fin_q};
+        // リセットの間は、表示用の読み出しを止める (行の途中なら、次の READ を最後にして閉じる)
+        if (!rst_q) begin
+            dr_busy <= 1'b0;
+            dr_pend <= 1'b0;
+            dr_mk   <= {MKW{1'b0}};
+            dr_ml   <= {MKW{1'b0}};
+            dr_take <= 1'b0;
+            dr_take_last <= 1'b0;
+        end
 
         // WRITE を出す (wr_pend の最下位のビットが 1 のエッジごとに 1 回。出すかどうかはレジスタだけで決まる)。書き込む値と DQM も
         // 同じエッジで出す。アドレスの小さいバイトが下位 (DQ[7:0])。DQM が 1 のバイトは書き込まない
