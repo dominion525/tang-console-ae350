@@ -196,7 +196,21 @@ module sdram_ctrl_hs #(
     reg [MKW-1:0] dr_mk, dr_ml;
     reg           dr_take, dr_take_last;   // 次のクロックで dq_s のワードを返す (そのワードが最後)
 
-    wire act_ok = (since_act >= T_RC[SAW-1:0]);
+    // S_IDLE で次に何をするか (リフレッシュ、表示の読み出し、CPU の読み出し、CPU の書き込みのどれか 1 つ) と、ACT で出す行とバンク、
+    // CPU の転送の列を、1 クロック前に決めておく (優先順位の判定と tRC の比較から、ACT のアドレスを 3 か所から選んで出すまでが
+    // 1 クロックに収まらず、表示の回路をつないだ構成で s_clk の余裕がなくなったため)。S_IDLE のエッジでは、決めておいた値を出すだけ。
+    // 判定に使う fill_valid、we は受け付けられるまで値を保ち、dr_pend、refresh_due はこの回路のレジスタなので、1 クロック前の値で
+    // 決めてよい。tRC は、次のクロックで since_act が T_RC 以上になるか (since_act >= T_RC - 1) で見る (S_IDLE で ACT を出したエッジの
+    // 判定は、次のクロックが S_IDLE ではないので使わない)
+    localparam integer   T_RC_M1_I = T_RC - 1;
+    localparam [SAW-1:0] T_RC_M1   = T_RC_M1_I[SAW-1:0];
+    reg        sel_ref, sel_dr, sel_rd, sel_wr;
+    reg [12:0] act_row_q;
+    reg [1:0]  act_ba_q;
+    reg [8:0]  nx_col;
+    wire       rd_req  = fill_valid && rst_q;
+    wire       wr_req  = we && rst_q;
+    wire       trc_nxt = (since_act >= T_RC_M1);
     wire dr_read = (state == S_DR_RD) && dr_go;   // このクロックで表示の READ を出す (S_DR_RD の中の条件と同じ)
 
     task cmd(input [3:0] c);
@@ -210,6 +224,7 @@ module sdram_ctrl_hs #(
         refresh_timer = {RW{1'b0}}; refresh_due = 1'b0;
         rst_q = 1'b0; rd_shift = 1'b0; rd_go = 1'b0; wr_pend = 4'd0; rd_keep = 1'b0; since_act = {SAW{1'b1}}; dq_s = 16'd0; col_q = 9'd0; ba_q = 2'd0;
         wsh = 64'd0; msh = 8'd0; wcol = 2'd0;
+        sel_ref = 1'b0; sel_dr = 1'b0; sel_rd = 1'b0; sel_wr = 1'b0; act_row_q = 13'd0; act_ba_q = 2'd0; nx_col = 9'd0;
         dr_ptr = {DRW{1'b0}}; dr_left = {DRW{1'b0}}; dr_pend = 1'b0; dr_first = 1'b0; dr_go = 1'b0; dr_last_q = 1'b0; dr_fin_q = 1'b0;
         dr_mk = {MKW{1'b0}}; dr_ml = {MKW{1'b0}}; dr_take = 1'b0; dr_take_last = 1'b0;
         dr_busy = 1'b0; dr_wvalid = 1'b0; dr_wdata = 16'd0; dr_done = 1'b0;
@@ -245,6 +260,14 @@ module sdram_ctrl_hs #(
         end
         if (state == S_IDLE) init_done <= 1'b1;
         if (since_act != {SAW{1'b1}}) since_act <= since_act + 1'b1;
+        // S_IDLE の判定を 1 クロック前に決める (上の sel_* の説明)
+        sel_ref   <= refresh_due;
+        sel_dr    <= !refresh_due && dr_pend && trc_nxt;
+        sel_rd    <= !refresh_due && !dr_pend && rd_req && trc_nxt;
+        sel_wr    <= !refresh_due && !dr_pend && !rd_req && wr_req && trc_nxt;
+        act_row_q <= dr_pend ? pad_row(dr_ptr[DRW-1:8]) : rd_req ? pad_row(r_word[ADDR_WIDTH-2:11]) : pad_row(w_word[ADDR_WIDTH-2:11]);
+        act_ba_q  <= dr_pend ? dr_ptr[7:6] : rd_req ? r_word[10:9] : w_word[10:9];
+        nx_col    <= rd_req ? r_word[8:0] : {w_word[8:2], 2'b00};    // 書き込みは 8 バイト (4 ワード) の先頭の列
 
         cmd(CMD_NOP);
         fill_ready <= 1'b0;
@@ -304,47 +327,41 @@ module sdram_ctrl_hs #(
                 wait_n  <= T_MRD[CW-1:0];
                 state   <= S_WAIT;
             end
-            S_IDLE:
-                if (refresh_due) begin
+            S_IDLE: begin
+                // 書き込みのデータとバイトの有効、CPU の転送の列とバンクは、待っている間は毎クロック取り込む (ACT を出すエッジでも
+                // 同じ値を取り込む。取り込み許可を判定の結果から外すため)
+                wsh  <= wdata;
+                msh  <= wmask;
+                wcol <= 2'd0;
+                col_q <= nx_col;
+                ba_q  <= act_ba_q;
+                if (sel_ref) begin
                     cmd(CMD_REF);
                     refresh_due <= 1'b0;
                     cnt         <= {CW{1'b0}};
                     wait_n      <= T_RFC[CW-1:0];
                     state       <= S_WAIT;
-                end else if (dr_pend) begin
-                    if (act_ok) begin
-                        cmd(CMD_ACT);
-                        io_ba     <= dr_ptr[7:6];
-                        io_addr   <= pad_row(dr_ptr[DRW-1:8]);
-                        dr_first  <= 1'b1;
-                        since_act <= {{(SAW-1){1'b0}}, 1'b1};
-                        cnt       <= {CW{1'b0}};
-                        state     <= S_DR_RD;
-                    end
-                end else if (fill_valid && rst_q && act_ok) begin
-                    cmd(CMD_ACT);
-                    io_ba     <= r_word[10:9];
-                    io_addr   <= pad_row(r_word[ADDR_WIDTH-2:11]);
-                    col_q     <= r_word[8:0];
-                    ba_q      <= r_word[10:9];
-                    rd_keep   <= 1'b1;
-                    since_act <= {{(SAW-1){1'b0}}, 1'b1};
-                    cnt       <= {CW{1'b0}};
-                    state     <= S_RD_CMD;
-                end else if (we && rst_q && act_ok) begin
-                    cmd(CMD_ACT);
-                    io_ba     <= w_word[10:9];
-                    io_addr   <= pad_row(w_word[ADDR_WIDTH-2:11]);
-                    col_q     <= {w_word[8:2], 2'b00};     // 8 バイト (4 ワード) の先頭の列
-                    ba_q      <= w_word[10:9];
-                    wsh       <= wdata;
-                    msh       <= wmask;
-                    wcol      <= 2'd0;
-                    wready    <= 1'b1;
-                    since_act <= {{(SAW-1){1'b0}}, 1'b1};
-                    cnt       <= {CW{1'b0}};
-                    state     <= S_WR_CMD;
                 end
+                if (sel_dr || sel_rd || sel_wr) begin
+                    cmd(CMD_ACT);
+                    io_ba     <= act_ba_q;
+                    io_addr   <= act_row_q;
+                    since_act <= {{(SAW-1){1'b0}}, 1'b1};
+                    cnt       <= {CW{1'b0}};
+                end
+                if (sel_dr) begin
+                    dr_first <= 1'b1;
+                    state    <= S_DR_RD;
+                end
+                if (sel_rd) begin
+                    rd_keep <= 1'b1;
+                    state   <= S_RD_CMD;
+                end
+                if (sel_wr) begin
+                    wready <= 1'b1;
+                    state  <= S_WR_CMD;
+                end
+            end
             // ACT から tRCD を待って READ
             S_RD_CMD: begin
                 cnt <= cnt + 1'b1;
