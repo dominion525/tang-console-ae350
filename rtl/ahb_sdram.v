@@ -236,6 +236,10 @@ module ahb_sdram #(
     localparam [1:0] S_WRITE = 2'd2;
 
     reg [1:0] s_st;
+    // 読み出しを待っている (s_st == S_READ と同じ値)。2 つ持ち、それぞれ s_rdata の 32 ビットずつの取り込み許可に配る (s_st と
+    // fill_ready から 64 個に配る配線が長く、表示の回路をつないだ構成で s_clk の余裕がなくなったため)。待っている間は毎クロック
+    // 取り込み、fill_ready のエッジで最後の値を取り込んで止まる (hclk 側が s_rdata を読むのは ack_t が変わった後)
+    reg [1:0] s_rd_wait /* synthesis syn_preserve = 1 */;
     reg [1:0] req_s;                  // hclk 側の req_t を 2 段の FF で受ける
     reg       req_seen;
     reg       ack_t;
@@ -277,6 +281,7 @@ module ahb_sdram #(
             wmask      <= 8'd0;
             wbytes     <= 4'd0;
             s_rdata    <= 64'd0;
+            s_rd_wait  <= 2'b00;
             st_s_rd_cyc   <= 32'd0;
             st_s_wr_cyc   <= 32'd0;
             st_s_wr_bytes <= 32'd0;
@@ -291,6 +296,8 @@ module ahb_sdram #(
             if (s_st == S_READ)            st_s_rd_cyc   <= st_s_rd_cyc + 32'd1;
             if (s_st == S_WRITE)           st_s_wr_cyc   <= st_s_wr_cyc + 32'd1;
             if (s_st == S_WRITE && wready) st_s_wr_bytes <= st_s_wr_bytes + {28'd0, wbytes};
+            if (s_rd_wait[0]) s_rdata[31:0]  <= q_addr[3] ? fill_data[95:64]  : fill_data[31:0];
+            if (s_rd_wait[1]) s_rdata[63:32] <= q_addr[3] ? fill_data[127:96] : fill_data[63:32];
             case (s_st)
                 S_IDLE: begin
                     if (req_new) begin
@@ -300,6 +307,7 @@ module ahb_sdram #(
                             s_st  <= S_WRITE;
                         end else begin
                             fill_valid <= 1'b1;
+                            s_rd_wait  <= 2'b11;
                             s_st       <= S_READ;
                         end
                     end
@@ -307,7 +315,7 @@ module ahb_sdram #(
                 S_READ: begin
                     if (fill_ready) begin
                         fill_valid <= 1'b0;
-                        s_rdata    <= q_addr[3] ? fill_data[127:64] : fill_data[63:0];
+                        s_rd_wait  <= 2'b00;
                         ack_t      <= ~ack_t;
                         s_st       <= S_IDLE;
                     end
