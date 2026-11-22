@@ -5,9 +5,14 @@
  * 背景 (fb_demo の 1 回目と同じグラデーションと 80 画素ごとの白い格子) の上を、64 × 64 画素のマゼンタの四角が、画面の端で
  * 跳ね返りながら 1 フレームごとに動く。止まらずに動き続ける (止めるときは、ローダーで次のプログラムを送る。リセットで止まる)。
  *
+ * ROM のローダーは、プログラムをデータキャッシュを有効にして起動する (sw/loader.c の do_run)。最初にデータキャッシュを無効にし、
+ * フレームバッファへの書き込みが SDRAM に直接届くようにする (キャッシュを通すと、書いた画素がキャッシュに残ったまま FB_BASE を
+ * 切り替えることになり、表示が古い画素を読む。また、書き込みのたびにラインの読み込みと書き戻しが起き、遅い)。
+ *
  * フレームバッファは 2 枚 (FB0、FB1)。表示していない方に描き、描き終えたら FB_BASE を切り替える (表示の回路は FB_BASE を
  * フレームの始まりで取り込むので、切り替えはフレームの境目で起きる)。1 フレームで描くのは、前にその 1 枚に描いた四角を背景で
- * 消すことと、新しい位置に四角を描くことだけ。
+ * 消すことと、新しい位置に四角を描くことだけ。背景は、横の位置で決まる部分 (赤、青、縦の格子) を最初に表にしておき、そのラインの
+ * 縦の位置で決まる部分 (緑) との OR で書く (1 画素ずつ計算すると、消すのに 400〜500 µs かかり、垂直帰線に収まらなかったため)。
  *   - FRAME が増えた (垂直帰線が始まった) ところで描き始める。描いているのは、直前のフレームを表示し終えた 1 枚
  *   - 垂直帰線 (30 ライン、約 667 µs) のうちに FB_BASE を書けば次のフレームから切り替わる。間に合わなければ 1 フレーム遅れて
  *     切り替わる (表示中の 1 枚には描かないので、絵は崩れない)。描くのに 667 µs 以上かかった回数を「late」として数える
@@ -28,6 +33,7 @@
 #define SQ         64u              /* 四角の大きさ (画素) */
 #define SQ_COLOR   0xF81Fu          /* マゼンタ */
 #define VBLANK_CYC 533600u          /* 垂直帰線 30 ライン = 667 µs (mcycle は 800 MHz で数える) */
+#define MCACHE_DC  0x2u              /* mcache_ctl (CSR 0x7CA) のデータキャッシュの有効 */
 
 static inline uint32_t rd_mcycle(void)
 {
@@ -36,11 +42,31 @@ static inline uint32_t rd_mcycle(void)
     return v;
 }
 
-/* 背景の 1 画素 (fb_demo の 1 回目と同じ。格子のときは grid を 1 にする) */
-static inline uint16_t bg(uint32_t x, uint32_t y, uint32_t grid)
+/*
+ * 背景 (fb_demo の 1 回目と同じ)。赤は横、緑は縦の位置で決まり、青は一定、80 画素ごとの格子は白。
+ * colpair[i] は横の 2 画素 (2i、2i + 1) の、赤と青の部分 (格子の画素は 0xFFFF)。ライン y の背景の 32 ビットは、横の格子の
+ * ラインなら全部白、そうでなければ colpair[i] | (緑の部分を 2 画素分並べたもの)。格子の画素は 0xFFFF なので、OR しても白のまま
+ */
+static uint32_t colpair[FB_WIDTH / 2u];
+
+static void make_colpair(void)
 {
-    if (grid) return 0xFFFFu;
-    return (uint16_t)((((x * 25u) >> 10) << 11) | (((y * 90u) >> 10) << 5) | 16u);
+    for (uint32_t i = 0; i < FB_WIDTH / 2u; i++) {
+        uint32_t p[2];
+        for (uint32_t k = 0; k < 2u; k++) {
+            uint32_t x = 2u * i + k;
+            p[k] = ((x % 80u) == 0u) ? 0xFFFFu : ((((x * 25u) >> 10) << 11) | 16u);
+        }
+        colpair[i] = p[0] | (p[1] << 16);
+    }
+}
+
+/* ライン y の、緑の部分を 2 画素分並べたもの (横の格子のラインは全部白) */
+static inline uint32_t row_bits(uint32_t y, uint32_t *white)
+{
+    uint32_t g = ((y * 90u) >> 10) << 5;
+    *white = (y % 80u) == 0u;
+    return g | (g << 16);
 }
 
 /* 1 枚に背景を描く */
@@ -48,30 +74,25 @@ static void draw_bg(uint32_t base)
 {
     for (uint32_t y = 0; y < FB_HEIGHT; y++) {
         volatile uint32_t *row = (volatile uint32_t *)(base + y * FB_STRIDE);
-        uint32_t gy = (y % 80u) == 0u;
-        for (uint32_t x = 0; x < FB_WIDTH; x += 2u) {
-            uint16_t p0 = bg(x, y, gy || (x % 80u) == 0u);
-            uint16_t p1 = bg(x + 1u, y, gy || ((x + 1u) % 80u) == 0u);
-            row[x / 2u] = (uint32_t)p0 | ((uint32_t)p1 << 16);
-        }
+        uint32_t white;
+        uint32_t g2 = row_bits(y, &white);
+        for (uint32_t i = 0; i < FB_WIDTH / 2u; i++) row[i] = white ? 0xFFFFFFFFu : (colpair[i] | g2);
     }
 }
 
 /* (x0, y0) からの四角を、背景 (fill が 0) か四角の色 (fill が 1) で塗る。x0 は偶数 */
 static void draw_sq(uint32_t base, uint32_t x0, uint32_t y0, uint32_t fill)
 {
-    uint8_t gx[SQ];
-    if (!fill) {
-        for (uint32_t i = 0; i < SQ; i++) gx[i] = ((x0 + i) % 80u) == 0u;
-    }
+    const uint32_t sq2 = (uint32_t)SQ_COLOR | ((uint32_t)SQ_COLOR << 16);
     for (uint32_t y = y0; y < y0 + SQ; y++) {
-        volatile uint32_t *row = (volatile uint32_t *)(base + y * FB_STRIDE);
-        uint32_t gy = (y % 80u) == 0u;
-        for (uint32_t i = 0; i < SQ; i += 2u) {
-            uint32_t x = x0 + i;
-            uint16_t p0 = fill ? SQ_COLOR : bg(x, y, gy || gx[i]);
-            uint16_t p1 = fill ? SQ_COLOR : bg(x + 1u, y, gy || gx[i + 1u]);
-            row[x / 2u] = (uint32_t)p0 | ((uint32_t)p1 << 16);
+        volatile uint32_t *row = (volatile uint32_t *)(base + y * FB_STRIDE) + x0 / 2u;
+        if (fill) {
+            for (uint32_t i = 0; i < SQ / 2u; i++) row[i] = sq2;
+        } else {
+            uint32_t white;
+            uint32_t g2 = row_bits(y, &white);
+            const uint32_t *cp = &colpair[x0 / 2u];
+            for (uint32_t i = 0; i < SQ / 2u; i++) row[i] = white ? 0xFFFFFFFFu : (cp[i] | g2);
         }
     }
 }
@@ -85,9 +106,12 @@ int main(void)
     uint32_t back = 1;                          /* 次に描く 1 枚 (FB0 を表示しているので FB1) */
     uint32_t frames = 0, late = 0, max_cyc = 0;
 
+    fb_flush_dcache();   /* ローダーが起動してからキャッシュに入った書き込みを、メモリに書き出す */
+    __asm__ volatile("csrc 0x7ca, %0" : : "r"(MCACHE_DC) : "memory");   /* データキャッシュを無効にする */
     printf("fb_animate: FB0 0x%08lx FB1 0x%08lx, square %lu, report every %lu frames\n", (unsigned long)FB0,
            (unsigned long)FB1, (unsigned long)SQ, (unsigned long)REPORT_FRAMES);
     /* 両方に背景と、最初の位置の四角を描き、FB0 を表示する */
+    make_colpair();
     draw_bg(FB0);
     draw_bg(FB1);
     draw_sq(FB0, x, y, 1u);
