@@ -456,10 +456,10 @@ module tb_mem;
     // ---------------------------------------------------------
     // フレームバッファの表示の回路 (make test-fb)。hdmi.sv (座標を作る。画素クロック 74.25 MHz)、fb_display、fb_sdram_reader を
     // つなぐ。表示の回路が ENABLE のフレームでは、先頭の FB_CHECK_LINES ラインの画素 (hdmi.sv が受け取る色。cx の次のクロック) を、
-    // SDRAM のモデルの内容 (CPU が書いた値) と比べる。フレームバッファは FB_BASE のリセット後の値 (0x01C0_0000)
+    // SDRAM のモデルの内容 (CPU が書いた値) と比べる。比べる場所は、表示の回路が FB_BASE を取り込むのと同じ時期 (最後の帰線の
+    // ラインの始まり) に取り込む (フレームバッファを 2 枚使って切り替えるプログラムのため。切り替わる時期は make test-fb-display で確かめる)
     // ---------------------------------------------------------
     localparam integer      FB_CHECK_LINES = 4;
-    localparam [31:0]       FB_ADDR        = 32'h01C0_0000;
     reg vclk;
     initial vclk = 1'b0;
     always #6.734 vclk = ~vclk;
@@ -517,8 +517,9 @@ module tb_mem;
     reg [10:0] fb_cx_q;
     reg [9:0]  fb_cy_q;
     integer    fb_pixels;     // 比べた画素の数 (合格で止めるときに、ENABLE になった後の 2 フレーム分以上あることを確かめる)
+    reg [31:0] fb_addr;       // このフレームのフレームバッファの先頭
     initial begin
-        fb_cx_q = 11'd0; fb_cy_q = 10'd0; fb_pixels = 0;
+        fb_cx_q = 11'd0; fb_cy_q = 10'd0; fb_pixels = 0; fb_addr = 32'h01C0_0000;
     end
     function [23:0] fb_expand(input [15:0] p);
         fb_expand = {p[15:11], p[15:13], p[10:5], p[10:9], p[4:0], p[4:2]};
@@ -527,8 +528,9 @@ module tb_mem;
         reg [15:0] w;
         fb_cx_q <= fb_cx;
         fb_cy_q <= fb_cy;
+        if (fb_cy == 10'd749 && fb_cx == 11'd0) fb_addr <= {7'd0, u_fb.base_p, 4'b0000};
         if (vrst_n && u_fb.en_a && fb_cx_q < 11'd1280 && fb_cy_q < FB_CHECK_LINES[9:0]) begin
-            w = `TB_SDRAM_MEM[sdram_idx(FB_ADDR + {22'd0, fb_cy_q} * 32'd2560 + {21'd0, fb_cx_q} * 32'd2)];
+            w = `TB_SDRAM_MEM[sdram_idx(fb_addr + {22'd0, fb_cy_q} * 32'd2560 + {21'd0, fb_cx_q} * 32'd2)];
             if (fb_rgb !== fb_expand(w))
                 $fatal(1, "frame buffer pixel (%0d, %0d): rgb %06x, expected %06x (word %04x)", fb_cx_q, fb_cy_q, fb_rgb, fb_expand(w), w);
             fb_pixels <= fb_pixels + 1;

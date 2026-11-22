@@ -221,6 +221,14 @@ $(BUILD)/fb_demo.elf: $(SW_COMMON) sw/fb_demo.c sw/fb.h sw/syscalls.c sw/trap.h 
 $(BUILD)/fb_demo.bin: $(BUILD)/fb_demo.elf
 	$(RISCV_PREFIX)objcopy -O binary $< $@
 
+# フレームバッファの表示で、時間とともに動く絵を出す (ILM に置く。実機ではローダーで送る。sw/fb_animate.c の冒頭)
+$(BUILD)/fb_animate.elf: $(SW_COMMON) sw/fb_animate.c sw/fb.h sw/syscalls.c sw/trap.h sw/uart.h sw/ilm.ld
+	mkdir -p $(BUILD)
+	$(RISCV_PREFIX)gcc $(SW3_CFLAGS) $(SW_COMMON) sw/fb_animate.c sw/syscalls.c $(ILM_PROG_LDFLAGS) $(SW3_LIBS) -o $@
+
+$(BUILD)/fb_animate.bin: $(BUILD)/fb_animate.elf
+	$(RISCV_PREFIX)objcopy -O binary $< $@
+
 # DDR_H* の先のメモリ (SDRAM か DDR3) への 1 回の読み書きにかかるクロック数を測る (ILM に置く。実機ではローダーで送る)
 $(BUILD)/mem_bench.elf: $(SW_COMMON) sw/mem_bench.c sw/syscalls.c sw/trap.h sw/uart.h sw/ilm.ld
 	mkdir -p $(BUILD)
