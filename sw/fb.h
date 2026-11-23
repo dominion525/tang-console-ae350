@@ -43,4 +43,19 @@ static inline void fb_flush_dcache(void)
     __asm__ volatile("csrw 0x7cc, %0" : : "r"(6u) : "memory");
 }
 
+/*
+ * 書いた画素が SDRAM に届くのを待つ。表示を切り替える (CTRL、FB_BASE を書く) 前に呼ぶ。
+ * SDRAM の前の回路 (rtl/ahb_sdram.v) は、書き込みをバッファに溜めて先に終わらせる。表示の回路は SDRAM を直接読むので、
+ * バッファに残る書き込みを追い越して読むことがある。SDRAM の側の読み出し (ここではカウンタ、0x0300_0000) は、バッファが空に
+ * なるまで待ってから行われるので、それを 1 回読む。前後の fence は、CPU の中に溜まった書き込みを先に出し切るため。
+ * データキャッシュを有効にして描いた場合は、先に fb_flush_dcache() で書き出してから呼ぶ (キャッシュに当たった読み出しは、
+ * SDRAM の側に届かない)。
+ */
+static inline void fb_sync(void)
+{
+    __asm__ volatile("fence" : : : "memory");
+    (void)*(volatile uint32_t *)0x03000000u;
+    __asm__ volatile("fence" : : : "memory");
+}
+
 #endif

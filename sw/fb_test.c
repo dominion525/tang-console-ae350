@@ -34,6 +34,7 @@ int main(void)
         }
     }
     fb_flush_dcache();
+    fb_sync();
 
     uint32_t f0 = FB_FRAME;
     FB_CTRL = FB_CTRL_ENABLE;

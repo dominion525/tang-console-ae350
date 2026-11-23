@@ -75,6 +75,7 @@ int main(void)
     __asm__ volatile("csrc 0x7ca, %0" : : "r"(MCACHE_DC) : "memory");
     c0 = rd_mcycle64();
     draw(0u);
+    fb_sync();
     c1 = rd_mcycle64();
     FB_CTRL = FB_CTRL_ENABLE;
     report("draw without data cache", c1 - c0);
@@ -84,6 +85,7 @@ int main(void)
     c0 = rd_mcycle64();
     draw(1u);
     fb_flush_dcache();
+    fb_sync();
     c1 = rd_mcycle64();
     __asm__ volatile("csrc 0x7ca, %0" : : "r"(MCACHE_DC) : "memory");
     report("draw with data cache + write back", c1 - c0);

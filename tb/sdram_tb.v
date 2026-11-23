@@ -18,6 +18,7 @@
 //      32 MB の最上位、行の最後の 1 バーストだけ)。読み出しの最中の dr_start は無視される。dr_done は最後のワードと同じクロック
 //   11 表示の読み出しの最中に AHB の読み書きを出し、両方の値が正しい (読み書きが実際に読み出しと重なったことも確かめる)
 //   12 表示の読み出しを 8 ライン続けている間、REF の間隔の最大が、リフレッシュの間隔 (7.6 µs) + 行 1 つ分の読み出し以下
+//   13 書き込みのバッファ (16 段) があふれる長さの書き込み (8 バイトを 192 回続けて) で、満杯になって待たされ、すべて読み直して一致する
 //
 // 実行: make test-sdram-unit
 // =============================================================
@@ -336,6 +337,11 @@ module sdram_tb;
     // ---------------------------------------------------------
     // 本体
     // ---------------------------------------------------------
+    // 書き込みのバッファが満杯だった DDR_CLK のサイクル数 (項目 13。テストの手順は前後の差を見る)
+    integer    wf_full_cyc;
+    initial wf_full_cyc = 0;
+    always @(posedge hclk) if (dut.wf_full) wf_full_cyc <= wf_full_cyc + 1;
+
     integer    sz, off, r, seed;
     reg [63:0] pat;
     reg [31:0] ad;
@@ -477,13 +483,13 @@ module sdram_tb;
             if (st_after[i] == st_before[i]) $fatal(1, "counter +0x%02x (cycle count) did not increase", 4 * i);
         end
         if (st_after[4] == st_before[4]) $fatal(1, "counter +0x10 (sclk cycles for line reads) did not increase");
-        // AE350 を待たせた時間は、SDRAM コントローラが動いた時間より長い (間にクロック乗せ換えがあるため)
+        // 読み出しで AE350 を待たせた時間は、SDRAM コントローラが動いた時間より長い (間にクロック乗せ換えがあるため)
         if ((st_after[1] - st_before[1]) * HCLK_PS < (st_after[4] - st_before[4]) * SCLK_PS)
             $fatal(1, "read stall time %0d ps is shorter than line read time %0d ps",
                    (st_after[1] - st_before[1]) * HCLK_PS, (st_after[4] - st_before[4]) * SCLK_PS);
-        if ((st_after[3] - st_before[3]) * HCLK_PS < (st_after[5] - st_before[5]) * SCLK_PS)
-            $fatal(1, "write stall time %0d ps is shorter than write time %0d ps",
-                   (st_after[3] - st_before[3]) * HCLK_PS, (st_after[5] - st_before[5]) * SCLK_PS);
+        // 書き込みはバッファに入れた時点で終わるので、待たせるのはデータフェーズの 1 サイクルずつ (バッファは空から始まる)
+        if (st_after[3] - st_before[3] != 3)
+            $fatal(1, "write stall cycles delta is %0d (expected 3: one data phase cycle for each buffered write)", st_after[3] - st_before[3]);
         stat_read(7, st_after[0]);
         if (st_after[0] != 32'd0) $fatal(1, "counter +0x1C is %08x (expected 0)", st_after[0]);
         $display("9 counters: PASS (2 reads: DDR_CLK stalled %0d, line read sclk %0d / 3 writes: DDR_CLK stalled %0d, write sclk %0d)",
@@ -493,6 +499,7 @@ module sdram_tb;
         //   AHB で書いた 256 バイト (0x380〜0x47F。0x400 で SDRAM の行 (バンク) が変わる)
         for (i = 0; i < 256; i = i + 8)
             ahb_write(32'h0000_0380 + i, 3'd3, {16'h1000 + i[15:0], 16'h2000 + i[15:0], 16'h3000 + i[15:0], 16'h4000 + i[15:0]});
+        ahb_read_check(32'h0000_0380, 3'd3);   // 書き込みのバッファを空にする (表示用の読み出しは、バッファに残る書き込みを追い越すため)
         dr_read(32'h0000_0380, 16);
         dr_check_shadow(32'h0000_0380, 128);
         //   1 ライン (2,560 バイト、160 バースト。フレームバッファの先頭 0x01C0_0000 から。行を 2 回またぐ)
@@ -564,6 +571,20 @@ module sdram_tb;
         if (ref_count < 5) $fatal(1, "only %0d REF intervals were measured", ref_count);
         $display("12 refresh during display reads: PASS (%0d REF intervals, longest %0d sclk = %0d ns)", ref_count, ref_max,
                  ref_max * SCLK_PS / 1000);
+
+        // 13: 書き込みのバッファがあふれる長さの書き込み (192 回。読み出しを挟まない)。テストベンチの書き込みは 1 回ごとに間が
+        //     空き、SDRAM 側がバッファを空ける速さとの差が小さいので、回数を多くする。満杯になったことは、バッファの満杯の信号で見る
+        r = wf_full_cyc;
+        stat_read(3, st_before[3]);
+        for (i = 0; i < 192; i = i + 1)
+            ahb_write(32'h0000_0600 + i * 8, 3'd3, {16'hB000 + i[15:0], 16'hC000 + i[15:0], 16'hD000 + i[15:0], 16'hE000 + i[15:0]});
+        stat_read(3, st_after[3]);
+        if (wf_full_cyc == r) $fatal(1, "the write buffer never became full during 192 writes");
+        if (st_after[3] - st_before[3] <= 192)
+            $fatal(1, "write stall cycles delta is %0d for 192 writes (no stall while the buffer was full)", st_after[3] - st_before[3]);
+        check_region(32'h0000_0600, 1536);
+        $display("13 write buffer overflow: PASS (192 writes stalled %0d DDR_CLK cycles, buffer full for %0d cycles)", st_after[3] - st_before[3],
+                 wf_full_cyc - r);
 
         $display("sdram_tb: PASS (%0d read checks)", n_checks);
         $finish;

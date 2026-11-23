@@ -116,6 +116,7 @@ int main(void)
     draw_bg(FB1);
     draw_sq(FB0, x, y, 1u);
     draw_sq(FB1, x, y, 1u);
+    fb_sync();
     FB_BASE   = FB0;
     FB_STATUS = FB_STATUS_UNDERRUN;
     FB_CTRL   = FB_CTRL_ENABLE;
@@ -140,6 +141,7 @@ int main(void)
         draw_sq(base[back], x, y, 1u);
         px[back] = x;
         py[back] = y;
+        fb_sync();
         FB_BASE = base[back];
         back ^= 1u;
 

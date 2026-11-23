@@ -5,13 +5,21 @@
 //              ファブリック側の回路で、シミュレーションでも実機でも使う。
 //
 //   hclk (DDR_CLK) 側                               sclk (SDRAM のクロック) 側
-//   AE350 の転送を受け付けて保持し、トグルで渡す ───▶  読み出し: アドレスを含む 16 バイトのラインを読み、アドレスのビット 3 で 8 バイトを選ぶ
-//                                                  書き込み: 8 バイトと、HSIZE とアドレスで決まるバイトの有効 (wmask) を 1 回で渡す
-//   応答を受けて AE350 に返す              ◀───  完了したらトグルで返す
+//   読み出し: 受け付けて保持し、トグルで渡す ───▶  アドレスを含む 16 バイトのラインを読み、アドレスのビット 3 で 8 バイトを選ぶ
+//             応答を受けて AE350 に返す     ◀───  完了したらトグルで返す
+//   書き込み: 書き込みのバッファ (非同期の FIFO) に入れ、すぐ AE350 に返す ───▶  バッファから 1 段ずつ取り出し、8 バイトと
+//             バイトの有効 (wmask) を SDRAM コントローラに渡す
 //
 //   - AE350 に返す HREADYOUT、HRDATA、HRESP はレジスタ出力 (APB_P* と EXTS_H* で、AE350 との往復の経路が
 //     実機でタイミングを満たさなかったのと同じ理由)
-//   - 転送は 1 つずつ処理する。HREADYOUT = 0 の間、AE350 は次の転送を出さない
+//   - 転送は 1 つずつ受け付ける。HREADYOUT = 0 の間、AE350 は次の転送を出さない
+//   - 書き込みのバッファ (16 段): SDRAM の範囲の書き込みは、バッファに空きがあれば入れた時点で OKAY を返す (データフェーズの
+//     1 サイクルで終わる。満杯なら空くまで待たせる)。DDR_H* の書き込みはすべて bufferable として扱う (範囲内の書き込みは必ず
+//     成功し、範囲外はバッファに入れる前にエラー応答を返すので、先に返した OKAY が後で覆ることはない)。非同期の FIFO は
+//     Cummings の方式 (グレイコードのポインタを 2 段の FF で相手側に渡し、満杯と空は、受けた相手のポインタと比べて決める)
+//   - 読み出し (SDRAM の範囲とカウンタ) は、書き込みのバッファが空になる (前の書き込みを SDRAM コントローラが受け付ける) まで
+//     待ってから行う。後から読んだ値は、前に書いた値と食い違わない。表示の回路のように SDRAM を直接読む回路は、バッファに残る
+//     書き込みを追い越して読むことがあるので、CPU は描き終えたら SDRAM の範囲を 1 回読んでから表示を切り替える (sw/fb.h の fb_sync)
 //   - SDRAM の範囲 (2^SDRAM_AW バイト) 外のアドレスには、SDRAM にアクセスせずにエラー応答 (2 サイクル) を返す。ただし
 //     STAT_BASE からの 32 バイトは、読み書きにかかった時間を数えるカウンタ (下の表。読み出すと値を返し、書き込みは無視する)
 //   - カウンタはクリアしない (読む側が前後の差を取る)。SDRAM のクロック側のカウンタは、転送がない間は変わらない
@@ -86,6 +94,8 @@ module ahb_sdram #(
     localparam [2:0] H_DATA = 3'd1;   // データフェーズの 1 サイクル目 (書き込む値を保持する)
     localparam [2:0] H_WAIT = 3'd2;   // SDRAM 側の応答を待つ
     localparam [2:0] H_ERR1 = 3'd3;   // エラー応答の 1 サイクル目
+    localparam [2:0] H_WFULL = 3'd4;  // 書き込みのバッファが満杯で、空くのを待つ
+    localparam [2:0] H_DRAIN = 3'd5;  // 読み出しの前に、書き込みのバッファが空になるのを待つ
 
     reg [2:0]  h_st;
     reg [31:0] q_addr;
@@ -95,6 +105,19 @@ module ahb_sdram #(
     reg        req_t;                 // 渡すたびに反転する
     reg [1:0]  ack_s;                 // SDRAM 側の ack_t を 2 段の FF で受ける
     reg        ack_seen;              // 最後に受けた ack_t
+
+    // 書き込みのバッファ (DDR_CLK 側から SDRAM のクロック側への非同期の FIFO。1 段は {8 バイト境界のアドレス, データ, バイトの有効})
+    localparam integer WF_AW = 4;                          // 16 段
+    localparam integer WF_W  = (SDRAM_AW - 3) + 64 + 8;
+    reg [WF_W-1:0] wf_mem [0:(1 << WF_AW) - 1];
+    reg [WF_AW:0]  wf_wbin, wf_wgray;                      // 書き込み側のポインタ (DDR_CLK)
+    reg [WF_AW:0]  wf_rbin, wf_rgray;                      // 読み出し側のポインタ (SDRAM のクロック)
+    reg [WF_AW:0]  wf_rgray_s1, wf_rgray_s2;               // 読み出し側のポインタを DDR_CLK で 2 段受ける
+    reg [WF_AW:0]  wf_wgray_s1, wf_wgray_s2;               // 書き込み側のポインタを SDRAM のクロックで 2 段受ける
+    wire [WF_AW:0] wf_wbin_nx = wf_wbin + 1'b1;
+    wire [WF_AW:0] wf_rbin_nx = wf_rbin + 1'b1;
+    wire           wf_full    = (wf_wgray == {~wf_rgray_s2[WF_AW:WF_AW-1], wf_rgray_s2[WF_AW-2:0]});
+    wire           wf_empty_h = (wf_wgray == wf_rgray_s2);  // SDRAM 側がすべて取り出した (DDR_CLK 側から見て)
 
     wire in_range = (q_addr[31:SDRAM_AW] == {(32-SDRAM_AW){1'b0}});
     wire ack_new  = (ack_s[1] != ack_seen);
@@ -119,7 +142,7 @@ module ahb_sdram #(
     reg [31:0] st_s_rd_cyc, st_s_wr_cyc, st_s_wr_bytes;
 
     // SDRAM にアクセスする転送で、AE350 を待たせているサイクル
-    wire h_busy = !hreadyout && ((h_st == H_DATA && in_range) || h_st == H_WAIT);
+    wire h_busy = !hreadyout && ((h_st == H_DATA && in_range) || h_st == H_WAIT || h_st == H_WFULL || (h_st == H_DRAIN && in_range));
 
     function [63:0] stat_word(input [1:0] i);
         case (i)
@@ -129,6 +152,14 @@ module ahb_sdram #(
             default: stat_word = {32'd0, st_s_wr_bytes};
         endcase
     endfunction
+
+    // 書き込みのバッファに入れる: データフェーズで空きがあればそのとき (HWDATA)、満杯で待ったら空いたとき (保持した値)
+    wire wf_push_d = (h_st == H_DATA) && in_range && q_write && !wf_full;
+    wire wf_push_w = (h_st == H_WFULL) && !wf_full;
+    always @(posedge hclk) begin
+        if (wf_push_d) wf_mem[wf_wbin[WF_AW-1:0]] <= {q_addr[SDRAM_AW-1:3], hwdata, lanes(q_addr[2:0], q_size)};
+        if (wf_push_w) wf_mem[wf_wbin[WF_AW-1:0]] <= {q_addr[SDRAM_AW-1:3], q_wdata, lanes(q_addr[2:0], q_size)};
+    end
 
     // SDRAM 側が読み出した値 (次の要求まで変わらないので、ack を受けてから hclk で読む)
     reg [63:0] s_rdata;
@@ -146,6 +177,10 @@ module ahb_sdram #(
             req_t     <= 1'b0;
             ack_s     <= 2'b00;
             ack_seen  <= 1'b0;
+            wf_wbin   <= {(WF_AW+1){1'b0}};
+            wf_wgray  <= {(WF_AW+1){1'b0}};
+            wf_rgray_s1 <= {(WF_AW+1){1'b0}};
+            wf_rgray_s2 <= {(WF_AW+1){1'b0}};
 `ifdef AHB_SDRAM_TRACE
             tr_n      <= 9'd0;
             tr_on     <= 1'b0;
@@ -157,6 +192,8 @@ module ahb_sdram #(
             st_wr_cyc <= 32'd0;
         end else begin
             ack_s <= {ack_s[0], ack_t};
+            wf_rgray_s1 <= wf_rgray;
+            wf_rgray_s2 <= wf_rgray_s1;
 `ifdef AHB_SDRAM_TRACE
             tr_time <= tr_time + 24'd1;
             if (tr_we) begin
@@ -181,11 +218,24 @@ module ahb_sdram #(
                 end
                 H_DATA: begin
                     q_wdata <= hwdata;
-                    if (in_range) begin
-                        req_t <= ~req_t;
-                        h_st  <= H_WAIT;
-                        if (q_write) st_wr_n <= st_wr_n + 32'd1;
-                        else         st_rd_n <= st_rd_n + 32'd1;
+                    if (in_range && q_write) begin
+                        // 書き込み: バッファに空きがあれば入れて終わる (入れるのは上の wf_push_d)。満杯なら H_WFULL で待つ
+                        if (!wf_full) begin
+                            wf_wbin   <= wf_wbin_nx;
+                            wf_wgray  <= wf_wbin_nx ^ (wf_wbin_nx >> 1);
+                            st_wr_n   <= st_wr_n + 32'd1;
+                            hreadyout <= 1'b1;
+                            h_st      <= H_RDY;
+                        end else begin
+                            h_st <= H_WFULL;
+                        end
+                    end else if ((in_range || in_stat) && !wf_empty_h) begin
+                        // 読み出しとカウンタ: 書き込みのバッファが空になるまで待ち、H_DATA でもう一度判定する (q_wdata は使わない)
+                        h_st <= H_DRAIN;
+                    end else if (in_range) begin
+                        req_t   <= ~req_t;
+                        h_st    <= H_WAIT;
+                        st_rd_n <= st_rd_n + 32'd1;
 `ifdef AHB_SDRAM_TRACE
                     end else if (in_tr_ctl) begin
                         // デバッグ用のトレース: 書き込むと記録を始め、読み出すと記録した数を返す
@@ -219,6 +269,19 @@ module ahb_sdram #(
                         h_st      <= H_RDY;
                     end
                 end
+                H_WFULL: begin
+                    // バッファに空きができたら、保持した書き込みを入れて (上の wf_push_w) 終わる
+                    if (!wf_full) begin
+                        wf_wbin   <= wf_wbin_nx;
+                        wf_wgray  <= wf_wbin_nx ^ (wf_wbin_nx >> 1);
+                        st_wr_n   <= st_wr_n + 32'd1;
+                        hreadyout <= 1'b1;
+                        h_st      <= H_RDY;
+                    end
+                end
+                H_DRAIN: begin
+                    if (wf_empty_h) h_st <= H_DATA;
+                end
                 default: begin
                     // エラー応答の 2 サイクル目 (HRESP = 1 のまま HREADYOUT = 1)
                     hreadyout <= 1'b1;
@@ -244,6 +307,13 @@ module ahb_sdram #(
     reg       req_seen;
     reg       ack_t;
     reg [3:0] wbytes;                 // 書き込むバイト数 (wmask の 1 の数。カウンタに足す値を、wmask と一緒に決めておく)
+    reg [SDRAM_AW-4:0] w_line;        // 書き込む 8 バイト境界のアドレス
+    // 書き込みのバッファの先頭の段。記憶部分をブロック RAM にするため、読み出しはクロックに合わせる (毎クロック、取り出す位置の段を
+    // 読んでレジスタに受ける。非同期に読む書き方では、合成でレジスタと選択回路に展開され、s_clk の余裕もなくなった)
+    reg  [WF_W-1:0] wf_q;
+    wire s_wf_empty = (wf_rgray == wf_wgray_s2);
+    // 先頭の段の値が wdata などにそろっている。取り出す位置が変わるか、空から段が入ってから、wf_q と wdata の 2 クロックを待つ
+    reg  [1:0] wf_avail;
 
     wire req_new = (req_s[1] != req_seen);
 
@@ -266,8 +336,12 @@ module ahb_sdram #(
         end
     endfunction
 
+    always @(posedge sclk) begin
+        wf_q <= wf_mem[wf_rbin[WF_AW-1:0]];
+    end
+
     assign fill_line = q_addr[SDRAM_AW-1:4];
-    assign waddr     = {q_addr[SDRAM_AW-1:3], 3'b000};
+    assign waddr     = {w_line, 3'b000};
 
     always @(posedge sclk or negedge srst_n) begin
         if (!srst_n) begin
@@ -280,6 +354,12 @@ module ahb_sdram #(
             wdata      <= 64'd0;
             wmask      <= 8'd0;
             wbytes     <= 4'd0;
+            w_line     <= {(SDRAM_AW-3){1'b0}};
+            wf_rbin    <= {(WF_AW+1){1'b0}};
+            wf_rgray   <= {(WF_AW+1){1'b0}};
+            wf_wgray_s1 <= {(WF_AW+1){1'b0}};
+            wf_wgray_s2 <= {(WF_AW+1){1'b0}};
+            wf_avail   <= 2'b00;
             s_rdata    <= 64'd0;
             s_rd_wait  <= 2'b00;
             st_s_rd_cyc   <= 32'd0;
@@ -287,12 +367,16 @@ module ahb_sdram #(
             st_s_wr_bytes <= 32'd0;
         end else begin
             req_s <= {req_s[0], req_t};
-            // 書き込む値とバイトの有効は、取り込みの条件を付けずに毎クロック写す。q_* は要求のトグルと同じエッジで決まり、
-            // こちらが応答を返して次の転送が来るまで変わらないので、we が 1 の間 (SDRAM コントローラが見る間) は変わらない。
+            wf_wgray_s1 <= wf_wgray;
+            wf_wgray_s2 <= wf_wgray_s1;
+            wf_avail    <= {wf_avail[0] && !s_wf_empty, !s_wf_empty};   // 取り出したエッジでは、下で 0 に戻す
+            // 書き込む値、アドレス、バイトの有効は、書き込みのバッファの先頭の段から、取り込みの条件を付けずに毎クロック写す。
+            // 先頭の段は、取り出す (wf_rbin を進める) まで変わらないので、we が 1 の間 (SDRAM コントローラが見る間) は変わらない。
             // 条件を付けると、64 ビットの wdata などに取り込みの許可を配る配線が長くなり、s_clk の余裕を削っていた
-            wdata  <= q_wdata;
-            wmask  <= lanes(q_addr[2:0], q_size);
-            wbytes <= ones(lanes(q_addr[2:0], q_size));
+            wdata  <= wf_q[71:8];
+            wmask  <= wf_q[7:0];
+            wbytes <= ones(wf_q[7:0]);
+            w_line <= wf_q[WF_W-1:72];
             if (s_st == S_READ)            st_s_rd_cyc   <= st_s_rd_cyc + 32'd1;
             if (s_st == S_WRITE)           st_s_wr_cyc   <= st_s_wr_cyc + 32'd1;
             if (s_st == S_WRITE && wready) st_s_wr_bytes <= st_s_wr_bytes + {28'd0, wbytes};
@@ -300,16 +384,15 @@ module ahb_sdram #(
             if (s_rd_wait[1]) s_rdata[63:32] <= q_addr[3] ? fill_data[127:96] : fill_data[63:32];
             case (s_st)
                 S_IDLE: begin
+                    // 読み出しの要求は、DDR_CLK 側が書き込みのバッファが空になってから出すので、書き込みと重ならない
                     if (req_new) begin
-                        req_seen <= req_s[1];
-                        if (q_write) begin
-                            we    <= 1'b1;
-                            s_st  <= S_WRITE;
-                        end else begin
-                            fill_valid <= 1'b1;
-                            s_rd_wait  <= 2'b11;
-                            s_st       <= S_READ;
-                        end
+                        req_seen   <= req_s[1];
+                        fill_valid <= 1'b1;
+                        s_rd_wait  <= 2'b11;
+                        s_st       <= S_READ;
+                    end else if (wf_avail[1]) begin
+                        we   <= 1'b1;
+                        s_st <= S_WRITE;
                     end
                 end
                 S_READ: begin
@@ -321,11 +404,13 @@ module ahb_sdram #(
                     end
                 end
                 default: begin
-                    // SDRAM コントローラが受け付けたら (wready)、応答を返す
+                    // SDRAM コントローラが受け付けたら (wready)、書き込みのバッファの先頭の段を取り出す
                     if (wready) begin
-                        we    <= 1'b0;
-                        ack_t <= ~ack_t;
-                        s_st  <= S_IDLE;
+                        we       <= 1'b0;
+                        wf_rbin  <= wf_rbin_nx;
+                        wf_rgray <= wf_rbin_nx ^ (wf_rbin_nx >> 1);
+                        wf_avail <= 2'b00;
+                        s_st     <= S_IDLE;
                     end
                 end
             endcase
