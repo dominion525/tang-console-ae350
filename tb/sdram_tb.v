@@ -479,7 +479,9 @@ module sdram_tb;
         if (st_after[0] - st_before[0] != 2)  $fatal(1, "read transfer count delta is %0d (expected 2)", st_after[0] - st_before[0]);
         if (st_after[2] - st_before[2] != 3)  $fatal(1, "write transfer count delta is %0d (expected 3)", st_after[2] - st_before[2]);
         if (st_after[6] - st_before[6] != 13) $fatal(1, "bytes written delta is %0d (expected 1 + 4 + 8 = 13)", st_after[6] - st_before[6]);
-        for (i = 1; i < 6; i = i + 2) begin
+        // 読み出しで待たせたサイクル (+0x04) と、SDRAM 側の書き込みのサイクル (+0x14) は増える。書き込みで待たせたサイクル (+0x0C) は、
+        // 待ちなしで受け付けるので増えない (下で 0 を確かめる)
+        for (i = 1; i < 6; i = i + 4) begin
             if (st_after[i] == st_before[i]) $fatal(1, "counter +0x%02x (cycle count) did not increase", 4 * i);
         end
         if (st_after[4] == st_before[4]) $fatal(1, "counter +0x10 (sclk cycles for line reads) did not increase");
@@ -487,9 +489,9 @@ module sdram_tb;
         if ((st_after[1] - st_before[1]) * HCLK_PS < (st_after[4] - st_before[4]) * SCLK_PS)
             $fatal(1, "read stall time %0d ps is shorter than line read time %0d ps",
                    (st_after[1] - st_before[1]) * HCLK_PS, (st_after[4] - st_before[4]) * SCLK_PS);
-        // 書き込みはバッファに入れた時点で終わるので、待たせるのはデータフェーズの 1 サイクルずつ (バッファは空から始まる)
-        if (st_after[3] - st_before[3] != 3)
-            $fatal(1, "write stall cycles delta is %0d (expected 3: one data phase cycle for each buffered write)", st_after[3] - st_before[3]);
+        // 書き込みは、バッファに空きがあれば待ちなしで受け付ける (バッファは空から始まる)
+        if (st_after[3] - st_before[3] != 0)
+            $fatal(1, "write stall cycles delta is %0d (expected 0: buffered writes are accepted without wait states)", st_after[3] - st_before[3]);
         stat_read(7, st_after[0]);
         if (st_after[0] != 32'd0) $fatal(1, "counter +0x1C is %08x (expected 0)", st_after[0]);
         $display("9 counters: PASS (2 reads: DDR_CLK stalled %0d, line read sclk %0d / 3 writes: DDR_CLK stalled %0d, write sclk %0d)",
@@ -580,8 +582,8 @@ module sdram_tb;
             ahb_write(32'h0000_0600 + i * 8, 3'd3, {16'hB000 + i[15:0], 16'hC000 + i[15:0], 16'hD000 + i[15:0], 16'hE000 + i[15:0]});
         stat_read(3, st_after[3]);
         if (wf_full_cyc == r) $fatal(1, "the write buffer never became full during 192 writes");
-        if (st_after[3] - st_before[3] <= 192)
-            $fatal(1, "write stall cycles delta is %0d for 192 writes (no stall while the buffer was full)", st_after[3] - st_before[3]);
+        if (st_after[3] - st_before[3] == 0)
+            $fatal(1, "write stall cycles delta is 0 for 192 writes (no stall while the buffer was full)");
         check_region(32'h0000_0600, 1536);
         $display("13 write buffer overflow: PASS (192 writes stalled %0d DDR_CLK cycles, buffer full for %0d cycles)", st_after[3] - st_before[3],
                  wf_full_cyc - r);
