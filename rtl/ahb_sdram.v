@@ -18,7 +18,10 @@
 //     空きがなければデータフェーズで待たせて、空くのを待ってから入れる。DDR_H* の書き込みはすべて bufferable として扱う (範囲内の書き込みは必ず
 //     成功し、範囲外はバッファに入れる前にエラー応答を返すので、先に返した OKAY が後で覆ることはない)。非同期の FIFO は
 //     Cummings の方式 (グレイコードのポインタを 2 段の FF で相手側に渡し、満杯と空は、受けた相手のポインタと比べて決める)
-//   - 読み出し (SDRAM の範囲とカウンタ) は、書き込みのバッファが空になる (前の書き込みを SDRAM コントローラが受け付ける) まで
+//   - 同じ 8 バイトへの書き込みのまとめ: バッファに入れる前に、まとめ中の 1 段を持つ。次の書き込みが同じ 8 バイトなら、バイトごとに
+//     上書きして 1 段にまとめる (CPU が 4 バイトずつ順に書くと、2 回分が SDRAM への 1 回の書き込みになる)。違う 8 バイトの書き込みが
+//     来たら、まとめ中の段をバッファに入れる。次の書き込みが CB_IDLE サイクル来ないか、読み出しが来たときも入れる
+//   - 読み出し (SDRAM の範囲とカウンタ) は、まとめ中の段と書き込みのバッファが空になる (前の書き込みを SDRAM コントローラが受け付ける) まで
 //     待ってから行う。後から読んだ値は、前に書いた値と食い違わない。表示の回路のように SDRAM を直接読む回路は、バッファに残る
 //     書き込みを追い越して読むことがあるので、CPU は描き終えたら SDRAM の範囲を 1 回読んでから表示を切り替える (sw/fb.h の fb_sync)
 //   - SDRAM の範囲 (2^SDRAM_AW バイト) 外のアドレスには、SDRAM にアクセスせずにエラー応答 (2 サイクル) を返す。ただし
@@ -168,14 +171,68 @@ module ahb_sdram #(
         endcase
     endfunction
 
-    // 書き込みのバッファに入れる: データフェーズで空きがあればそのとき (HWDATA)、満杯で待ったら空いたとき (保持した値)
+    // 受け付けた書き込み (データフェーズの終わりのエッジ): 待ちなしで受け付けたもの (wf_push_z)、データフェーズで空きがあったもの
+    // (wf_push_d)、満杯で待って空いたもの (wf_push_w)。どれも、まとめ中の段に入れる
     wire wf_push_d = (h_st == H_DATA) && in_range && q_write && !wf_full;
     wire wf_push_w = (h_st == H_WFULL) && !wf_full;
     wire wf_push_z = wf_zpend;   // 待ちなしで受け付けた書き込み (データフェーズのエッジ。HWDATA と、まだ書き換わる前の q_*)
+
+    // 同じ 8 バイトへの書き込みのまとめ (まとめ中の 1 段)。バッファに入れるのは、違う 8 バイトの書き込みが来たとき、読み出しの前
+    // (H_DRAIN)、次の書き込みが CB_IDLE サイクル来なかったとき。どれもエッジごとに多くて 1 段 (書き込みを受け付けるときは、空きを
+    // 確かめてある)
+    localparam [3:0] CB_IDLE = 4'd15;
+    reg                 cb_v;
+    reg [SDRAM_AW-4:0]  cb_line;
+    reg [63:0]          cb_data;
+    reg [7:0]           cb_mask;
+    reg [3:0]           cb_age;
+    wire                inc_v    = wf_push_z || wf_push_d || wf_push_w;
+    wire [63:0]         inc_data = (h_st == H_WFULL) ? q_wdata : hwdata;
+    wire [7:0]          inc_mask = lanes(q_addr[2:0], q_size);
+    wire [SDRAM_AW-4:0] inc_line = q_addr[SDRAM_AW-1:3];
+    wire                inc_hit  = cb_v && (cb_line == inc_line);
+    wire                cb_flush = cb_v && !inc_v && !wf_full && ((h_st == H_DRAIN) || (cb_age == CB_IDLE));
+    wire                wf_push  = (inc_v && cb_v && !inc_hit) || cb_flush;
+    function [63:0] merge_bytes(input [63:0] old, input [63:0] nw, input [7:0] m);
+        integer k;
+        begin
+            for (k = 0; k < 8; k = k + 1) merge_bytes[k*8 +: 8] = m[k] ? nw[k*8 +: 8] : old[k*8 +: 8];
+        end
+    endfunction
+    always @(posedge hclk or negedge hresetn) begin
+        if (!hresetn) begin
+            cb_v     <= 1'b0;
+            cb_line  <= {(SDRAM_AW-3){1'b0}};
+            cb_data  <= 64'd0;
+            cb_mask  <= 8'd0;
+            cb_age   <= 4'd0;
+            wf_wbin  <= {(WF_AW+1){1'b0}};
+            wf_wgray <= {(WF_AW+1){1'b0}};
+        end else begin
+            if (wf_push) begin
+                wf_wbin  <= wf_wbin_nx;
+                wf_wgray <= wf_wbin_nx ^ (wf_wbin_nx >> 1);
+            end
+            if (inc_v) begin
+                cb_age <= 4'd0;
+                if (inc_hit) begin
+                    cb_data <= merge_bytes(cb_data, inc_data, inc_mask);
+                    cb_mask <= cb_mask | inc_mask;
+                end else begin
+                    cb_v    <= 1'b1;
+                    cb_line <= inc_line;
+                    cb_data <= inc_data;
+                    cb_mask <= inc_mask;
+                end
+            end else if (cb_flush) begin
+                cb_v <= 1'b0;
+            end else if (cb_v && cb_age != CB_IDLE) begin
+                cb_age <= cb_age + 4'd1;
+            end
+        end
+    end
     always @(posedge hclk) begin
-        if (wf_push_d) wf_mem[wf_wbin[WF_AW-1:0]] <= {q_addr[SDRAM_AW-1:3], hwdata, lanes(q_addr[2:0], q_size)};
-        if (wf_push_w) wf_mem[wf_wbin[WF_AW-1:0]] <= {q_addr[SDRAM_AW-1:3], q_wdata, lanes(q_addr[2:0], q_size)};
-        if (wf_push_z) wf_mem[wf_wbin[WF_AW-1:0]] <= {q_addr[SDRAM_AW-1:3], hwdata, lanes(q_addr[2:0], q_size)};
+        if (wf_push) wf_mem[wf_wbin[WF_AW-1:0]] <= {cb_line, cb_data, cb_mask};
     end
 
     // SDRAM 側が読み出した値 (次の要求まで変わらないので、ack を受けてから hclk で読む)
@@ -194,8 +251,6 @@ module ahb_sdram #(
             req_t     <= 1'b0;
             ack_s     <= 2'b00;
             ack_seen  <= 1'b0;
-            wf_wbin   <= {(WF_AW+1){1'b0}};
-            wf_wgray  <= {(WF_AW+1){1'b0}};
             wf_rgray_s1 <= {(WF_AW+1){1'b0}};
             wf_rgray_s2 <= {(WF_AW+1){1'b0}};
             wf_zpend  <= 1'b0;
@@ -226,13 +281,9 @@ module ahb_sdram #(
             case (h_st)
                 H_RDY: begin
                     hresp <= 1'b0;
-                    // 前のサイクルに待ちなしで受け付けた書き込みを、このエッジでバッファに入れる (入れるのは上の wf_push_z)
+                    // 前のサイクルに待ちなしで受け付けた書き込みは、このエッジでまとめ中の段に入る (上の wf_push_z)
                     wf_zpend <= 1'b0;
-                    if (wf_zpend) begin
-                        wf_wbin  <= wf_wbin_nx;
-                        wf_wgray <= wf_wbin_nx ^ (wf_wbin_nx >> 1);
-                        st_wr_n  <= st_wr_n + 32'd1;
-                    end
+                    if (wf_zpend) st_wr_n <= st_wr_n + 32'd1;
                     if (htrans[1]) begin
                         q_addr    <= haddr;
                         q_write   <= hwrite;
@@ -249,17 +300,15 @@ module ahb_sdram #(
                 H_DATA: begin
                     q_wdata <= hwdata;
                     if (in_range && q_write) begin
-                        // 書き込み: バッファに空きがあれば入れて終わる (入れるのは上の wf_push_d)。満杯なら H_WFULL で待つ
+                        // 書き込み: バッファに空きがあれば、まとめ中の段に入れて終わる (上の wf_push_d)。満杯なら H_WFULL で待つ
                         if (!wf_full) begin
-                            wf_wbin   <= wf_wbin_nx;
-                            wf_wgray  <= wf_wbin_nx ^ (wf_wbin_nx >> 1);
                             st_wr_n   <= st_wr_n + 32'd1;
                             hreadyout <= 1'b1;
                             h_st      <= H_RDY;
                         end else begin
                             h_st <= H_WFULL;
                         end
-                    end else if ((in_range || in_stat) && !wf_empty_h) begin
+                    end else if ((in_range || in_stat) && (!wf_empty_h || cb_v)) begin
                         // 読み出しとカウンタ: 書き込みのバッファが空になるまで待ち、H_DATA でもう一度判定する (q_wdata は使わない)
                         h_st <= H_DRAIN;
                     end else if (in_range) begin
@@ -300,17 +349,16 @@ module ahb_sdram #(
                     end
                 end
                 H_WFULL: begin
-                    // バッファに空きができたら、保持した書き込みを入れて (上の wf_push_w) 終わる
+                    // バッファに空きができたら、保持した書き込みをまとめ中の段に入れて (上の wf_push_w) 終わる
                     if (!wf_full) begin
-                        wf_wbin   <= wf_wbin_nx;
-                        wf_wgray  <= wf_wbin_nx ^ (wf_wbin_nx >> 1);
                         st_wr_n   <= st_wr_n + 32'd1;
                         hreadyout <= 1'b1;
                         h_st      <= H_RDY;
                     end
                 end
                 H_DRAIN: begin
-                    if (wf_empty_h) h_st <= H_DATA;
+                    // まとめ中の段をバッファに入れ (上の cb_flush)、バッファが空になったら、H_DATA でもう一度判定する
+                    if (wf_empty_h && !cb_v) h_st <= H_DATA;
                 end
                 default: begin
                     // エラー応答の 2 サイクル目 (HRESP = 1 のまま HREADYOUT = 1)
