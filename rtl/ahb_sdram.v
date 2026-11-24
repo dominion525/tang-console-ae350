@@ -134,7 +134,10 @@ module ahb_sdram #(
         end
     endfunction
     wire [WF_AW:0] wf_used  = wf_wbin - gray2bin(wf_rgray_s2);
-    wire           wf_room2 = ({1'b0, wf_used} + {{WF_AW{1'b0}}, wf_zpend}) < (1 << WF_AW) - 1;   // 2 段以上の空き
+    // 待ちなしで受け付けてよいか (1 クロック前に決めておく。アドレスフェーズの判定の経路を短くするため。DDR_CLK 100 MHz で、この
+    // 計算からの経路の余裕が 0.5 ns だった)。決めてから使うまでに、多くて 2 段入る (前のエッジと、待ちなしで受け付けた書き込み) ので、
+    // 使っている段が 12 段以下のときだけ受け付ける (12 + 2 + 受け付ける 1 段 = 15)
+    reg            wf_room2;
     wire           h_in_range = (haddr[31:SDRAM_AW] == {(32-SDRAM_AW){1'b0}});
 
     wire in_range = (q_addr[31:SDRAM_AW] == {(32-SDRAM_AW){1'b0}});
@@ -254,6 +257,7 @@ module ahb_sdram #(
             wf_rgray_s1 <= {(WF_AW+1){1'b0}};
             wf_rgray_s2 <= {(WF_AW+1){1'b0}};
             wf_zpend  <= 1'b0;
+            wf_room2  <= 1'b0;
 `ifdef AHB_SDRAM_TRACE
             tr_n      <= 9'd0;
             tr_on     <= 1'b0;
@@ -267,6 +271,7 @@ module ahb_sdram #(
             ack_s <= {ack_s[0], ack_t};
             wf_rgray_s1 <= wf_rgray;
             wf_rgray_s2 <= wf_rgray_s1;
+            wf_room2    <= (wf_used <= 12);
 `ifdef AHB_SDRAM_TRACE
             tr_time <= tr_time + 24'd1;
             if (tr_we) begin

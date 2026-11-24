@@ -5,7 +5,8 @@
 //              既定の構成では、命令はブロック RAM の ROM から読み、データとスタックは AE350 の内蔵 DLM に置く
 //              (sw/board.ld)。値は sw/probe.c が UART (USB シリアル、1,250,000 bps) に出力する。
 //
-//   50 MHz ─▶ ae350_pll ─▶ CORE 800 / DDR 50 / AHB 100 / APB 100 / RTC 10 MHz (Sipeed のデモと同じ)
+//   50 MHz ─▶ ae350_pll ─▶ CORE 800 / DDR 100 (DDR_H* の先が SDRAM の構成。DDR3 版は 50) / AHB 100 / APB 100 / RTC 10 MHz
+//                          (DDR_CLK の分周比はマクロ AE350_DDR_DIV。build.sh の DDR_DIV)
 //   shell_top (tb/shell_top.v。シミュレーションと同じ回路で、合成では本物の AE350_SOC につながる)
 //     ROM_H*   ─▶ ahb_rom (16 KB、内容は ROM_HEX)
 //     DDR_H*   ─▶ ahb_sdram ─▶ SDRAM コントローラ ─▶ ベースボードの SDRAM0 (32 MB)
@@ -122,7 +123,12 @@ module ae350_probe_top #(
     localparam integer CORE_DIV = 1;
     localparam integer AHB_DIV  = 8;
 `endif
-    ae350_pll #(.CORE_DIV (CORE_DIV), .AHB_DIV (AHB_DIV)) u_pll (
+`ifdef AE350_DDR_DIV
+    localparam integer DDR_DIV = `AE350_DDR_DIV;
+`else
+    localparam integer DDR_DIV = 16;
+`endif
+    ae350_pll #(.CORE_DIV (CORE_DIV), .AHB_DIV (AHB_DIV), .DDR_DIV (DDR_DIV)) u_pll (
         .clkin    (clk50),
         .reset    (1'b0),
         .core_clk (core_clk),

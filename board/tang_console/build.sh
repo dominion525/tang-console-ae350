@@ -6,6 +6,8 @@
 #
 # 構成は環境変数で選ぶ。
 #   (指定なし)       DDR_H* の先はベースボードの SDRAM。コントローラは sdram_ctrl_hs + sdram_io (166.7 MHz)
+#   DDR_DIV=<数>     DDR_CLK の分周比 (DDR_CLK = 800 MHz ÷ DDR_DIV。5 以上)。既定値は、DDR_H* の先が SDRAM の構成で 8 (100 MHz)、
+#                    DDR3 版 (MEM=ddr3、MEM=litedram) で 16 (50 MHz)。DDR_DIV=16 で、SDRAM の構成も 50 MHz に戻せる
 #   DLY=<0〜255>     SDRAM の DQ の入力の IODELAY のステップ数 (1 ステップ約 12.5 ps、既定値 180)
 #   EDGE=<0|1>       SDRAM の読み出しデータを取り込むエッジ (0 は立ち上がり、1 は立ち下がり。既定値 0)
 #   RDF=<数>         SDRAM の読み出しワードを取り込むタイミング RD_FIRST (既定値 12、立ち下がりなら 11)
@@ -66,6 +68,13 @@ case "$AE350_MEM" in
     ;;
   *) echo "MEM must be sdram, ddr3, or litedram" >&2; exit 1 ;;
 esac
+# DDR_CLK の分周比 (SDRAM の構成は 100 MHz。DDR3 版は確かめるまで 50 MHz のまま)
+if [ "$AE350_MEM" = sdram ]; then ddr_div=${DDR_DIV:-8}; else ddr_div=${DDR_DIV:-16}; fi
+printf '`define AE350_DDR_DIV %s\n' "$ddr_div" >> "$out/defines.v"
+if [ "$ddr_div" != 16 ]; then
+  ruby "$here/make_sdc_ddr_clk.rb" "$AE350_SDC" "$out/top_ddr_clk.sdc" "$ddr_div" || exit 1
+  export AE350_SDC="$out/top_ddr_clk.sdc"
+fi
 export AE350_CPU=${CPU:-ae350}
 if [ "$AE350_CPU" = hazard3-fast ]; then
   AE350_CPU=hazard3
