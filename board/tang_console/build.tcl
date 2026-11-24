@@ -36,11 +36,14 @@ add_file $here/ae350_pll.v
 add_file $here/sdram_pll.v
 add_file $here/ae350_observer.v
 add_file $here/top.v
-# HDMI=1 (build.sh) のときは、HDMI の出力回路 (hdl-util/hdmi)、テストパターン、試験音、HDMI の PLL を足す
+# HDMI=1 (build.sh) のときは、HDMI の出力回路 (hdl-util/hdmi)、テストパターン、フレームバッファの表示の回路、試験音、HDMI の PLL を足す
 if {$hdmi} {
     foreach f {hdmi tmds_channel serializer packet_picker packet_assembler audio_clock_regeneration_packet audio_sample_packet
                audio_info_frame auxiliary_video_information_info_frame source_product_description_info_frame} { add_file $ae/rtl/vendor/hdmi/$f.sv }
     add_file $ae/rtl/hdmi_test_pattern.v
+    # フレームバッファの表示の回路 (DDR_H* の先が SDRAM の構成で使う。top.v の AE350_FB)
+    add_file $ae/rtl/fb_display.v
+    add_file $ae/rtl/fb_sdram_reader.v
     add_file $ae/rtl/hdmi_audio_tone.v
     add_file $here/hdmi_pll.v
     # HDMI の PLL の ICP と LPF を決める PLL_INIT (MEM=ddr3 のときは下で足す)

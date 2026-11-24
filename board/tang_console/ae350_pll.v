@@ -5,7 +5,7 @@
 //              分周比は Sipeed の AE350 のデモの PLL (gowin_pll_ae350.v) と同じ。
 //
 //     VCO       = 50 MHz ÷ IDIV (1) × FBDIV (1) × MDIV (16) = 800 MHz
-//     DDR_CLK   = VCO ÷ ODIV0 (16) = 50 MHz
+//     DDR_CLK   = VCO ÷ ODIV0 (DDR_DIV、既定値 16) = 50 MHz
 //     CORE_CLK  = VCO ÷ ODIV1 (CORE_DIV、既定値 1) = 800 MHz
 //     AHB_CLK   = VCO ÷ ODIV2 (AHB_DIV、既定値 8)  = 100 MHz
 //     APB_CLK   = VCO ÷ ODIV3 (8)  = 100 MHz
@@ -15,12 +15,15 @@
 // Parameters:
 //   CORE_DIV / AHB_DIV  CORE_CLK と AHB_CLK の分周比 (既定値は本物の AE350 の 800 MHz と 100 MHz。Hazard3 版をファブリック上で
 //                       動かすビルド (build.sh の CPU=hazard3) では、配置配線の Fmax に合わせて下げる)
+//   DDR_DIV             DDR_CLK の分周比 (既定値 16 で 50 MHz。Sipeed のデモと同じ。DDR_CLK は 200 MHz 未満 (Gowin の MUG1031 の
+//                       表 4-1) で、ほかのクロックとは非同期。build.sh は SDRAM の構成で 8 (100 MHz) にする)
 // =============================================================
 `default_nettype none
 
 module ae350_pll #(
     parameter integer CORE_DIV = 1,
-    parameter integer AHB_DIV  = 8
+    parameter integer AHB_DIV  = 8,
+    parameter integer DDR_DIV  = 16
 ) (
     input  wire clkin,      // 50 MHz
     input  wire reset,      // 1 の間、PLL をリセット状態に保つ
@@ -42,7 +45,7 @@ module ae350_pll #(
         .FBDIV_SEL         (1),
         .MDIV_SEL          (16),
         .MDIV_FRAC_SEL     (0),
-        .ODIV0_SEL         (16),
+        .ODIV0_SEL         (DDR_DIV),
         .ODIV0_FRAC_SEL    (0),
         .ODIV1_SEL         (CORE_DIV),
         .ODIV2_SEL         (AHB_DIV),

@@ -27,7 +27,8 @@
 //
 // Design Notes:
 //   - APB_P* の先に、UART (0xF800_0000)、GP_INT を駆動するレジスタ (0xF800_1000)、届いた PADDR を
-//     読み返すレジスタ (実機の値を読む構成で使う。0xF800_F000) を置く。
+//     読み返すレジスタ (実機の値を読む構成で使う。0xF800_F000) を置く。0xF800_2000〜0xF800_2FFF はポート (fb_p*) として外に出す
+//     (フレームバッファの表示の回路 rtl/fb_display.v の制御レジスタ。表示の回路がない構成では、外で PSLVERR を返す)。
 //     どれにも当たらないアドレスには PSLVERR を返す。PRESETN を周辺回路のリセットに使う
 //   - EXTS_H* の先に 4 KB の RAM (rtl/ahb_sram.v) を置く。EXTS_WAIT でデータフェーズのウェイトを選ぶ
 //   - EXTM_H* は外に出す (マスタは外に置く。EXTM_HREADY には EXTM_HREADYOUT を返す。Falcon の設計と同じ構成)
@@ -57,6 +58,17 @@ module shell_top #(
     output wire        dbg_apb_access,
     output wire [31:0] dbg_apb_paddr,
     output wire [3:0]  dbg_misc,       // {DDR_RSTN, CORE0_WFI_MODE, RTC_WAKEUP, PRDYN_CHAIN_O}
+
+    // APB の 0xF800_2000〜0xF800_2FFF (APB_CLK。フレームバッファの表示の回路の制御レジスタ)
+    output wire        fb_psel,
+    output wire        fb_penable,
+    output wire        fb_pwrite,
+    output wire [31:0] fb_paddr,
+    output wire [31:0] fb_pwdata,
+    output wire [3:0]  fb_pstrb,
+    input  wire [31:0] fb_prdata,
+    input  wire        fb_pready,
+    input  wire        fb_pslverr,
 
     // 命令メモリへの AHB (ROM_H*)
     output wire [31:0] rom_haddr,
@@ -94,6 +106,7 @@ module shell_top #(
     // APB_P* の先: アドレスデコーダと周辺回路
     //   0xF800_0000〜0xF800_0FFF  UART (apb_uart)
     //   0xF800_1000〜0xF800_1FFF  GP_INT を駆動するレジスタ (apb_gpint)
+    //   0xF800_2000〜0xF800_2FFF  ポート fb_p* (フレームバッファの表示の回路の制御レジスタ)
     //   0xF800_F000〜0xF800_FFFF  届いた PADDR を読み返すレジスタ (apb_paddr_probe。実機で PADDR の形を確かめるため)
     //   それ以外                   PSLVERR = 1 (ウェイトなしでエラーを返す)
     // ---------------------------------------------------------
@@ -150,6 +163,7 @@ module shell_top #(
     wire        sel_uart  = (apb_paddr[25:12] == 14'd0);
     wire        sel_gpint = (apb_paddr[25:12] == 14'd1);
     wire        sel_probe = (apb_paddr[25:12] == 14'h00F);
+    wire        sel_fb    = (apb_paddr[25:12] == 14'd2);
 
     wire [31:0] uart_prdata;
     wire        uart_pready;
@@ -162,9 +176,17 @@ module shell_top #(
     wire        probe_pready;
     wire        probe_pslverr;
 
-    assign apb_prdata  = sel_uart  ? uart_prdata  : sel_gpint ? gpint_prdata  : sel_probe ? probe_prdata  : 32'd0;
-    assign apb_pready  = sel_uart  ? uart_pready  : sel_gpint ? gpint_pready  : sel_probe ? probe_pready  : 1'b1;
-    assign apb_pslverr = sel_uart  ? uart_pslverr : sel_gpint ? gpint_pslverr : sel_probe ? probe_pslverr : (apb_psel && apb_penable);
+    assign apb_prdata  = sel_uart  ? uart_prdata  : sel_gpint ? gpint_prdata  : sel_probe ? probe_prdata  : sel_fb ? fb_prdata  : 32'd0;
+    assign apb_pready  = sel_uart  ? uart_pready  : sel_gpint ? gpint_pready  : sel_probe ? probe_pready  : sel_fb ? fb_pready  : 1'b1;
+    assign apb_pslverr = sel_uart  ? uart_pslverr : sel_gpint ? gpint_pslverr : sel_probe ? probe_pslverr : sel_fb ? fb_pslverr :
+                         (apb_psel && apb_penable);
+
+    assign fb_psel    = apb_psel && sel_fb;
+    assign fb_penable = apb_penable;
+    assign fb_pwrite  = apb_pwrite;
+    assign fb_paddr   = apb_paddr;
+    assign fb_pwdata  = apb_pwdata;
+    assign fb_pstrb   = apb_pstrb;
 
     wire seq_hold;       // apb_uart の CTRL の bit 0 (ROM のローダーがデータを受信している間は 1。uart_reset_seq の hold へ)
     apb_uart #(

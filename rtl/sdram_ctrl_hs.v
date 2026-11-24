@@ -154,7 +154,10 @@ module sdram_ctrl_hs #(
     // 書き込みの受け付け条件に使うと、引き回しの配線遅延で s_clk のスラックがほとんどなかったため)。
     // リセットのアサートと解除が、1 クロック遅れるだけ
     reg        rst_q;
-    reg        rd_shift;         // 次のクロックで、読み出したワードを fill_data に取り込む
+    // 次のクロックで、読み出したワードを fill_data に取り込む。同じ値を 4 つ持ち、それぞれ fill_data の 32 ビットずつに配る (1 つの
+    // レジスタから 128 個の取り込み許可に配る配線が長く、表示の回路をつないだ構成で s_clk の余裕がなくなったため)。合成で 1 つに
+    // まとめられないように syn_preserve を付ける
+    reg [3:0]  rd_shift /* synthesis syn_preserve = 1 */;
     reg        rd_go;            // 次のクロックで、READ を出す
     reg [3:0]  wr_pend;          // これから出す WRITE (1 のビットごとに 1 回。下位のビットから、1 クロックに 1 回出す)
 
@@ -196,7 +199,24 @@ module sdram_ctrl_hs #(
     reg [MKW-1:0] dr_mk, dr_ml;
     reg           dr_take, dr_take_last;   // 次のクロックで dq_s のワードを返す (そのワードが最後)
 
-    wire act_ok = (since_act >= T_RC[SAW-1:0]);
+    // S_IDLE で次に何をするか (リフレッシュ、表示の読み出し、CPU の読み出し、CPU の書き込みのどれか 1 つ) と、ACT で出す行とバンク、
+    // CPU の転送の列を、1 クロック前に決めておく (優先順位の判定と tRC の比較から、ACT のアドレスを 3 か所から選んで出すまでが
+    // 1 クロックに収まらず、表示の回路をつないだ構成で s_clk の余裕がなくなったため)。S_IDLE のエッジでは、決めておいた値を出すだけ。
+    // 判定に使う fill_valid、we は受け付けられるまで値を保ち、dr_pend、refresh_due はこの回路のレジスタなので、1 クロック前の値で
+    // 決めてよい。tRC は、次のクロックで since_act が T_RC 以上になるか (since_act >= T_RC - 1) で見る (S_IDLE で ACT を出したエッジの
+    // 判定は、次のクロックが S_IDLE ではないので使わない)
+    localparam integer   T_RC_M1_I = T_RC - 1;
+    localparam [SAW-1:0] T_RC_M1   = T_RC_M1_I[SAW-1:0];
+    reg        sel_ref, sel_dr, sel_rd, sel_wr;
+    // S_IDLE にいる (state == S_IDLE と同じ値を、専用のレジスタで持つ。S_IDLE の処理の取り込み許可やアドレスの選択が、state の
+    // 比較を通らないように。S_IDLE に入るのは S_WAIT からだけで、出るのは S_IDLE でコマンドを出すときだけ)
+    reg        idle_q;
+    reg [12:0] act_row_q;
+    reg [1:0]  act_ba_q;
+    reg [8:0]  nx_col;
+    wire       rd_req  = fill_valid && rst_q;
+    wire       wr_req  = we && rst_q;
+    wire       trc_nxt = (since_act >= T_RC_M1);
     wire dr_read = (state == S_DR_RD) && dr_go;   // このクロックで表示の READ を出す (S_DR_RD の中の条件と同じ)
 
     task cmd(input [3:0] c);
@@ -208,8 +228,9 @@ module sdram_ctrl_hs #(
     initial begin
         state = S_POWER; cnt = {CW{1'b0}}; init_cnt = {IW{1'b0}}; wait_n = {CW{1'b0}}; init_refs = 4'd0;
         refresh_timer = {RW{1'b0}}; refresh_due = 1'b0;
-        rst_q = 1'b0; rd_shift = 1'b0; rd_go = 1'b0; wr_pend = 4'd0; rd_keep = 1'b0; since_act = {SAW{1'b1}}; dq_s = 16'd0; col_q = 9'd0; ba_q = 2'd0;
+        rst_q = 1'b0; rd_shift = 4'd0; rd_go = 1'b0; wr_pend = 4'd0; rd_keep = 1'b0; since_act = {SAW{1'b1}}; dq_s = 16'd0; col_q = 9'd0; ba_q = 2'd0;
         wsh = 64'd0; msh = 8'd0; wcol = 2'd0;
+        idle_q = 1'b0; sel_ref = 1'b0; sel_dr = 1'b0; sel_rd = 1'b0; sel_wr = 1'b0; act_row_q = 13'd0; act_ba_q = 2'd0; nx_col = 9'd0;
         dr_ptr = {DRW{1'b0}}; dr_left = {DRW{1'b0}}; dr_pend = 1'b0; dr_first = 1'b0; dr_go = 1'b0; dr_last_q = 1'b0; dr_fin_q = 1'b0;
         dr_mk = {MKW{1'b0}}; dr_ml = {MKW{1'b0}}; dr_take = 1'b0; dr_take_last = 1'b0;
         dr_busy = 1'b0; dr_wvalid = 1'b0; dr_wdata = 16'd0; dr_done = 1'b0;
@@ -222,9 +243,12 @@ module sdram_ctrl_hs #(
         rst_q <= rst_n;
 
         // 1 クロック前に決めておく判定 (この 3 つの状態では、cnt は毎クロック 1 つ進む)
-        rd_shift <= (state == S_RD_DATA) && (cnt >= SHIFT_LO_C) && (cnt <= SHIFT_HI_C);
+        rd_shift <= {4{(state == S_RD_DATA) && (cnt >= SHIFT_LO_C) && (cnt <= SHIFT_HI_C)}};
         rd_go    <= (state == S_RD_CMD) && (cnt == RD_GO_C);
-        if (rd_shift) fill_data <= {dq_s, fill_data[127:16]};
+        if (rd_shift[0]) fill_data[31:0]   <= fill_data[47:16];
+        if (rd_shift[1]) fill_data[63:32]  <= fill_data[79:48];
+        if (rd_shift[2]) fill_data[95:64]  <= fill_data[111:80];
+        if (rd_shift[3]) fill_data[127:96] <= {dq_s, fill_data[127:112]};
 
         // 表示用の読み出し: 1 クロック前に決める判定
         dr_go     <= (state == S_DR_RD) && (cnt == (dr_first ? RD_GO_C : DR_NEXT_C));
@@ -245,6 +269,14 @@ module sdram_ctrl_hs #(
         end
         if (state == S_IDLE) init_done <= 1'b1;
         if (since_act != {SAW{1'b1}}) since_act <= since_act + 1'b1;
+        // S_IDLE の判定を 1 クロック前に決める (上の sel_* の説明)
+        sel_ref   <= refresh_due;
+        sel_dr    <= !refresh_due && dr_pend && trc_nxt;
+        sel_rd    <= !refresh_due && !dr_pend && rd_req && trc_nxt;
+        sel_wr    <= !refresh_due && !dr_pend && !rd_req && wr_req && trc_nxt;
+        act_row_q <= dr_pend ? pad_row(dr_ptr[DRW-1:8]) : rd_req ? pad_row(r_word[ADDR_WIDTH-2:11]) : pad_row(w_word[ADDR_WIDTH-2:11]);
+        act_ba_q  <= dr_pend ? dr_ptr[7:6] : rd_req ? r_word[10:9] : w_word[10:9];
+        nx_col    <= rd_req ? r_word[8:0] : {w_word[8:2], 2'b00};    // 書き込みは 8 バイト (4 ワード) の先頭の列
 
         cmd(CMD_NOP);
         fill_ready <= 1'b0;
@@ -265,6 +297,43 @@ module sdram_ctrl_hs #(
         end
 
         if (!fill_valid || !rst_q) rd_keep <= 1'b0;
+
+        if (idle_q) begin
+            // 書き込みのデータとバイトの有効、CPU の転送の列とバンクは、待っている間は毎クロック取り込む (ACT を出すエッジでも
+            // 同じ値を取り込む。取り込み許可を判定の結果から外すため)
+            wsh  <= wdata;
+            msh  <= wmask;
+            wcol <= 2'd0;
+            col_q <= nx_col;
+            ba_q  <= act_ba_q;
+            if (sel_ref) begin
+                cmd(CMD_REF);
+                refresh_due <= 1'b0;
+                cnt         <= {CW{1'b0}};
+                wait_n      <= T_RFC[CW-1:0];
+                state       <= S_WAIT;
+            end
+            if (sel_ref || sel_dr || sel_rd || sel_wr) idle_q <= 1'b0;
+            if (sel_dr || sel_rd || sel_wr) begin
+                cmd(CMD_ACT);
+                io_ba     <= act_ba_q;
+                io_addr   <= act_row_q;
+                since_act <= {{(SAW-1){1'b0}}, 1'b1};
+                cnt       <= {CW{1'b0}};
+            end
+            if (sel_dr) begin
+                dr_first <= 1'b1;
+                state    <= S_DR_RD;
+            end
+            if (sel_rd) begin
+                rd_keep <= 1'b1;
+                state   <= S_RD_CMD;
+            end
+            if (sel_wr) begin
+                wready <= 1'b1;
+                state  <= S_WR_CMD;
+            end
+        end
 
         case (state)
             S_POWER: begin
@@ -304,47 +373,7 @@ module sdram_ctrl_hs #(
                 wait_n  <= T_MRD[CW-1:0];
                 state   <= S_WAIT;
             end
-            S_IDLE:
-                if (refresh_due) begin
-                    cmd(CMD_REF);
-                    refresh_due <= 1'b0;
-                    cnt         <= {CW{1'b0}};
-                    wait_n      <= T_RFC[CW-1:0];
-                    state       <= S_WAIT;
-                end else if (dr_pend) begin
-                    if (act_ok) begin
-                        cmd(CMD_ACT);
-                        io_ba     <= dr_ptr[7:6];
-                        io_addr   <= pad_row(dr_ptr[DRW-1:8]);
-                        dr_first  <= 1'b1;
-                        since_act <= {{(SAW-1){1'b0}}, 1'b1};
-                        cnt       <= {CW{1'b0}};
-                        state     <= S_DR_RD;
-                    end
-                end else if (fill_valid && rst_q && act_ok) begin
-                    cmd(CMD_ACT);
-                    io_ba     <= r_word[10:9];
-                    io_addr   <= pad_row(r_word[ADDR_WIDTH-2:11]);
-                    col_q     <= r_word[8:0];
-                    ba_q      <= r_word[10:9];
-                    rd_keep   <= 1'b1;
-                    since_act <= {{(SAW-1){1'b0}}, 1'b1};
-                    cnt       <= {CW{1'b0}};
-                    state     <= S_RD_CMD;
-                end else if (we && rst_q && act_ok) begin
-                    cmd(CMD_ACT);
-                    io_ba     <= w_word[10:9];
-                    io_addr   <= pad_row(w_word[ADDR_WIDTH-2:11]);
-                    col_q     <= {w_word[8:2], 2'b00};     // 8 バイト (4 ワード) の先頭の列
-                    ba_q      <= w_word[10:9];
-                    wsh       <= wdata;
-                    msh       <= wmask;
-                    wcol      <= 2'd0;
-                    wready    <= 1'b1;
-                    since_act <= {{(SAW-1){1'b0}}, 1'b1};
-                    cnt       <= {CW{1'b0}};
-                    state     <= S_WR_CMD;
-                end
+            S_IDLE: ;   // S_IDLE の処理は、上の idle_q の条件で行う
             // ACT から tRCD を待って READ
             S_RD_CMD: begin
                 cnt <= cnt + 1'b1;
@@ -399,9 +428,15 @@ module sdram_ctrl_hs #(
             end
             S_WAIT: begin
                 cnt <= cnt + 1'b1;
-                if (cnt + 1'b1 >= wait_n) state <= S_IDLE;
+                if (cnt + 1'b1 >= wait_n) begin
+                    state  <= S_IDLE;
+                    idle_q <= 1'b1;
+                end
             end
-            default: state <= S_POWER;
+            default: begin
+                state  <= S_POWER;
+                idle_q <= 1'b0;
+            end
         endcase
 
         dr_mk <= {dr_mk[MKW-2:0], dr_read};

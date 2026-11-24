@@ -18,6 +18,9 @@
 //      32 MB の最上位、行の最後の 1 バーストだけ)。読み出しの最中の dr_start は無視される。dr_done は最後のワードと同じクロック
 //   11 表示の読み出しの最中に AHB の読み書きを出し、両方の値が正しい (読み書きが実際に読み出しと重なったことも確かめる)
 //   12 表示の読み出しを 8 ライン続けている間、REF の間隔の最大が、リフレッシュの間隔 (7.6 µs) + 行 1 つ分の読み出し以下
+//   13 書き込みのバッファ (16 段) があふれる長さの書き込み (8 バイトを 192 回続けて) で、満杯になって待たされ、すべて読み直して一致する
+//   14 同じ 8 バイトへの書き込みのまとめ: 4 バイトを 2 回、1 バイトを 8 回書くと、それぞれ SDRAM への 1 回の書き込みになり、値が正しい。
+//      1 回だけ書いて待つと、読み出しがなくても SDRAM に届く
 //
 // 実行: make test-sdram-unit
 // =============================================================
@@ -336,6 +339,16 @@ module sdram_tb;
     // ---------------------------------------------------------
     // 本体
     // ---------------------------------------------------------
+    // SDRAM コントローラが受け付けた書き込みの回数 (項目 14。テストの手順は前後の差を見る)
+    integer    sdram_wr_n;
+    initial sdram_wr_n = 0;
+    always @(posedge sclk) if (dut.we && dut.wready) sdram_wr_n <= sdram_wr_n + 1;
+
+    // 書き込みのバッファが満杯だった DDR_CLK のサイクル数 (項目 13。テストの手順は前後の差を見る)
+    integer    wf_full_cyc;
+    initial wf_full_cyc = 0;
+    always @(posedge hclk) if (dut.wf_full) wf_full_cyc <= wf_full_cyc + 1;
+
     integer    sz, off, r, seed;
     reg [63:0] pat;
     reg [31:0] ad;
@@ -473,17 +486,19 @@ module sdram_tb;
         if (st_after[0] - st_before[0] != 2)  $fatal(1, "read transfer count delta is %0d (expected 2)", st_after[0] - st_before[0]);
         if (st_after[2] - st_before[2] != 3)  $fatal(1, "write transfer count delta is %0d (expected 3)", st_after[2] - st_before[2]);
         if (st_after[6] - st_before[6] != 13) $fatal(1, "bytes written delta is %0d (expected 1 + 4 + 8 = 13)", st_after[6] - st_before[6]);
-        for (i = 1; i < 6; i = i + 2) begin
+        // 読み出しで待たせたサイクル (+0x04) と、SDRAM 側の書き込みのサイクル (+0x14) は増える。書き込みで待たせたサイクル (+0x0C) は、
+        // 待ちなしで受け付けるので増えない (下で 0 を確かめる)
+        for (i = 1; i < 6; i = i + 4) begin
             if (st_after[i] == st_before[i]) $fatal(1, "counter +0x%02x (cycle count) did not increase", 4 * i);
         end
         if (st_after[4] == st_before[4]) $fatal(1, "counter +0x10 (sclk cycles for line reads) did not increase");
-        // AE350 を待たせた時間は、SDRAM コントローラが動いた時間より長い (間にクロック乗せ換えがあるため)
+        // 読み出しで AE350 を待たせた時間は、SDRAM コントローラが動いた時間より長い (間にクロック乗せ換えがあるため)
         if ((st_after[1] - st_before[1]) * HCLK_PS < (st_after[4] - st_before[4]) * SCLK_PS)
             $fatal(1, "read stall time %0d ps is shorter than line read time %0d ps",
                    (st_after[1] - st_before[1]) * HCLK_PS, (st_after[4] - st_before[4]) * SCLK_PS);
-        if ((st_after[3] - st_before[3]) * HCLK_PS < (st_after[5] - st_before[5]) * SCLK_PS)
-            $fatal(1, "write stall time %0d ps is shorter than write time %0d ps",
-                   (st_after[3] - st_before[3]) * HCLK_PS, (st_after[5] - st_before[5]) * SCLK_PS);
+        // 書き込みは、バッファに空きがあれば待ちなしで受け付ける (バッファは空から始まる)
+        if (st_after[3] - st_before[3] != 0)
+            $fatal(1, "write stall cycles delta is %0d (expected 0: buffered writes are accepted without wait states)", st_after[3] - st_before[3]);
         stat_read(7, st_after[0]);
         if (st_after[0] != 32'd0) $fatal(1, "counter +0x1C is %08x (expected 0)", st_after[0]);
         $display("9 counters: PASS (2 reads: DDR_CLK stalled %0d, line read sclk %0d / 3 writes: DDR_CLK stalled %0d, write sclk %0d)",
@@ -493,6 +508,7 @@ module sdram_tb;
         //   AHB で書いた 256 バイト (0x380〜0x47F。0x400 で SDRAM の行 (バンク) が変わる)
         for (i = 0; i < 256; i = i + 8)
             ahb_write(32'h0000_0380 + i, 3'd3, {16'h1000 + i[15:0], 16'h2000 + i[15:0], 16'h3000 + i[15:0], 16'h4000 + i[15:0]});
+        ahb_read_check(32'h0000_0380, 3'd3);   // 書き込みのバッファを空にする (表示用の読み出しは、バッファに残る書き込みを追い越すため)
         dr_read(32'h0000_0380, 16);
         dr_check_shadow(32'h0000_0380, 128);
         //   1 ライン (2,560 バイト、160 バースト。フレームバッファの先頭 0x01C0_0000 から。行を 2 回またぐ)
@@ -564,6 +580,43 @@ module sdram_tb;
         if (ref_count < 5) $fatal(1, "only %0d REF intervals were measured", ref_count);
         $display("12 refresh during display reads: PASS (%0d REF intervals, longest %0d sclk = %0d ns)", ref_count, ref_max,
                  ref_max * SCLK_PS / 1000);
+
+        // 13: 書き込みのバッファがあふれる長さの書き込み (192 回。読み出しを挟まない)。テストベンチの書き込みは 1 回ごとに間が
+        //     空き、SDRAM 側がバッファを空ける速さとの差が小さいので、回数を多くする。満杯になったことは、バッファの満杯の信号で見る
+        r = wf_full_cyc;
+        stat_read(3, st_before[3]);
+        for (i = 0; i < 192; i = i + 1)
+            ahb_write(32'h0000_0600 + i * 8, 3'd3, {16'hB000 + i[15:0], 16'hC000 + i[15:0], 16'hD000 + i[15:0], 16'hE000 + i[15:0]});
+        stat_read(3, st_after[3]);
+        if (wf_full_cyc == r) $fatal(1, "the write buffer never became full during 192 writes");
+        if (st_after[3] - st_before[3] == 0)
+            $fatal(1, "write stall cycles delta is 0 for 192 writes (no stall while the buffer was full)");
+        check_region(32'h0000_0600, 1536);
+        $display("13 write buffer overflow: PASS (192 writes stalled %0d DDR_CLK cycles, buffer full for %0d cycles)", st_after[3] - st_before[3],
+                 wf_full_cyc - r);
+
+        // 14: 同じ 8 バイトへの書き込みのまとめ
+        //   4 バイトを 2 回 (0x800 と 0x804)
+        ahb_read_check(32'h0000_0800, 3'd3);   // ここまでの書き込みを SDRAM に出し切る
+        r = sdram_wr_n;
+        ahb_write(32'h0000_0800, 3'd2, 64'h0000_0000_1111_2222);
+        ahb_write(32'h0000_0804, 3'd2, 64'h3333_4444_0000_0000);
+        ahb_read_check(32'h0000_0800, 3'd3);   // まとめ中の段をバッファに入れ、SDRAM に書き終えてから読む
+        if (sdram_wr_n - r != 1) $fatal(1, "two 4-byte writes to one 8-byte word became %0d SDRAM writes (expected 1)", sdram_wr_n - r);
+        //   1 バイトを 8 回 (0x808〜0x80F)
+        r = sdram_wr_n;
+        for (i = 0; i < 8; i = i + 1) ahb_write(32'h0000_0808 + i, 3'd0, {8{8'h50 + i[7:0]}});
+        ahb_read_check(32'h0000_0808, 3'd3);
+        ahb_read_check(32'h0000_080C, 3'd0);
+        if (sdram_wr_n - r != 1) $fatal(1, "eight 1-byte writes to one 8-byte word became %0d SDRAM writes (expected 1)", sdram_wr_n - r);
+        //   1 回だけ書いて待つ (読み出しなしで、まとめ中の段が CB_IDLE サイクル後にバッファに入り、SDRAM に届く)
+        ahb_write(32'h0000_0810, 3'd2, 64'h0000_0000_CAFE_F00D);
+        repeat (200) @(posedge hclk);
+        if (`SDRAM_MEM[mi(32'h0000_0810)] !== 16'hF00D || `SDRAM_MEM[mi(32'h0000_0812)] !== 16'hCAFE)
+            $fatal(1, "a lone write did not reach the SDRAM without a read (%04x %04x)", `SDRAM_MEM[mi(32'h0000_0812)],
+                   `SDRAM_MEM[mi(32'h0000_0810)]);
+        ahb_read_check(32'h0000_0810, 3'd2);
+        $display("14 write combining: PASS");
 
         $display("sdram_tb: PASS (%0d read checks)", n_checks);
         $finish;

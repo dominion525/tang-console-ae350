@@ -296,6 +296,22 @@ module tb_mem;
         while (extm_bg) extm_bg_op();
     end
 
+    // APB の 0xF800_2000〜0xF800_2FFF (フレームバッファの表示の回路の制御レジスタ)。TB_FB のときは表示の回路 (下の TB_SDRAM の節)
+    // につなぎ、それ以外では PSLVERR を返す (ボードの表示の回路がない構成と同じ)
+    wire        presetn;
+    wire        fb_psel, fb_penable, fb_pwrite;
+    wire [31:0] fb_paddr, fb_pwdata, fb_prdata;
+    wire [3:0]  fb_pstrb;
+    wire        fb_pready, fb_pslverr;
+`ifndef TB_FB
+    assign fb_prdata  = 32'd0;
+    assign fb_pready  = 1'b1;
+    assign fb_pslverr = 1'b1;
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire unused_fb_apb = &{1'b0, presetn, fb_psel, fb_penable, fb_pwrite, fb_paddr, fb_pwdata, fb_pstrb};
+    /* verilator lint_on UNUSEDSIGNAL */
+`endif
+
     /* verilator lint_off PINCONNECTEMPTY */
     shell_top #(
         .UART_PRESCALE (UART_PRESCALE),
@@ -310,10 +326,19 @@ module tb_mem;
         .uart_tx    (uart_tx),
         .uart_rx    (uart_rx),
         .hresetn    (),
-        .dbg_presetn    (),
+        .dbg_presetn    (presetn),
         .dbg_apb_access (),
         .dbg_apb_paddr  (),
         .dbg_misc       (),
+        .fb_psel        (fb_psel),
+        .fb_penable     (fb_penable),
+        .fb_pwrite      (fb_pwrite),
+        .fb_paddr       (fb_paddr),
+        .fb_pwdata      (fb_pwdata),
+        .fb_pstrb       (fb_pstrb),
+        .fb_prdata      (fb_prdata),
+        .fb_pready      (fb_pready),
+        .fb_pslverr     (fb_pslverr),
         .rom_haddr  (rom_haddr),
         .rom_htrans (rom_htrans),
         .rom_hwrite (rom_hwrite),
@@ -405,20 +430,113 @@ module tb_mem;
         .wready     (s_wready)
     );
 
-    // 表示用の読み出しのポートは、このテストベンチでは使わない (B-4 で表示の回路をつなぐ)
+    // 表示用の読み出しのポート (TB_FB のときは、下の表示の回路の読み出しの回路につなぐ)
     wire        s_dr_busy, s_dr_wvalid, s_dr_done;
     wire [15:0] s_dr_wdata;
+    wire        s_dr_start;
+    wire [20:0] s_dr_addr, s_dr_bursts;
+`ifndef TB_FB
+    assign s_dr_start  = 1'b0;
+    assign s_dr_addr   = 21'd0;
+    assign s_dr_bursts = 21'd0;
     /* verilator lint_off UNUSEDSIGNAL */
     wire unused_dr = &{1'b0, s_dr_busy, s_dr_wvalid, s_dr_done, s_dr_wdata};
     /* verilator lint_on UNUSEDSIGNAL */
+`endif
     sdram_hs_path #(.ADDR_WIDTH(25), .RD_FIRST(11), .IN_DLY(160), .CAP_EDGE(0)) u_path (
         .s_clk (sdram_clk), .rst_n (srst_n), .fill_valid (s_fill_valid), .fill_line (s_fill_line),
         .fill_ready (s_fill_ready), .fill_data (s_fill_data), .we (s_we), .waddr (s_waddr), .wdata (s_wdata), .wmask (s_wmask),
         .wready (s_wready), .init_done (s_init_done),
-        .dr_start (1'b0), .dr_addr (21'd0), .dr_bursts (21'd0), .dr_busy (s_dr_busy), .dr_wvalid (s_dr_wvalid), .dr_wdata (s_dr_wdata),
+        .dr_start (s_dr_start), .dr_addr (s_dr_addr), .dr_bursts (s_dr_bursts), .dr_busy (s_dr_busy), .dr_wvalid (s_dr_wvalid), .dr_wdata (s_dr_wdata),
         .dr_done (s_dr_done)
     );
     `define TB_SDRAM_MEM u_path.u_model.mem
+
+`ifdef TB_FB
+    // ---------------------------------------------------------
+    // フレームバッファの表示の回路 (make test-fb)。hdmi.sv (座標を作る。画素クロック 74.25 MHz)、fb_display、fb_sdram_reader を
+    // つなぐ。表示の回路が ENABLE のフレームでは、先頭の FB_CHECK_LINES ラインの画素 (hdmi.sv が受け取る色。cx の次のクロック) を、
+    // SDRAM のモデルの内容 (CPU が書いた値) と比べる。比べる場所は、表示の回路が FB_BASE を取り込むのと同じ時期 (最後の帰線の
+    // ラインの始まり) に取り込む (フレームバッファを 2 枚使って切り替えるプログラムのため。切り替わる時期は make test-fb-display で確かめる)
+    // ---------------------------------------------------------
+    localparam integer      FB_CHECK_LINES = 4;
+    reg vclk;
+    initial vclk = 1'b0;
+    always #6.734 vclk = ~vclk;
+    /* verilator lint_off SYNCASYNCNET */
+    reg [1:0] vrst_s;
+    /* verilator lint_on SYNCASYNCNET */
+    always @(posedge vclk or negedge rst_n) begin
+        if (!rst_n) vrst_s <= 2'b00;
+        else        vrst_s <= {vrst_s[0], 1'b1};
+    end
+    wire vrst_n = vrst_s[1];
+
+    wire               fb_clk_audio;
+    wire signed [15:0] fb_sample;
+    hdmi_audio_tone #(.CLK_HZ(74250000), .RATE(48000), .TONE_HZ(1000), .AMPLITUDE(0)) u_fb_tone (
+        .clk (vclk), .reset (!vrst_n), .clk_audio (fb_clk_audio), .sample (fb_sample)
+    );
+    wire [15:0] fb_audio_word [1:0];
+    assign fb_audio_word[0] = fb_sample;
+    assign fb_audio_word[1] = fb_sample;
+    wire [10:0] fb_cx;
+    wire [9:0]  fb_cy;
+    wire [23:0] fb_rgb;
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire [2:0]  fb_tmds;
+    wire        fb_tmds_clock;
+    wire [10:0] fb_frame_width, fb_screen_width;
+    wire [9:0]  fb_frame_height, fb_screen_height;
+    /* verilator lint_on UNUSEDSIGNAL */
+    hdmi #(.VIDEO_ID_CODE (4), .VIDEO_REFRESH_RATE (60.0), .AUDIO_RATE (48000), .AUDIO_BIT_WIDTH (16)) u_fb_hdmi (
+        .clk_pixel_x5 (1'b0), .clk_pixel (vclk), .clk_audio (fb_clk_audio), .reset (!vrst_n), .serializer_reset (!vrst_n),
+        .rgb (fb_rgb), .audio_sample_word (fb_audio_word), .tmds (fb_tmds), .tmds_clock (fb_tmds_clock), .cx (fb_cx), .cy (fb_cy),
+        .frame_width (fb_frame_width), .frame_height (fb_frame_height), .screen_width (fb_screen_width),
+        .screen_height (fb_screen_height)
+    );
+
+    wire        fb_mreq, fb_lb_we, fb_mdone;
+    wire [24:0] fb_mreq_addr;
+    wire [10:0] fb_lb_waddr;
+    wire [15:0] fb_lb_wdata;
+    fb_display u_fb (
+        .pclk (apb_clk), .presetn (presetn), .psel (fb_psel), .penable (fb_penable), .pwrite (fb_pwrite), .paddr (fb_paddr),
+        .pwdata (fb_pwdata), .pstrb (fb_pstrb), .prdata (fb_prdata), .pready (fb_pready), .pslverr (fb_pslverr),
+        .vclk (vclk), .vrst_n (vrst_n), .cx (fb_cx), .cy (fb_cy), .rgb (fb_rgb),
+        .mclk (sdram_clk), .mrst_n (srst_n), .mreq (fb_mreq), .mreq_addr (fb_mreq_addr), .lb_we (fb_lb_we),
+        .lb_waddr (fb_lb_waddr), .lb_wdata (fb_lb_wdata), .mdone (fb_mdone)
+    );
+    fb_sdram_reader u_fb_reader (
+        .clk (sdram_clk), .rst_n (srst_n), .mreq (fb_mreq), .mreq_addr (fb_mreq_addr), .lb_we (fb_lb_we), .lb_waddr (fb_lb_waddr),
+        .lb_wdata (fb_lb_wdata), .mdone (fb_mdone), .dr_start (s_dr_start), .dr_addr (s_dr_addr), .dr_bursts (s_dr_bursts),
+        .dr_busy (s_dr_busy), .dr_wvalid (s_dr_wvalid), .dr_wdata (s_dr_wdata), .dr_done (s_dr_done)
+    );
+
+    // 1 つ前の座標の画素 (hdmi.sv がこのエッジで受け取る色) を比べる。u_fb.en_a は、表示の回路がこのフレームで ENABLE か
+    reg [10:0] fb_cx_q;
+    reg [9:0]  fb_cy_q;
+    integer    fb_pixels;     // 比べた画素の数 (合格で止めるときに、ENABLE になった後の 2 フレーム分以上あることを確かめる)
+    reg [31:0] fb_addr;       // このフレームのフレームバッファの先頭
+    initial begin
+        fb_cx_q = 11'd0; fb_cy_q = 10'd0; fb_pixels = 0; fb_addr = 32'h01C0_0000;
+    end
+    function [23:0] fb_expand(input [15:0] p);
+        fb_expand = {p[15:11], p[15:13], p[10:5], p[10:9], p[4:0], p[4:2]};
+    endfunction
+    always @(posedge vclk) begin : fb_check
+        reg [15:0] w;
+        fb_cx_q <= fb_cx;
+        fb_cy_q <= fb_cy;
+        if (fb_cy == 10'd749 && fb_cx == 11'd0) fb_addr <= {7'd0, u_fb.base_p, 4'b0000};
+        if (vrst_n && u_fb.en_a && fb_cx_q < 11'd1280 && fb_cy_q < FB_CHECK_LINES[9:0]) begin
+            w = `TB_SDRAM_MEM[sdram_idx(fb_addr + {22'd0, fb_cy_q} * 32'd2560 + {21'd0, fb_cx_q} * 32'd2)];
+            if (fb_rgb !== fb_expand(w))
+                $fatal(1, "frame buffer pixel (%0d, %0d): rgb %06x, expected %06x (word %04x)", fb_cx_q, fb_cy_q, fb_rgb, fb_expand(w), w);
+            fb_pixels <= fb_pixels + 1;
+        end
+    end
+`endif
 
     // バイトアドレスの 16 ビットワードを、モデルの内容のアドレス ({バンク, 行, 列}) に変換する。sdram_ctrl_hs は {行, バンク, 列} で割り当てる
     /* verilator lint_off UNUSEDSIGNAL */
@@ -848,6 +966,11 @@ module tb_mem;
                 if (result_code == RESULT_PASS) begin
                     if (extm_cmds != 0 || extm_bg)
                         $display("EXTM: %0d commands, background reads %0d / writes %0d", extm_cmds, extm_bg_reads, extm_bg_writes);
+`ifdef TB_FB
+                    if (fb_pixels < 2 * FB_CHECK_LINES * 1280)
+                        $fatal(1, "only %0d frame buffer pixels were compared (expected at least %0d)", fb_pixels, 2 * FB_CHECK_LINES * 1280);
+                    $display("frame buffer: %0d pixels of the first %0d lines matched the SDRAM contents", fb_pixels, FB_CHECK_LINES);
+`endif
                     $display("PASS");
                     $finish;
                 end else begin
