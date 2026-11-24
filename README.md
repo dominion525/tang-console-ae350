@@ -28,14 +28,16 @@ It consists of two parts.
 Simulation uses Verilator 5.052, Icarus Verilog 13.0, riscv64-elf-gcc, and newlib.
 Pass the newlib location with `NEWLIB`; there is no default.
 
-| Command              | Description                                                                                                      |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `make check`         | Compare ports with the primitive, run lint, and parse the sources with iverilog                                  |
-| `make test`          | Test programs, PLIC and RAM unit tests, clock ratio combinations, reset during execution, and random wait states |
-| `make test-iverilog` | Run the test programs with 4-state simulation                                                                    |
-| `make coverage`      | Coverage                                                                                                         |
-| `make run-probe`     | Run the probe program on the Hazard3 version                                                                     |
-| `make test-hdmi`     | Decode and check the TMDS values from the HDMI output circuit (see "HDMI output")                                |
+| Command                | Description                                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `make check`           | Compare ports with the primitive, run lint, and parse the sources with iverilog                                                 |
+| `make test`            | Test programs, PLIC and RAM unit tests, clock ratio combinations, reset during execution, and random wait states                |
+| `make test-iverilog`   | Run the test programs with 4-state simulation                                                                                   |
+| `make coverage`        | Coverage                                                                                                                        |
+| `make run-probe`       | Run the probe program on the Hazard3 version                                                                                    |
+| `make test-hdmi`       | Decode and check the TMDS values from the HDMI output circuit (see "HDMI output")                                               |
+| `make test-fb-display` | Connect the frame buffer display circuit to the HDMI output circuit and the SDRAM model, and check 6 frames (see "HDMI output") |
+| `make test-fb`         | Check that a frame buffer drawn by the Hazard3 CPU is displayed (see "HDMI output")                                             |
 
 ### Building newlib (first time only)
 
@@ -70,6 +72,9 @@ DDR3 is not used.
 DDR_H* is connected to the SDRAM on the baseboard (32 MB).
 The SDRAM controller is `rtl/sdram_ctrl_hs.v` with `rtl/sdram_io.v`, running at 166.7 MHz.
 Below, a build with SDRAM behind DDR_H* is called the **SDRAM build**.
+In the SDRAM build, DDR_CLK is 100 MHz (`DDR_DIV` in `build.sh`; `DDR_DIV=16` gives 50 MHz).
+Gowin's manual (MUG1031, Table 4-1) gives DDR_CLK as less than 200 MHz and asynchronous to the other clocks.
+The DDR3 and LiteDRAM builds use a 50 MHz DDR_CLK.
 
 Output appears on the second USB serial port (`/dev/cu.usbserial-<number>1` on macOS) at 1,250,000 bps.
 The macOS `stty` command does not accept rates above 230400 bps, so the scripts that talk to the UART (`tools/ae350_uart.rb` and `tools/ae350_load.rb`) set the rate with the macOS `IOSSIOSPEED` call while the port is open.
@@ -102,6 +107,27 @@ If the CPU stops printing for more than 0.1 s, the monitor circuit (`board/tang_
   Without the registers, UART writes over `APB_P*` stalled partway through.
   In addition to the registers, the `EXTS_H*` slices are placed near AE350 with `GRP_LOC`.
   For the `ROM=loader` build (SDRAM build), place-and-route reported AHB_CLK at 106.4 MHz and APB_CLK at 130.3 MHz (the figures vary with the build options and placement).
+
+### SDRAM build bridge (`rtl/ahb_sdram.v`)
+
+- A read fetches the 16-byte line that contains the address from the SDRAM and returns it on DDR_H*. Transfers are handled one at a time.
+- A write completes as soon as it enters a 16-entry write buffer (an asynchronous FIFO from the DDR_CLK side to the SDRAM clock side).
+  When the buffer has room, the write is accepted with no wait states; when it is full, the write waits until an entry frees up.
+- Consecutive writes to the same 8 bytes are combined into one SDRAM write.
+  The combined entry goes into the buffer when a write to different 8 bytes arrives, when a read arrives, or when no write arrives for 16 DDR_CLK cycles.
+- A read waits until the buffer is empty (the earlier writes have reached the SDRAM).
+  A later read therefore never disagrees with an earlier write.
+- A circuit that reads the SDRAM directly (the frame buffer display circuit) can read ahead of writes still in the buffer (see `fb_sync()` in "HDMI output").
+
+AE350 CPU cycles per access at 800 MHz, measured with `sw/mem_bench.c` with the data cache off (DDR_CLK 100 MHz).
+
+| Access                    | Cycles (time)  |
+| ------------------------- | -------------- |
+| Sequential write          | 32.0 (40 ns)   |
+| Sequential read           | 256.4 (320 ns) |
+| Random read (4 KB stride) | 256.4 (320 ns) |
+
+Before the write buffer (DDR_CLK 50 MHz), a write took 96.5 (121 ns) and a read took 320 (400 ns).
 
 ### Values read on the board
 
@@ -169,6 +195,8 @@ Responses end with `\r\n`.
 
 The linker script is `sw/sdram.ld`.
 It places code, data, and heap in external memory starting at 0x0001_0000, and the stack in the DLM.
+The heap ends at 0x01BF_FFFF (0x01C0_0000 and above is left free as the default frame buffer location).
+The loader enables the data cache just before it starts a program (`do_run` in `sw/loader.c`).
 If `sw/start.S` is built with `START_RETURN_TO_ROM` defined, returning from `main` goes back to the loader in ROM.
 For the build steps, see the `hello.bin` target in the Makefile (a 48,464-byte program that uses newlib's printf and fgets).
 
@@ -248,13 +276,14 @@ The configuration file, the PLL wrappers (`gowin_pll.v`, `pll_init.v`), and the 
 
 AE350 CPU cycles per access at 800 MHz, measured with `sw/mem_bench.c` with the data cache off.
 
-| Access                    | DDR3         | SDRAM (166.7 MHz) |
-| ------------------------- | ------------ | ----------------- |
-| Sequential write          | 96 (120 ns)  | 96.5 (121 ns)     |
-| Sequential read           | 179 (224 ns) | 320 (400 ns)      |
-| Random read (4 KB stride) | 468 (585 ns) | 320 (400 ns)      |
+| Access                    | DDR3         | SDRAM (DDR_CLK 50 MHz, before the write buffer) |
+| ------------------------- | ------------ | ----------------------------------------------- |
+| Sequential write          | 96 (120 ns)  | 96.5 (121 ns)                                   |
+| Sequential read           | 179 (224 ns) | 320 (400 ns)                                    |
+| Random read (4 KB stride) | 468 (585 ns) | 320 (400 ns)                                    |
 
 In sequential reads, 7 out of every 8 reads are served from the kept 32 bytes.
+The SDRAM column was measured with the same 50 MHz DDR_CLK as the DDR3 build and before the write buffer was added (current SDRAM values are in "SDRAM build bridge").
 In random reads, every read goes to the IP, and the IP alone (from the read command to the data) takes about 32 IP clock cycles (320 ns).
 The time spent before DDR_H* (inside AE350) and in the clock domain crossing is the same as in the SDRAM build.
 With the data cache enabled, CoreMark scores were almost the same for the DDR3 and SDRAM builds (2183.7 and 2183.8).
@@ -341,11 +370,11 @@ The DDR3 size and access width are parameters (`MEM_AW`, `LINE_AW`), so a single
 
 AE350 CPU cycles per access, measured under the same conditions as the DDR3 build (`sw/mem_bench.c`, data cache off, 800 MHz).
 
-| Access                    | LiteDRAM     | DDR3 (Gowin IP) | SDRAM (166.7 MHz) |
-| ------------------------- | ------------ | --------------- | ----------------- |
-| Sequential write          | 298 (372 ns) | 96 (120 ns)     | 96.5 (121 ns)     |
-| Sequential read           | 260 (325 ns) | 179 (224 ns)    | 320 (400 ns)      |
-| Random read (4 KB stride) | 781 (976 ns) | 468 (585 ns)    | 320 (400 ns)      |
+| Access                    | LiteDRAM     | DDR3 (Gowin IP) | SDRAM (DDR_CLK 50 MHz, before the write buffer) |
+| ------------------------- | ------------ | --------------- | ----------------------------------------------- |
+| Sequential write          | 298 (372 ns) | 96 (120 ns)     | 96.5 (121 ns)                                   |
+| Sequential read           | 260 (325 ns) | 179 (224 ns)    | 320 (400 ns)                                    |
+| Random read (4 KB stride) | 781 (976 ns) | 468 (585 ns)    | 320 (400 ns)                                    |
 
 A read takes about 34 controller clock cycles from command to data, almost the same as Gowin's IP (about 32 cycles).
 The controller clock is half that of Gowin's IP (50 MHz versus 100 MHz), so the time is about twice as long.
@@ -358,31 +387,81 @@ A write takes about 12 controller clock cycles until the command and data are ac
 - The 1024 words read in the sequential read of `sw/mem_bench.c` matched the values written.
 - Ran hello from DDR3 (in a single-chip, 512 MB configuration).
 
-## HDMI output (test pattern on the board's HDMI connector)
+## HDMI output (test pattern and a frame buffer drawn by the CPU)
 
     HDMI=1 ROM=loader sh board/tang_console/build.sh build/board-hdmi
 
 This build sends a 1280×720 / 60 Hz (CEA-861 VIC 4) test pattern to the board's HDMI connector.
 The test pattern is eight color bars, each 160 pixels wide (from the left: white, yellow, cyan, green, magenta, red, blue, black).
 HDMI audio packets (48 kHz) are sent as well, but the audio is silent.
-The output circuit is hdl-util/hdmi (`rtl/vendor/hdmi/`) and is not connected to the CPU.
+The output circuit is hdl-util/hdmi (`rtl/vendor/hdmi/`).
+In the SDRAM build (no `MEM` setting), it can also show a frame buffer that the CPU draws in SDRAM (see "Using the frame buffer" below).
+Until the display is enabled, it shows the color bars.
+`HDMI=1` with the DDR3 builds (`MEM=ddr3`, `MEM=litedram`) shows only the color bars.
 With `HDMI=1`, the whole synthesis project is read as SystemVerilog 2017, because hdl-util/hdmi is written in SystemVerilog.
 
-| Part                 | Files                                             | Description                                                                                                                            |
-| -------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Output circuit       | `rtl/vendor/hdmi/`                                | TMDS encoding, data island packets, and the serializer using `OSER10`. Changes from upstream are listed in `rtl/vendor/hdmi/README.md` |
-| Test pattern         | `rtl/hdmi_test_pattern.v`                         | Chooses the color bar from the horizontal position                                                                                     |
-| Audio                | `rtl/hdmi_audio_tone.v`                           | The 48 kHz sampling strobe and a square-wave test tone (`top.v` sets the amplitude to 0, so it is silent)                              |
-| PLL                  | `board/tang_console/hdmi_pll.v`                   | Makes the 74.25 MHz pixel clock and the 5x clock (371.25 MHz) from 50 MHz                                                              |
-| Pins and constraints | `board/tang_console/hdmi.cst`, `make_sdc_hdmi.rb` | The four HDMI differential pairs (LVCMOS33D pseudo-differential) and K14 (DVI-A_PSV, see below); timing constraints for the two clocks |
+| Part                 | Files                                             | Description                                                                                                                                                   |
+| -------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Output circuit       | `rtl/vendor/hdmi/`                                | TMDS encoding, data island packets, and the serializer using `OSER10`. Changes from upstream are listed in `rtl/vendor/hdmi/README.md`                        |
+| Test pattern         | `rtl/hdmi_test_pattern.v`                         | Chooses the color bar from the horizontal position                                                                                                            |
+| Audio                | `rtl/hdmi_audio_tone.v`                           | The 48 kHz sampling strobe and a square-wave test tone (`top.v` sets the amplitude to 0, so it is silent)                                                     |
+| Display circuit      | `rtl/fb_display.v`                                | Frame buffer control registers (APB), a two-line line buffer, and RGB565 to RGB888 conversion. A line that was not loaded in time shows the color bars        |
+| Read circuit         | `rtl/fb_sdram_reader.v`, `rtl/sdram_ctrl_hs.v`    | Reads one line (2,560 bytes) from the SDRAM in a row when the display circuit asks. SDRAM arbitration priority: refresh, display reads, CPU reads, CPU writes |
+| PLL                  | `board/tang_console/hdmi_pll.v`                   | Makes the 74.25 MHz pixel clock and the 5x clock (371.25 MHz) from 50 MHz                                                                                     |
+| Pins and constraints | `board/tang_console/hdmi.cst`, `make_sdc_hdmi.rb` | The four HDMI differential pairs (LVCMOS33D pseudo-differential) and K14 (DVI-A_PSV, see below); timing constraints for the two clocks                        |
 
 In simulation, `make test-hdmi` (included in `make test`) decodes the TMDS values from the output circuit and checks them.
 It checks the position and polarity of the sync signals, the video values, the ECC of the data island packets, the number and values of the audio samples, and N and CTS in the audio clock regeneration packets.
+`make test-fb-display` connects the display circuit, the SDRAM controller, and the SDRAM model to `hdmi.sv` and runs 6 frames.
+It checks that every pixel shows the frame buffer value, that an FB_BASE change takes effect at a frame boundary, and that a line whose load was delayed shows the color bars and sets UNDERRUN.
+`make test-fb` has the Hazard3 CPU draw into the frame buffer and enable the display, and checks that the displayed pixels match what was drawn.
+
+### Using the frame buffer
+
+The screen is 1280 × 720, and a pixel is RGB565 (16 bits: red 15-11, green 10-5, blue 4-0).
+A row is 2,560 bytes, and the frame buffer is 1,843,200 bytes.
+Its default location is 0x01C0_0000 (the 28 MB point of the SDRAM), which does not overlap the heap of programs that run from external memory (up to 0x01BF_FFFF).
+The control registers start at APB address 0xF800_2000 (`sw/fb.h`).
+
+| Address     | Name    | Description                                                                      |
+| ----------- | ------- | -------------------------------------------------------------------------------- |
+| 0xF800_2000 | CTRL    | bit 0 ENABLE (0 shows the color bars, 1 shows the frame buffer; 0 after reset)   |
+| 0xF800_2004 | FB_BASE | Start address of the frame buffer (low 4 bits are 0; 0x01C0_0000 after reset)    |
+| 0xF800_2008 | FRAME   | Number of frames shown (increments at the start of vertical blanking; read only) |
+| 0xF800_200C | STATUS  | bit 0 UNDERRUN (a line was not loaded in time; write 1 to clear)                 |
+
+- CTRL and FB_BASE are taken at the start of a frame.
+  Switching FB_BASE to a finished buffer keeps a half-drawn picture off the screen (`sw/fb_animate.c` alternates between two buffers).
+- Call `fb_sync()` before switching the display (before writing CTRL or FB_BASE).
+  It waits until the writes still in the bridge's write buffer have reached the SDRAM.
+- A program started by the loader runs with the data cache enabled.
+  Pixels drawn through the cache must be written out with `fb_flush_dcache()` before calling `fb_sync()`.
+  With the data cache off (bit 1 of mcache_ctl cleared), writes go straight to the SDRAM.
+- While one line is on the screen, the display circuit loads the next line from the SDRAM.
+  During each load (about 8 µs per line), CPU reads and writes to the SDRAM wait.
+
+Two programs are provided for checking (both run from ILM and are sent with the loader).
+
+    make build/fb_demo.bin build/fb_animate.bin
+    ruby tools/ae350_load.rb /dev/cu.usbserial-<N>1 build/fb_demo.bin A0000000
+    ruby tools/ae350_load.rb /dev/cu.usbserial-<N>1 build/fb_animate.bin A0000000
+
+`fb_demo` draws a picture over the whole screen twice and prints the time each took.
+`fb_animate` keeps moving a 64 × 64 square one step per frame, bouncing it off the screen edges (to stop it, send the next program with the loader).
 
 ### Verified on the board
 
 - In the `HDMI=1 ROM=loader` build, the color bars appeared on the monitor and the 1 kHz test tone played (amplitude 2048, before the audio was made silent).
 - After the amplitude was set to 0, the color bars still appeared and no sound played.
+- In the `HDMI=1 ROM=loader` build (SDRAM build, DDR_CLK 100 MHz), the `fb_demo` picture and the moving square of `fb_animate` appeared on the monitor.
+  No line was loaded too late (no UNDERRUN).
+  The measured values are below (one frame is 16.7 ms).
+
+  | Measurement                                                                      | Time     |
+  | -------------------------------------------------------------------------------- | -------- |
+  | Draw the whole screen (data cache off, first pass of `fb_demo`)                  | 25.4 ms  |
+  | Draw the whole screen (data cache on, including the write-out, while displaying) | 121.7 ms |
+  | Erase and redraw the square and switch buffers (`fb_animate`, every frame)       | 0.16 ms  |
 - `HDMI=1` combined with other build options (`ROM=probe`, `CPU=hazard3`, `MEM=ddr3`, and so on) has not been tried on the board.
 
 ### Pitfalls
@@ -411,6 +490,22 @@ The gate of Q11 is FPGA pin K14 (DVI-A_PSV); when it is not driven, a 100 kΩ re
 With `HDMI=1`, K14 is driven to 1.
 This was not the cause of the missing picture; it avoids leaving the pin in an undefined state.
 Whether the picture appears with K14 undriven has not been tried.
+
+Showing the frame buffer stopped at the following three points.
+
+**Data cache enabled by the loader**: The loader enables the data cache just before it starts a program.
+`fb_animate`, which drew without changing the cache setting, switched FB_BASE while drawn pixels were still in the cache, so the display circuit read old pixels.
+Some frames also took longer to redraw than the vertical blanking interval (about 0.67 ms).
+The bridge's counters showed more than 1,200 reads from the SDRAM in a write-only drawing step (every write was loading a cache line).
+`fb_animate` now writes out the data cache and then turns it off at the start.
+
+**Write buffer and display ordering**: The bridge completes a write as soon as it enters the write buffer.
+Because the display circuit reads the SDRAM directly, switching the display right after the CPU finishes drawing can make it read ahead of writes still in the buffer.
+A read from the SDRAM range waits until the buffer is empty, and `fb_sync()` uses that.
+
+**DDR_CLK limit**: With DDR_CLK at 133 MHz (800 MHz ÷ 6), place-and-route reported timing violations (worst -0.32 ns).
+AE350 sits at the edge of the FPGA, and the path that uses AE350's address-phase signals for the bridge's decision within the same clock cycle does not fit.
+At 100 MHz (÷ 8) there were no violations, and the DDR_CLK Fmax was 115-117 MHz.
 
 Changes to hdl-util/hdmi itself (fixing sync signals that came one pixel early, making it readable by Verilator, and others) are listed in `rtl/vendor/hdmi/README.md`.
 
