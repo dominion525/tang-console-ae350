@@ -5,20 +5,24 @@
 # ビットストリームは <出力先>/ae350_probe/impl/pnr/ae350_probe.fs
 #
 # 構成は環境変数で選ぶ。
-#   (指定なし)       SDRAM コントローラは sdram_bridge (20 MHz 版)
-#   SDRAM=hs         sdram_ctrl_hs + sdram_io (166.7 MHz 版)。DLY=<0〜255> (DQ の入力の IODELAY のステップ数。1 ステップ約 12.5 ps、
-#                    既定値 180)、EDGE=<0|1> (0 は立ち上がり、1 は立ち下がりで取り込む。既定値 0)、RDF=<数> (読み出しワードを
-#                    取り込むタイミング RD_FIRST。既定値 12、立ち下がりなら 11)。タイミング制約は top.sdc から生成し、出力先に置く
+#   (指定なし)       DDR_H* の先はベースボードの SDRAM。コントローラは sdram_ctrl_hs + sdram_io (166.7 MHz)
+#   DDR_DIV=<数>     DDR_CLK の分周比 (DDR_CLK = 800 MHz ÷ DDR_DIV。5 以上)。既定値は、DDR_H* の先が SDRAM の構成で 8 (100 MHz)、
+#                    DDR3 版 (MEM=ddr3、MEM=litedram) で 16 (50 MHz)。DDR_DIV=16 で、SDRAM の構成も 50 MHz に戻せる
+#   DLY=<0〜255>     SDRAM の DQ の入力の IODELAY のステップ数 (1 ステップ約 12.5 ps、既定値 180)
+#   EDGE=<0|1>       SDRAM の読み出しデータを取り込むエッジ (0 は立ち上がり、1 は立ち下がり。既定値 0)
+#   RDF=<数>         SDRAM の読み出しワードを取り込むタイミング RD_FIRST (既定値 12、立ち下がりなら 11)
 #   ROM=loader       ROM に、UART でプログラムを受信して外部メモリで実行するローダー (sw/loader.c) を置く。監視回路
 #                    (ae350_observer) は外す。既定値は ROM=probe (sw/probe.c)
 #   CPU=hazard3      本物の AE350 の代わりに、Hazard3 版 (rtl/AE350_SOC.v) をファブリック上で動かす
 #   CPU=hazard3-fast 同上で、Hazard3 の高速化オプション (分岐予測、高速な乗算器) を有効にする (命令セットは AE350 と同じ)
-#   MEM=ddr3         DDR_H* の先を SOM の DDR3 (Gowin の DDR3 IP、1 GB) にする。SDRAM は使わない (SDRAM=hs とは
-#                    同時に使えない)。IP は ddr3/ddr3_memory_interface.v (IDE の IP Core Generator でリビジョン B 向けに生成したもの)
+#   MEM=ddr3         DDR_H* の先を SOM の DDR3 (Gowin の DDR3 IP、1 GB) にする。SDRAM は使わない。
+#                    IP は ddr3/ddr3_memory_interface.v (IDE の IP Core Generator でリビジョン B 向けに生成したもの)
 #   MEM=litedram     DDR_H* の先を SOM の DDR3 (2 個、1 GB) にし、コントローラを LiteDRAM にする (litedram/tang_console.yml から
 #                    litedram_gen で出力先に生成する)。LITEX_VENV で LiteX の仮想環境を指定する (既定値はない。作り方は README)
 #   PLACE=<値> ROUTE=<値>  配置配線のオプション (Gowin の place_option と route_option)。指定しなければ Gowin の既定値
 #                    (CPU=hazard3 MEM=ddr3 で、配置によって core_clk のタイミング違反が出たため)。Hazard3 版の PLACE の既定値は 2
+#   HDMI=1           HDMI の出力を足す (1280×720 / 60 Hz のテストパターンと、48 kHz の無音の音声。hdl-util/hdmi、HDMI の PLL は
+#                    hdmi_pll.v、ピンは hdmi.cst)。CPU とはつながない。合成は SystemVerilog 2017 の指定で行う
 #   TRACE=1          デバッグ用。ahb_sdram に、受け付けた転送の記録を入れる (rtl/ahb_sdram.v の AHB_SDRAM_TRACE)
 G=${GOWIN_IDE:-/Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/IDE}
 here=$(cd "$(dirname "$0")" && pwd)
@@ -36,16 +40,8 @@ printf '`define AE350_ROM_HEX "%s/build/%s.hex"\n' "$ae" "$rom" > "$out/defines.
 if [ "$rom" = loader ]; then
   printf '`define AE350_NO_OBSERVER\n' >> "$out/defines.v"
 fi
-if [ "${SDRAM:-}" = hs ]; then
-  dly=${DLY:-180}
-  edge=${EDGE:-0}
-  rdf=${RDF:-12}
-  printf '`define SDRAM_HS\n`define SDRAM_IN_DLY %s\n`define SDRAM_CAP_EDGE %s\n`define SDRAM_RD_FIRST %s\n' "$dly" "$edge" "$rdf" >> "$out/defines.v"
-  ruby "$here/make_sdc_hs.rb" "$here/top.sdc" "$out/top.sdc" || exit 1
-  export AE350_SDC="$out/top.sdc"
-else
-  export AE350_SDC="$here/top.sdc"
-fi
+printf '`define SDRAM_IN_DLY %s\n`define SDRAM_CAP_EDGE %s\n`define SDRAM_RD_FIRST %s\n' "${DLY:-180}" "${EDGE:-0}" "${RDF:-12}" >> "$out/defines.v"
+export AE350_SDC="$here/top.sdc"
 # デバッグ用: TRACE=1 で ahb_sdram に転送の記録を入れる (通常のビルドには入れない)
 if [ "${TRACE:-}" = 1 ]; then
   printf '`define AHB_SDRAM_TRACE\n' >> "$out/defines.v"
@@ -65,15 +61,20 @@ export AE350_MEM=${MEM:-sdram}
 case "$AE350_MEM" in
   sdram) ;;
   ddr3)
-    [ "${SDRAM:-}" = hs ] && { echo "MEM=ddr3 and SDRAM=hs cannot be used together" >&2; exit 1; }
     printf '`define AE350_MEM_DDR3\n' >> "$out/defines.v"
     ;;
   litedram)
-    [ "${SDRAM:-}" = hs ] && { echo "MEM=litedram and SDRAM=hs cannot be used together" >&2; exit 1; }
     printf '`define AE350_MEM_LITEDRAM\n' >> "$out/defines.v"
     ;;
   *) echo "MEM must be sdram, ddr3, or litedram" >&2; exit 1 ;;
 esac
+# DDR_CLK の分周比 (SDRAM の構成は 100 MHz。DDR3 版は確かめるまで 50 MHz のまま)
+if [ "$AE350_MEM" = sdram ]; then ddr_div=${DDR_DIV:-8}; else ddr_div=${DDR_DIV:-16}; fi
+printf '`define AE350_DDR_DIV %s\n' "$ddr_div" >> "$out/defines.v"
+if [ "$ddr_div" != 16 ]; then
+  ruby "$here/make_sdc_ddr_clk.rb" "$AE350_SDC" "$out/top_ddr_clk.sdc" "$ddr_div" || exit 1
+  export AE350_SDC="$out/top_ddr_clk.sdc"
+fi
 export AE350_CPU=${CPU:-ae350}
 if [ "$AE350_CPU" = hazard3-fast ]; then
   AE350_CPU=hazard3
@@ -98,6 +99,18 @@ fi
 # ピン制約と配置制約は、出力先に 1 つにまとめて作る (Gowin の合成ツールは制約ファイルを 1 つしか使わず、後から追加したものだけが
 # 有効になる。ddr3.cst だけが有効になり、clk50 と UART が別のピンに配置されたことがあった)。DDR3 版は top.cst に ddr3/ddr3.cst を追加する
 cat "$here/top.cst" > "$out/top_build.cst" || exit 1
+# HDMI=1: HDMI の出力を足す。hdl-util/hdmi の Gowin 向けのシリアライザ (OSER10) は GW_IDE のときだけ入る
+export AE350_HDMI=${HDMI:-}
+case "$AE350_HDMI" in
+  "") ;;
+  1)
+    printf '`define AE350_HDMI\n`define GW_IDE\n' >> "$out/defines.v"
+    cat "$here/hdmi.cst" >> "$out/top_build.cst" || exit 1
+    ruby "$here/make_sdc_hdmi.rb" "$AE350_SDC" "$out/top_hdmi.sdc" || exit 1
+    export AE350_SDC="$out/top_hdmi.sdc"
+    ;;
+  *) echo "HDMI must be 1 or unset" >&2; exit 1 ;;
+esac
 [ "$AE350_MEM" = ddr3 ] && cat "$here/ddr3/ddr3.cst" >> "$out/top_build.cst"
 # LiteDRAM 版: litedram_gen でコントローラを出力先に生成し、ROM の内容を絶対パスで読み込むように書き換える (生成された Verilog は
 # $readmemh を相対パスで書くため)。Gowin のライブラリの環境変数 (下の DYLD_*) を設定する前に実行する

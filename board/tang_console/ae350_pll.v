@@ -5,22 +5,25 @@
 //              分周比は Sipeed の AE350 のデモの PLL (gowin_pll_ae350.v) と同じ。
 //
 //     VCO       = 50 MHz ÷ IDIV (1) × FBDIV (1) × MDIV (16) = 800 MHz
-//     DDR_CLK   = VCO ÷ ODIV0 (16) = 50 MHz
+//     DDR_CLK   = VCO ÷ ODIV0 (DDR_DIV、既定値 16) = 50 MHz
 //     CORE_CLK  = VCO ÷ ODIV1 (CORE_DIV、既定値 1) = 800 MHz
 //     AHB_CLK   = VCO ÷ ODIV2 (AHB_DIV、既定値 8)  = 100 MHz
 //     APB_CLK   = VCO ÷ ODIV3 (8)  = 100 MHz
 //     RTC_CLK   = VCO ÷ ODIV4 (80) = 10 MHz
-//     SDRAM_CLK = VCO ÷ ODIV5 (40) = 20 MHz  (DDR_H* の先の SDRAM コントローラが使う)
+//     (CLKOUT5 は使わない。SDRAM コントローラのクロックは、2 つ目の PLL (sdram_pll.v) が作る)
 //
 // Parameters:
 //   CORE_DIV / AHB_DIV  CORE_CLK と AHB_CLK の分周比 (既定値は本物の AE350 の 800 MHz と 100 MHz。Hazard3 版をファブリック上で
 //                       動かすビルド (build.sh の CPU=hazard3) では、配置配線の Fmax に合わせて下げる)
+//   DDR_DIV             DDR_CLK の分周比 (既定値 16 で 50 MHz。Sipeed のデモと同じ。DDR_CLK は 200 MHz 未満 (Gowin の MUG1031 の
+//                       表 4-1) で、ほかのクロックとは非同期。build.sh は SDRAM の構成で 8 (100 MHz) にする)
 // =============================================================
 `default_nettype none
 
 module ae350_pll #(
     parameter integer CORE_DIV = 1,
-    parameter integer AHB_DIV  = 8
+    parameter integer AHB_DIV  = 8,
+    parameter integer DDR_DIV  = 16
 ) (
     input  wire clkin,      // 50 MHz
     input  wire reset,      // 1 の間、PLL をリセット状態に保つ
@@ -29,12 +32,11 @@ module ae350_pll #(
     output wire ahb_clk,
     output wire apb_clk,
     output wire rtc_clk,
-    output wire sdram_clk,  // 20 MHz
     output wire lock        // 周波数が安定すると 1
 );
-    wire clkout6, clkfbout;
+    wire clkout5, clkout6, clkfbout;
     /* verilator lint_off UNUSEDSIGNAL */
-    wire unused = &{clkout6, clkfbout};   // CLKOUT6 は使わず、帰還は内部 (CLKFB_SEL INTERNAL)
+    wire unused = &{clkout5, clkout6, clkfbout};   // CLKOUT5 と CLKOUT6 は使わず、帰還は内部 (CLKFB_SEL INTERNAL)
     /* verilator lint_on UNUSEDSIGNAL */
 
     PLL #(
@@ -43,7 +45,7 @@ module ae350_pll #(
         .FBDIV_SEL         (1),
         .MDIV_SEL          (16),
         .MDIV_FRAC_SEL     (0),
-        .ODIV0_SEL         (16),
+        .ODIV0_SEL         (DDR_DIV),
         .ODIV0_FRAC_SEL    (0),
         .ODIV1_SEL         (CORE_DIV),
         .ODIV2_SEL         (AHB_DIV),
@@ -56,7 +58,7 @@ module ae350_pll #(
         .CLKOUT2_EN        ("TRUE"),
         .CLKOUT3_EN        ("TRUE"),
         .CLKOUT4_EN        ("TRUE"),
-        .CLKOUT5_EN        ("TRUE"),
+        .CLKOUT5_EN        ("FALSE"),
         .CLKOUT6_EN        ("FALSE"),
         .CLKFB_SEL         ("INTERNAL"),
         .CLKOUT0_DT_DIR    (1'b1),
@@ -135,7 +137,7 @@ module ae350_pll #(
     ) u_pll (
         .LOCK(lock),
         .CLKOUT0(ddr_clk), .CLKOUT1(core_clk), .CLKOUT2(ahb_clk), .CLKOUT3(apb_clk),
-        .CLKOUT4(rtc_clk), .CLKOUT5(sdram_clk), .CLKOUT6(clkout6), .CLKFBOUT(clkfbout),
+        .CLKOUT4(rtc_clk), .CLKOUT5(clkout5), .CLKOUT6(clkout6), .CLKFBOUT(clkfbout),
         .CLKIN(clkin), .CLKFB(1'b0),
         .RESET(reset), .PLLPWD(1'b0), .RESET_I(1'b0), .RESET_O(1'b0),
         .FBDSEL(6'd0), .IDSEL(6'd0), .MDSEL(7'd0), .MDSEL_FRAC(3'd0),

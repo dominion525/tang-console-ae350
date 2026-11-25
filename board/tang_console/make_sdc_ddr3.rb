@@ -9,12 +9,12 @@ src, dst = ARGV
 abort 'usage: ruby make_sdc_ddr3.rb <input sdc> <output sdc>' unless dst
 
 s = File.read(src)
-# SDRAM の 20 MHz のクロック (clk20) は DDR3 版では使わないので、合成で配線が消える。その制約と、非同期グループの
-# sdram_clk を外す (make_sdc_hazard3.rb が rtc_clk を外すのと同じ)
-s.sub!(/^create_generated_clock -name sdram_clk .*\n/, '') or abort 'the input sdc has no sdram_clk constraint'
-s.sub!(' -group [get_clocks {sdram_clk}]', '') or abort 'the clock groups in the input sdc do not include sdram_clk'
-# Hazard3 版 (make_sdc_hazard3.rb) が追加する、sdram_clk のクリティカルパスをレポートに出す行も外す
-s.gsub!(/^report_timing .*\{sdram_clk\}.*\n/, '')
+# SDRAM コントローラのクロック (s_clk) は、DDR3 版では PLL (sdram_pll) を置かないのでない。その制約と、非同期グループの
+# s_clk を外す (make_sdc_hazard3.rb が rtc_clk を外すのと同じ)
+s.sub!(/^create_generated_clock -name s_clk .*\n/, '') or abort 'the input sdc has no s_clk constraint'
+s.sub!(' -group [get_clocks {s_clk}]', '') or abort 'the clock groups in the input sdc do not include s_clk'
+# Hazard3 版 (make_sdc_hazard3.rb) が追加する、s_clk のクリティカルパスをレポートに出す行も外す
+s.gsub!(/^report_timing .*\{s_clk\}.*\n/, '')
 s.sub!(/^(set_clock_groups -asynchronous .*)$/) do
   "#{Regexp.last_match(1)} -group [get_clocks {ddr3_mem}] -group [get_clocks {ddr3_sys}]"
 end or

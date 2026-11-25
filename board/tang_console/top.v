@@ -5,12 +5,13 @@
 //              既定の構成では、命令はブロック RAM の ROM から読み、データとスタックは AE350 の内蔵 DLM に置く
 //              (sw/board.ld)。値は sw/probe.c が UART (USB シリアル、1,250,000 bps) に出力する。
 //
-//   50 MHz ─▶ ae350_pll ─▶ CORE 800 / DDR 50 / AHB 100 / APB 100 / RTC 10 MHz (Sipeed のデモと同じ)
+//   50 MHz ─▶ ae350_pll ─▶ CORE 800 / DDR 100 (DDR_H* の先が SDRAM の構成。DDR3 版は 50) / AHB 100 / APB 100 / RTC 10 MHz
+//                          (DDR_CLK の分周比はマクロ AE350_DDR_DIV。build.sh の DDR_DIV)
 //   shell_top (tb/shell_top.v。シミュレーションと同じ回路で、合成では本物の AE350_SOC につながる)
 //     ROM_H*   ─▶ ahb_rom (16 KB、内容は ROM_HEX)
 //     DDR_H*   ─▶ ahb_sdram ─▶ SDRAM コントローラ ─▶ ベースボードの SDRAM0 (32 MB)
-//                  SDRAM コントローラは、マクロ SDRAM_HS が未定義なら sdram_bridge (20 MHz 版)、定義されていれば sdram_ctrl_hs +
-//                  sdram_io (166.7 MHz 版。2 つ目の PLL を使う。読み出しデータの取り込みタイミングは SDRAM_IN_DLY、SDRAM_CAP_EDGE、SDRAM_RD_FIRST)
+//                  SDRAM コントローラは sdram_ctrl_hs + sdram_io (166.7 MHz。2 つ目の PLL を使う。読み出しデータの取り込みタイミングは
+//                  SDRAM_IN_DLY、SDRAM_CAP_EDGE、SDRAM_RD_FIRST)
 //                  (MEM=ddr3 と MEM=litedram では、DDR_H* の先を SOM の DDR3 にする。下の各節を参照)
 //     EXTM_H*  ─▶ 使わない
 //
@@ -19,9 +20,20 @@
 //   input  wire btn0_n    ボタン 0 (押すとリセット)
 //   input  wire uart_rx   USB シリアルの受信 (何か 1 文字送ると、probe.c がもう一度出力する)
 //   output wire uart_tx   USB シリアルの送信
+//   HDMI=1 (マクロ AE350_HDMI) のとき: tmds_clk_p / tmds_clk_n / tmds_d_p[2:0] / tmds_d_n[2:0]  HDMI の出力、hdmi_psv  HDMI の線の 499 Ω の有効化
 // =============================================================
 
 `default_nettype none
+
+// HDMI=1 で DDR_H* の先が SDRAM の構成では、フレームバッファの表示の回路 (rtl/fb_display.v) を置く。DDR3 版 (MEM=ddr3、
+// MEM=litedram) の HDMI はカラーバーだけを出す (表示の回路とメモリの読み出しの回路は、DDR3 版にはまだない)
+`ifdef AE350_HDMI
+`ifndef AE350_MEM_DDR3
+`ifndef AE350_MEM_LITEDRAM
+`define AE350_FB
+`endif
+`endif
+`endif
 
 module ae350_probe_top #(
 `ifdef AE350_ROM_HEX
@@ -84,6 +96,15 @@ module ae350_probe_top #(
     output wire        ddram_reset_n,
     output wire        ddram_we_n
 `endif
+`ifdef AE350_HDMI
+    ,
+    // HDMI の出力 (ピンは hdmi.cst。LVCMOS33D の ELVDS_OBUF で出す)
+    output wire        tmds_clk_p,
+    output wire        tmds_clk_n,
+    output wire [2:0]  tmds_d_p,
+    output wire [2:0]  tmds_d_n,
+    output wire        hdmi_psv      // 1 で、HDMI の線を 499 Ω で GND につなぐ (ボードの Q11。回路図の DVI-A_PSV)
+`endif
 );
 
     wire core_clk;
@@ -91,9 +112,7 @@ module ae350_probe_top #(
     wire ahb_clk;
     wire apb_clk;
     wire rtc_clk;
-    wire clk20;
     wire lock;
-    wire sclk;              // SDRAM コントローラのクロック (20 MHz 版は clk20、166.7 MHz 版は s_clk)
     wire lock_all;
 
 `ifdef AE350_CPU_HAZARD3
@@ -104,7 +123,12 @@ module ae350_probe_top #(
     localparam integer CORE_DIV = 1;
     localparam integer AHB_DIV  = 8;
 `endif
-    ae350_pll #(.CORE_DIV (CORE_DIV), .AHB_DIV (AHB_DIV)) u_pll (
+`ifdef AE350_DDR_DIV
+    localparam integer DDR_DIV = `AE350_DDR_DIV;
+`else
+    localparam integer DDR_DIV = 16;
+`endif
+    ae350_pll #(.CORE_DIV (CORE_DIV), .AHB_DIV (AHB_DIV), .DDR_DIV (DDR_DIV)) u_pll (
         .clkin    (clk50),
         .reset    (1'b0),
         .core_clk (core_clk),
@@ -112,7 +136,6 @@ module ae350_probe_top #(
         .ahb_clk  (ahb_clk),
         .apb_clk  (apb_clk),
         .rtc_clk  (rtc_clk),
-        .sdram_clk (clk20),
         .lock     (lock)
     );
 
@@ -129,8 +152,12 @@ module ae350_probe_top #(
         .rst_n (rst_n)
     );
 
-`ifdef SDRAM_HS
-    // 実機で値を振って決めた値 (立ち上がり、RD_FIRST 12 で、動作する遅延は約 45〜310 ステップ。その中央)。
+`ifdef AE350_MEM_DDR3
+    assign lock_all = lock;
+`elsif AE350_MEM_LITEDRAM
+    assign lock_all = lock;
+`else
+    // DDR_H* の先が SDRAM の構成。実機で値を振って決めた値 (立ち上がり、RD_FIRST 12 で、動作する遅延は約 45〜310 ステップ。その中央)。
     // シミュレーション (ボード上の遅延 0) より、実機ではデータが約 1 サイクル遅れて届く
     `ifndef SDRAM_IN_DLY
         `define SDRAM_IN_DLY 180
@@ -141,19 +168,12 @@ module ae350_probe_top #(
     `ifndef SDRAM_RD_FIRST
         `define SDRAM_RD_FIRST 12
     `endif
-    // 166.7 MHz 版のクロック (2 つ目の PLL。VCO 1000 MHz)
+    // SDRAM コントローラのクロック (2 つ目の PLL。VCO 1000 MHz)
     wire s_clk, lock_hs;
     sdram_pll u_sdram_pll (
         .clkin (clk50), .reset (1'b0), .s_clk (s_clk), .lock (lock_hs)
     );
-    assign sclk     = s_clk;
     assign lock_all = lock & lock_hs;
-    /* verilator lint_off UNUSEDSIGNAL */
-    wire unused_clk20 = clk20;   // 20 MHz 版の SDRAM のクロック (166.7 MHz 版では使わない)
-    /* verilator lint_on UNUSEDSIGNAL */
-`else
-    assign sclk     = clk20;
-    assign lock_all = lock;
 `endif
 
     wire        hresetn;
@@ -184,7 +204,7 @@ module ae350_probe_top #(
     );
 
 // ---------------------------------------------------------
-// DDR_H* の先: SDRAM (ahb_sdram → sdram_bridge。シミュレーションの tb_mem の TB_SDRAM と同じ構成)
+// DDR_H* の先: SDRAM (ahb_sdram → sdram_ctrl_hs → sdram_io。シミュレーションの tb_mem の TB_SDRAM と同じ構成)
 // ---------------------------------------------------------
 wire [31:0]  ddr_haddr;
 wire [1:0]   ddr_htrans;
@@ -195,19 +215,14 @@ wire [63:0]  ddr_hrdata;
 wire         ddr_hready;
 wire         ddr_hresp;
 
-// リセットは、DDR_CLK と SDRAM のクロックのそれぞれで、解除のときだけ同期させる。ahb_sdram は非同期、sdram_bridge と
-// sdram_ctrl_hs は同期でリセットを受ける (tb/tb_mem.v の TB_SDRAM と同じ構成)
+// リセットは、DDR_CLK と SDRAM のクロックのそれぞれで、解除のときだけ同期させる。ahb_sdram は非同期、sdram_ctrl_hs は同期で
+// リセットを受ける (tb/tb_mem.v の TB_SDRAM と同じ構成。SDRAM 側は、下の SDRAM の構成の中で作る)
 /* verilator lint_off SYNCASYNCNET */
 reg [1:0] ddr_rst_s;
-reg [1:0] sdram_rst_s;
 /* verilator lint_on SYNCASYNCNET */
 always @(posedge ddr_clk or negedge rst_n) begin
     if (!rst_n) ddr_rst_s <= 2'b00;
     else        ddr_rst_s <= {ddr_rst_s[0], 1'b1};
-end
-always @(posedge sclk or negedge rst_n) begin
-    if (!rst_n) sdram_rst_s <= 2'b00;
-    else        sdram_rst_s <= {sdram_rst_s[0], 1'b1};
 end
 
 `ifdef AE350_MEM_DDR3
@@ -318,9 +333,6 @@ assign sdram_ras_n = 1'b1;
 assign sdram_cas_n = 1'b1;
 assign sdram_we_n  = 1'b1;
 assign sdram_dqm   = 2'b11;
-/* verilator lint_off UNUSEDSIGNAL */
-wire unused_ddr3 = &{1'b0, sclk, sdram_rst_s[1]};
-/* verilator lint_on UNUSEDSIGNAL */
 `elsif AE350_MEM_LITEDRAM
 // ---------------------------------------------------------
 // DDR_H* の先: LiteDRAM の DDR3 コントローラ (build.sh の MEM=litedram。ahb_litedram → litedram_core)
@@ -410,15 +422,22 @@ assign sdram_ras_n = 1'b1;
 assign sdram_cas_n = 1'b1;
 assign sdram_we_n  = 1'b1;
 assign sdram_dqm   = 2'b11;
-/* verilator lint_off UNUSEDSIGNAL */
-wire unused_litedram = &{1'b0, sclk, sdram_rst_s[1]};
-/* verilator lint_on UNUSEDSIGNAL */
 `else
+// SDRAM 側のリセット (s_clk で解除を同期させる)
+/* verilator lint_off SYNCASYNCNET */
+reg [1:0] sdram_rst_s;
+/* verilator lint_on SYNCASYNCNET */
+always @(posedge s_clk or negedge rst_n) begin
+    if (!rst_n) sdram_rst_s <= 2'b00;
+    else        sdram_rst_s <= {sdram_rst_s[0], 1'b1};
+end
+
 wire          s_fill_valid, s_fill_ready, s_we, s_wready, s_init_done;
 wire [20:0]   s_fill_line;
 wire [127:0]  s_fill_data;
 wire [24:0]   s_waddr;
-wire [7:0]    s_wdata;
+wire [63:0]   s_wdata;
+wire [7:0]    s_wmask;
 
 ahb_sdram #(.SDRAM_AW(25)) u_ahb_sdram (
     .hclk       (ddr_clk),
@@ -431,7 +450,7 @@ ahb_sdram #(.SDRAM_AW(25)) u_ahb_sdram (
     .hrdata     (ddr_hrdata),
     .hreadyout  (ddr_hready),
     .hresp      (ddr_hresp),
-    .sclk       (sclk),
+    .sclk       (s_clk),
     .srst_n     (sdram_rst_s[1]),
     .fill_valid (s_fill_valid),
     .fill_line  (s_fill_line),
@@ -440,20 +459,43 @@ ahb_sdram #(.SDRAM_AW(25)) u_ahb_sdram (
     .we         (s_we),
     .waddr      (s_waddr),
     .wdata      (s_wdata),
+    .wmask      (s_wmask),
     .wready     (s_wready)
 );
 
-`ifdef SDRAM_HS
-// 166.7 MHz 版 (コントローラは sdram_ctrl_hs、ピンは sdram_io。SDRAM のクロックも sdram_io が出力する)
+// コントローラは sdram_ctrl_hs、ピンは sdram_io (SDRAM のクロックも sdram_io が出力する)
 wire [3:0]  io_cmd;
 wire [12:0] io_addr;
 wire [1:0]  io_ba, io_dqm;
 wire [15:0] io_dq_out, io_dq_in;
 wire        io_dq_oe;
+wire        s_dr_busy, s_dr_wvalid, s_dr_done;
+wire [15:0] s_dr_wdata;
+wire        fb_dr_start;
+wire [20:0] fb_dr_addr, fb_dr_bursts;
+`ifdef AE350_FB
+// フレームバッファの表示の回路の、SDRAM の版の読み出しの回路 (表示の回路は下の HDMI の節)
+wire        fb_mreq, fb_lb_we, fb_mdone;
+wire [24:0] fb_mreq_addr;
+wire [10:0] fb_lb_waddr;
+wire [15:0] fb_lb_wdata;
+fb_sdram_reader u_fb_reader (
+    .clk (s_clk), .rst_n (sdram_rst_s[1]), .mreq (fb_mreq), .mreq_addr (fb_mreq_addr), .lb_we (fb_lb_we), .lb_waddr (fb_lb_waddr),
+    .lb_wdata (fb_lb_wdata), .mdone (fb_mdone), .dr_start (fb_dr_start), .dr_addr (fb_dr_addr), .dr_bursts (fb_dr_bursts),
+    .dr_busy (s_dr_busy), .dr_wvalid (s_dr_wvalid), .dr_wdata (s_dr_wdata), .dr_done (s_dr_done)
+);
+`else
+// 表示の回路がない構成では、表示用の読み出しのポートは使わない
+assign fb_dr_start  = 1'b0;
+assign fb_dr_addr   = 21'd0;
+assign fb_dr_bursts = 21'd0;
+`endif
 
 sdram_ctrl_hs #(.ADDR_WIDTH (25), .RD_FIRST (`SDRAM_RD_FIRST)) u_sdram_ctrl (
     .clk (s_clk), .rst_n (sdram_rst_s[1]), .fill_valid (s_fill_valid), .fill_line (s_fill_line), .fill_ready (s_fill_ready),
-    .fill_data (s_fill_data), .we (s_we), .waddr (s_waddr), .wdata (s_wdata), .wready (s_wready), .init_done (s_init_done),
+    .fill_data (s_fill_data), .we (s_we), .waddr (s_waddr), .wdata (s_wdata), .wmask (s_wmask), .wready (s_wready), .init_done (s_init_done),
+    .dr_start (fb_dr_start), .dr_addr (fb_dr_addr), .dr_bursts (fb_dr_bursts), .dr_busy (s_dr_busy), .dr_wvalid (s_dr_wvalid), .dr_wdata (s_dr_wdata),
+    .dr_done (s_dr_done),
     .io_cmd (io_cmd), .io_addr (io_addr), .io_ba (io_ba), .io_dqm (io_dqm), .io_dq_out (io_dq_out), .io_dq_oe (io_dq_oe),
     .io_dq_in (io_dq_in)
 );
@@ -464,38 +506,25 @@ sdram_io #(.IN_DLY (`SDRAM_IN_DLY), .CAP_EDGE (`SDRAM_CAP_EDGE)) u_sdram_io (
     .sdram_clk (sdram_clk), .sdram_cs_n (sdram_cs_n), .sdram_ras_n (sdram_ras_n), .sdram_cas_n (sdram_cas_n),
     .sdram_we_n (sdram_we_n), .sdram_dqm (sdram_dqm)
 );
-`else
-sdram_bridge #(.ADDR_WIDTH(25)) u_sdram_bridge (
-    .clk         (clk20),
-    .rst_n       (sdram_rst_s[1]),
-    .fill_valid  (s_fill_valid),
-    .fill_line   (s_fill_line),
-    .fill_ready  (s_fill_ready),
-    .fill_data   (s_fill_data),
-    .we          (s_we),
-    .waddr       (s_waddr),
-    .wdata       (s_wdata),
-    .wready      (s_wready),
-    .init_done   (s_init_done),
-    .sdram_dq    (sdram_dq),
-    .sdram_addr  (sdram_addr),
-    .sdram_ba    (sdram_ba),
-    .sdram_cs_n  (sdram_cs_n),
-    .sdram_ras_n (sdram_ras_n),
-    .sdram_cas_n (sdram_cas_n),
-    .sdram_we_n  (sdram_we_n),
-    .sdram_dqm   (sdram_dqm)
-);
-
-// SDRAM はコマンドの半サイクル後に取り込む (rtl/sdram_bridge.v)
-assign sdram_clk = ~clk20;
-
-`endif
 
 /* verilator lint_off UNUSEDSIGNAL */
-wire unused_sdram = s_init_done;
+wire unused_sdram = &{1'b0, s_init_done, s_dr_busy, s_dr_wvalid, s_dr_done, s_dr_wdata};   // 表示の回路がない構成では、dr_* は使わない
 /* verilator lint_on UNUSEDSIGNAL */
 `endif   // AE350_MEM_DDR3
+
+    // APB の 0xF800_2000〜0xF800_2FFF (フレームバッファの表示の回路の制御レジスタ。表示の回路がない構成では PSLVERR を返す)
+    wire        fb_psel, fb_penable, fb_pwrite;
+    wire [31:0] fb_paddr, fb_pwdata, fb_prdata;
+    wire [3:0]  fb_pstrb;
+    wire        fb_pready, fb_pslverr;
+`ifndef AE350_FB
+    assign fb_prdata  = 32'd0;
+    assign fb_pready  = 1'b1;
+    assign fb_pslverr = 1'b1;
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire unused_fb_apb = &{1'b0, fb_psel, fb_penable, fb_pwrite, fb_paddr, fb_pwdata, fb_pstrb};
+    /* verilator lint_on UNUSEDSIGNAL */
+`endif
 
     /* verilator lint_off PINCONNECTEMPTY */
     // UART は 1,250,000 bps (APB_CLK 100 MHz ÷ 8 ÷ 10。ボードの USB シリアル (BL616) を通ることを確かめた速度)
@@ -513,6 +542,15 @@ wire unused_sdram = s_init_done;
         .dbg_apb_access (apb_access),
         .dbg_apb_paddr  (apb_paddr),
         .dbg_misc       (misc),
+        .fb_psel        (fb_psel),
+        .fb_penable     (fb_penable),
+        .fb_pwrite      (fb_pwrite),
+        .fb_paddr       (fb_paddr),
+        .fb_pwdata      (fb_pwdata),
+        .fb_pstrb       (fb_pstrb),
+        .fb_prdata      (fb_prdata),
+        .fb_pready      (fb_pready),
+        .fb_pslverr     (fb_pslverr),
 
         .rom_haddr      (rom_haddr),
         .rom_htrans     (rom_htrans),
@@ -579,6 +617,102 @@ wire unused_sdram = s_init_done;
     wire obs_txd;
     wire obs_active;
     assign uart_tx = obs_active ? obs_txd : cpu_txd;
+`endif
+
+`ifdef AE350_HDMI
+// ---------------------------------------------------------
+// HDMI の出力 (build.sh の HDMI=1)。1280×720 / 60 Hz のテストパターン (rtl/hdmi_test_pattern.v) と 48 kHz の試験音
+// (rtl/hdmi_audio_tone.v。振幅 0 の無音) を、hdl-util/hdmi (rtl/vendor/hdmi/) で出す。CPU とはつながず、HDMI の PLL のクロックだけで動く
+// ---------------------------------------------------------
+    wire hdmi_clk;       // 74.25 MHz (画素クロック)
+    wire hdmi_clk_x5;    // 371.25 MHz (OSER10 の FCLK)
+    wire hdmi_lock;
+
+    hdmi_pll u_hdmi_pll (
+        .clkin        (clk50),
+        .reset        (1'b0),
+        .clk_pixel    (hdmi_clk),
+        .clk_pixel_x5 (hdmi_clk_x5),
+        .lock         (hdmi_lock)
+    );
+
+    // HDMI の PLL がロックするまでリセットする (解除は画素クロックに同期させる)。hdmi.sv は 1 でリセット
+    wire hdmi_rst_n;
+    ae350_reset_sync u_hdmi_rst (.clk (hdmi_clk), .rst_n_in (hdmi_lock), .rst_n_out (hdmi_rst_n));
+    wire hdmi_reset = ~hdmi_rst_n;
+
+    wire               hdmi_clk_audio;
+    wire signed [15:0] hdmi_sample;
+    // 試験音は無音にする (振幅 0。HDMI の音声のパケットは送り続ける)。振幅 2048 の 1 kHz は、実機でモニタから大きな音で鳴った
+    hdmi_audio_tone #(.AMPLITUDE (0)) u_hdmi_tone (
+        .clk       (hdmi_clk),
+        .reset     (hdmi_reset),
+        .clk_audio (hdmi_clk_audio),
+        .sample    (hdmi_sample)
+    );
+
+    wire [15:0] hdmi_audio_word [1:0];
+    assign hdmi_audio_word[0] = hdmi_sample;
+    assign hdmi_audio_word[1] = hdmi_sample;
+
+    wire [10:0] hdmi_cx;
+    wire [23:0] hdmi_rgb;
+`ifndef AE350_FB
+    hdmi_test_pattern u_hdmi_pattern (.clk (hdmi_clk), .cx (hdmi_cx), .rgb (hdmi_rgb));
+`endif
+
+    wire [2:0] tmds;
+    wire       tmds_clock;
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire [9:0]  hdmi_cy;            // 縦の座標 (表示の回路が使う。テストパターンは横の座標だけで色を決める)
+    wire [10:0] hdmi_frame_width;
+    wire [9:0]  hdmi_frame_height;
+    wire [10:0] hdmi_screen_width;
+    wire [9:0]  hdmi_screen_height;
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    hdmi #(
+        .VIDEO_ID_CODE      (4),
+        .VIDEO_REFRESH_RATE (60.0),
+        .AUDIO_RATE         (48000),
+        .AUDIO_BIT_WIDTH    (16)
+    ) u_hdmi (
+        .clk_pixel_x5      (hdmi_clk_x5),
+        .clk_pixel         (hdmi_clk),
+        .clk_audio         (hdmi_clk_audio),
+        .reset             (hdmi_reset),
+        .serializer_reset  (~hdmi_lock),   // OSER10 は PLL のロックで非同期にリセットする (rtl/vendor/hdmi/hdmi.sv の serializer_reset)
+        .rgb               (hdmi_rgb),
+        .audio_sample_word (hdmi_audio_word),
+        .tmds              (tmds),
+        .tmds_clock        (tmds_clock),
+        .cx                (hdmi_cx),
+        .cy                (hdmi_cy),
+        .frame_width       (hdmi_frame_width),
+        .frame_height      (hdmi_frame_height),
+        .screen_width      (hdmi_screen_width),
+        .screen_height     (hdmi_screen_height)
+    );
+
+`ifdef AE350_FB
+    // フレームバッファの表示の回路 (CTRL の ENABLE が 0 の間と、読み込みが間に合わなかったラインはカラーバー)
+    fb_display u_fb (
+        .pclk (apb_clk), .presetn (presetn), .psel (fb_psel), .penable (fb_penable), .pwrite (fb_pwrite), .paddr (fb_paddr),
+        .pwdata (fb_pwdata), .pstrb (fb_pstrb), .prdata (fb_prdata), .pready (fb_pready), .pslverr (fb_pslverr),
+        .vclk (hdmi_clk), .vrst_n (hdmi_rst_n), .cx (hdmi_cx), .cy (hdmi_cy), .rgb (hdmi_rgb),
+        .mclk (s_clk), .mrst_n (sdram_rst_s[1]), .mreq (fb_mreq), .mreq_addr (fb_mreq_addr), .lb_we (fb_lb_we),
+        .lb_waddr (fb_lb_waddr), .lb_wdata (fb_lb_wdata), .mdone (fb_mdone)
+    );
+`endif
+    // ボードの HDMI の線の 499 Ω (AC 結合のコンデンサの後ろで GND へ) を有効にする。駆動しないと、ボードの 100 kΩ (R106) で切れる
+    assign hdmi_psv = 1'b1;
+
+    // 擬似差動の出力バッファ (クロックとデータ 3 レーン)
+    ELVDS_OBUF u_tmds_obuf [3:0] (
+        .I  ({tmds_clock, tmds}),
+        .O  ({tmds_clk_p, tmds_d_p}),
+        .OB ({tmds_clk_n, tmds_d_n})
+    );
 `endif
 
 endmodule

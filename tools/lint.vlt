@@ -1,14 +1,19 @@
 `verilator_config
 
-// 取り込んだ外部のコードで、内容を変えないファイルは lint の対象にしない
+// 取り込んだ外部のコードは lint の対象にしない (Hazard3 と hdmi は一部を変えている。変更点はそれぞれの README)
 //   hazard3/hdl/              Hazard3
 //   rtl/vendor/verilog-uart/  UART の送信回路と受信回路
+//   rtl/vendor/hdmi/          HDMI の出力回路 (hdl-util/hdmi)
 lint_off -file "*hazard3/hdl/*"
 lint_off -file "*vendor/verilog-uart/*"
+lint_off -file "*vendor/hdmi/*"
+// COMBDLY (always_comb の中の <=) は、ファイル単位の lint_off では抑止されないので、規則を指定して抑止する
+lint_off -rule COMBDLY -file "*vendor/hdmi/*"
 
-// 他の設計から流用したファイル (DDR_H* の先の SDRAM の経路)。sdram_bridge は流用したときの書き方 (FF の初期値) のまま、
-// SDRAM のモデルは取り込んだ外部のコード
-lint_off -rule PROCASSINIT -file "*rtl/sdram_bridge.v"
+// Sipeed のサンプルから取り込んだ PLL の初期化回路 (board/tang_console/ddr3/pll_init.v。内容は元のまま)。HDMI の PLL でも使う
+lint_off -file "*ddr3/pll_init.v"
+
+// SDRAM のモデル (取り込んだ外部のコード)
 lint_off -file "*zeitlos/sdram_model.v"
 
 // テストベンチ用の Gowin の IO プリミティブのモデル (Gowin のモデルと同じく、FF の初期値を持ち、1 つのファイルに 3 つのプリミティブを置く)

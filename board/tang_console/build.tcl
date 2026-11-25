@@ -6,6 +6,10 @@ set out  $::env(AE350_BOARD_BUILD)
 create_project -name ae350_probe -dir $out -pn GW5AST-LV138PG484AC1/I0 -device_version B -force
 set_option -top_module ae350_probe_top
 set_option -verilog_std v2001
+# HDMI=1 (build.sh) のときは、hdl-util/hdmi (SystemVerilog) を読むので、プロジェクト全体を SystemVerilog 2017 にする
+# (Gowin の -verilog_std はプロジェクトに 1 つで、ファイルごとには指定できない)
+set hdmi [expr {[info exists ::env(AE350_HDMI)] && $::env(AE350_HDMI) eq "1"}]
+if {$hdmi} { set_option -verilog_std sysv2017 }
 set_option -print_all_synthesis_warning 1
 set_option -gen_text_timing_rpt 1
 # 配置配線のオプション (build.sh の PLACE と ROUTE。空なら Gowin の既定値)
@@ -14,7 +18,6 @@ if {[info exists ::env(AE350_ROUTE_OPTION)] && $::env(AE350_ROUTE_OPTION) ne ""}
 set_option -include_path "$ae/hazard3/hdl"
 add_file $out/defines.v
 foreach f {apb_uart uart_reset_seq apb_gpint apb_paddr_probe apb_reg_slice ahb_reg_slice ahb_sram ahb_rom ahb_sdram sdram_ctrl_hs sdram_io} { add_file $ae/rtl/$f.v }
-add_file $ae/rtl/sdram_bridge.v
 add_file $ae/rtl/vendor/verilog-uart/uart_tx.v
 add_file $ae/rtl/vendor/verilog-uart/uart_rx.v
 add_file $ae/rtl/reset_gen.v
@@ -33,6 +36,21 @@ add_file $here/ae350_pll.v
 add_file $here/sdram_pll.v
 add_file $here/ae350_observer.v
 add_file $here/top.v
+# HDMI=1 (build.sh) のときは、HDMI の出力回路 (hdl-util/hdmi)、テストパターン、フレームバッファの表示の回路、試験音、HDMI の PLL を足す
+if {$hdmi} {
+    foreach f {hdmi tmds_channel serializer packet_picker packet_assembler audio_clock_regeneration_packet audio_sample_packet
+               audio_info_frame auxiliary_video_information_info_frame source_product_description_info_frame} { add_file $ae/rtl/vendor/hdmi/$f.sv }
+    add_file $ae/rtl/hdmi_test_pattern.v
+    # フレームバッファの表示の回路 (DDR_H* の先が SDRAM の構成で使う。top.v の AE350_FB)
+    add_file $ae/rtl/fb_display.v
+    add_file $ae/rtl/fb_sdram_reader.v
+    add_file $ae/rtl/hdmi_audio_tone.v
+    add_file $here/hdmi_pll.v
+    # HDMI の PLL の ICP と LPF を決める PLL_INIT (MEM=ddr3 のときは下で足す)
+    if {!([info exists ::env(AE350_MEM)] && $::env(AE350_MEM) eq "ddr3")} { add_file $here/ddr3/pll_init.v }
+    # HDMI のリセットの同期化に使う (Hazard3 版のビルドでは上で足している)
+    if {!([info exists ::env(AE350_CPU)] && $::env(AE350_CPU) eq "hazard3")} { add_file $ae/rtl/ae350_reset_sync.v }
+}
 # MEM=ddr3 (build.sh) のときは、DDR_H* の先を DDR3 にする (ahb_ddr3、Gowin の DDR3 IP、DDR3 の PLL)
 if {[info exists ::env(AE350_MEM)] && $::env(AE350_MEM) eq "ddr3"} {
     add_file $ae/rtl/ahb_ddr3.v

@@ -1,6 +1,6 @@
 // =============================================================
 // File:        tb/gowin_io_models.v
-// Role:        シミュレーション用の、Gowin の IO プリミティブ (ODDR、IDDR、IOBUF、IODELAY) のモデル。
+// Role:        シミュレーション用の、Gowin の IO プリミティブ (ODDR、IDDR、IOBUF、IODELAY、ELVDS_OBUF) のモデル。
 //              Gowin のモデル (simlib/gw5a/prim_sim.v) は手続き内の assign と deassign を使っていて Verilator で動かないので、
 //              同じ遅延の動作だけを写した。GSR (グローバルリセット) と INIT 以外のパラメータは持たない。
 //              実機では使わない (合成では Gowin の本物のプリミティブになる)。
@@ -10,6 +10,7 @@
 //   IDDR   D を立ち上がりで取り込んで 2 サイクル後に Q0 に、立ち下がりで取り込んで Q1 に出力する
 //   IOBUF  OEN が 0 のとき I をピンに出力する。O はピンの値
 //   IODELAY  DI を C_STATIC_DLY × 12.5 ps 遅らせて DO に出力する (静的な設定だけ。UG304 4.4.1 の「1 ステップ約 12.5 ps」)
+//   ELVDS_OBUF  I を O に、反転した値を OB に出力する (HDMI の出力。make lint のボード構成で使う)
 // =============================================================
 
 `default_nettype none
@@ -73,6 +74,15 @@ module IDDR #(
 
     assign Q0 = q0_r;
     assign Q1 = q1_r;
+endmodule
+
+module ELVDS_OBUF (
+    output wire O,
+    output wire OB,
+    input  wire I
+);
+    assign O  = I;
+    assign OB = ~I;
 endmodule
 
 module IOBUF (

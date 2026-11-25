@@ -5,7 +5,7 @@
 //              PLL_R[0]、VCO 800 MHz) とは別に置く (800 MHz の VCO からは 166.7 MHz を生成できないため)。
 //              パラメータの並びは ae350_pll.v と同じ。
 //
-//     VCO   = 50 MHz ÷ IDIV (1) × FBDIV (1) × MDIV (20) = 1000 MHz   (DS981 3.10.3 の範囲 800〜2000 MHz に収まる)
+//     VCO   = 50 MHz ÷ IDIV (1) × FBDIV (1) × MDIV (20) = 1000 MHz   (DS981-1.1.3E の Table 3-42 の範囲 650〜1300 MHz に収まる。PFD 50 MHz も 19〜81.25 MHz に収まる)
 //     s_clk = VCO ÷ ODIV0 (6) = 166.7 MHz   コントローラのクロック (W9825G6KH-6 の CL 3 の最小周期 6 ns)
 //
 //     読み出しデータを取り込むタイミングは、PLL の位相ではなく、sdram_io の IODELAY と取り込むエッジで決める (1 本のピンの
