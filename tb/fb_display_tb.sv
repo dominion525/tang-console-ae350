@@ -17,6 +17,11 @@
 //   フレーム 5  ライン 100 の要求だけを、テストベンチが 18 µs 遅らせる。ライン 100 だけカラーバーで、ライン 101 からは B に
 //               戻る。UNDERRUN が 1 になり、1 を書くと 0 に戻る
 //   フレーム 6  ENABLE 0。全画素がカラーバーで、読み出しの要求が出ない
+//   フレーム 7  全画素がカラーバー。CTRL に 1 を書く (CTRL と FB_BASE の書き込みが 6 回目で、書いたことを知らせるトグルが 0 に戻る)
+//   フレーム 8  全画素が B。ライン 300 で、表示用の読み出しの最中に、CPU のリセット (PRESETN) だけをかける (ROM のローダーの
+//               リセットシーケンスと同じ。画素クロックと SDRAM のクロックの元のリセットはかけない)。リセットの後のこのフレームは比べない
+//   フレーム 9  全画素がカラーバーで、読み出しの要求が出ない。レジスタはリセットの後の値 (STATUS は 0、FRAME はリセットの後のフレーム 8 のライン 720 で増えた 1)。CTRL に 1 を書く
+//   フレーム 10 全画素が A。UNDERRUN が 0 (読み出しの最中のリセットの後も、正しく読み込める)
 //
 // 実行: make test-fb-display
 // =============================================================
@@ -34,9 +39,9 @@ module fb_display_tb;
     // ---------------------------------------------------------
     // クロックとリセット
     // ---------------------------------------------------------
-    logic vclk, sclk, pclk, rst_n;
+    logic vclk, sclk, pclk, rst_n, cpu_rst_n;   // cpu_rst_n: CPU のリセット (PRESETN だけにかかる)
     initial begin
-        vclk = 1'b0; sclk = 1'b0; pclk = 1'b0; rst_n = 1'b0;
+        vclk = 1'b0; sclk = 1'b0; pclk = 1'b0; rst_n = 1'b0; cpu_rst_n = 1'b1;
     end
     always #6.734 vclk = ~vclk;     // 74.25 MHz
     always #3     sclk = ~sclk;     // 166.7 MHz
@@ -45,7 +50,7 @@ module fb_display_tb;
     wire vrst_n, srst_n, presetn;
     ae350_reset_sync u_vrst (.clk (vclk), .rst_n_in (rst_n), .rst_n_out (vrst_n));
     ae350_reset_sync u_srst (.clk (sclk), .rst_n_in (rst_n), .rst_n_out (srst_n));
-    ae350_reset_sync u_prst (.clk (pclk), .rst_n_in (rst_n), .rst_n_out (presetn));
+    ae350_reset_sync u_prst (.clk (pclk), .rst_n_in (rst_n & cpu_rst_n), .rst_n_out (presetn));
 
     // ---------------------------------------------------------
     // HDMI (座標を作る。音声は無音)
@@ -88,13 +93,14 @@ module fb_display_tb;
     wire  [24:0] mreq_addr;
     wire  [10:0] lb_waddr;
     wire  [15:0] lb_wdata;
+    wire         mrst_n_fb;   // 表示の回路が出す、メモリのクロック側のリセット
 
     fb_display u_fb (
         .pclk (pclk), .presetn (presetn), .psel (psel), .penable (penable), .pwrite (pwrite), .paddr (paddr),
         .pwdata (pwdata), .pstrb (pstrb), .prdata (prdata), .pready (pready), .pslverr (pslverr),
         .vclk (vclk), .vrst_n (vrst_n), .cx (cx), .cy (cy), .rgb (rgb),
         .mclk (sclk), .mrst_n (srst_n), .mreq (mreq), .mreq_addr (mreq_addr), .lb_we (lb_we), .lb_waddr (lb_waddr),
-        .lb_wdata (lb_wdata), .mdone (mdone)
+        .lb_wdata (lb_wdata), .mdone (mdone), .mrst_n_out (mrst_n_fb)
     );
 
     // 要求を 1 回だけ遅らせる (delay_addr の要求を、DELAY_CLK クロック後に渡す)
@@ -137,7 +143,7 @@ module fb_display_tb;
     wire [20:0] dr_addr, dr_bursts;
     wire [15:0] dr_wdata;
     fb_sdram_reader u_reader (
-        .clk (sclk), .rst_n (srst_n), .mreq (mreq_d), .mreq_addr (mreq_addr_d), .lb_we (lb_we), .lb_waddr (lb_waddr),
+        .clk (sclk), .rst_n (mrst_n_fb), .mreq (mreq_d), .mreq_addr (mreq_addr_d), .lb_we (lb_we), .lb_waddr (lb_waddr),
         .lb_wdata (lb_wdata), .mdone (mdone), .dr_start (dr_start), .dr_addr (dr_addr), .dr_bursts (dr_bursts),
         .dr_busy (dr_busy), .dr_wvalid (dr_wvalid), .dr_wdata (dr_wdata), .dr_done (dr_done)
     );
@@ -180,6 +186,7 @@ module fb_display_tb;
     int          nxt_bar_line = -1, cur_bar_line;    // このラインだけカラーバー
     int          frame_no;                           // テストベンチが数えるフレーム (ライン 0 の始まりで 1 増える)
     int          n_fb, n_bar;
+    int          skip_frame = -1, skip_line = 0;      // このフレームのこのライン (cy) からは比べない
     logic [10:0] cx_q;
     logic [9:0]  cy_q;
     logic        started;                            // リセットの後、最初のフレームが始まった
@@ -201,7 +208,8 @@ module fb_display_tb;
             frame_no     <= frame_no + 1;
         end
         // 1 つ前の座標の画素 (hdmi.sv がこのエッジで受け取る色)
-        if (vrst_n && frame_no >= 1 && int'(cx_q) < H_ACTIVE && int'(cy_q) < V_ACTIVE) begin
+        if (vrst_n && frame_no >= 1 && int'(cx_q) < H_ACTIVE && int'(cy_q) < V_ACTIVE &&
+            !(frame_no == skip_frame && int'(cy_q) >= skip_line)) begin
             if (cur_fb && int'(cy_q) != cur_bar_line) begin
                 logic [24:0] a;
                 a = cur_base + 25'(cy_q) * 25'(STRIDE) + 25'(cx_q) * 25'd2;
@@ -329,6 +337,57 @@ module fb_display_tb;
         if (n_bar - nb != H_ACTIVE * V_ACTIVE || n_fb != nf) $fatal(1, "frame 6: %0d color bar pixels, %0d frame buffer pixels", n_bar - nb, n_fb - nf);
         if (n_mreq != nm) $fatal(1, "frame 6: %0d read requests with ENABLE 0", n_mreq - nm);
         $display("frame 6 (ENABLE 0 again, color bar, no read requests): PASS");
+
+        // フレーム 7: CTRL に 1 を書く (次のフレームから B)
+        nb = n_bar;
+        wait_line(7, 10);
+        apb_write(32'h0, 32'd1);
+        nxt_fb = 1'b1;
+        wait_line(8, 0);
+        if (n_bar - nb != H_ACTIVE * V_ACTIVE) $fatal(1, "frame 7: %0d color bar pixels", n_bar - nb);
+        // リセットの前のトグルが 0 であること (CPU のリセットで APB 側のトグルが変わらず、表示の回路が設定の変化を受け取らない場合)
+        if (u_fb.cfg_tgl !== 1'b0) $fatal(1, "the configuration toggle is not 0 before the CPU reset");
+        $display("frame 7 (ENABLE written, color bar): PASS");
+
+        // フレーム 8: ライン 300 で、表示用の読み出しの最中に CPU のリセットをかける
+        nf = n_fb;
+        wait_line(8, 300);
+        @(posedge sclk);
+        while (!dr_busy) @(posedge sclk);
+        repeat (50) @(posedge sclk);
+        if (!dr_busy) $fatal(1, "no display read in progress at the CPU reset");
+        skip_frame = 8; skip_line = int'(cy);
+        cpu_rst_n = 1'b0;
+        nxt_fb = 1'b0; nxt_base = FB_A;
+        repeat (20) @(posedge pclk);
+        cpu_rst_n = 1'b1;
+        if (n_fb - nf < H_ACTIVE * 300) $fatal(1, "frame 8: %0d frame buffer pixels before the CPU reset", n_fb - nf);
+        $display("frame 8 (frame buffer B, CPU reset during a display read at line %0d): PASS", skip_line);
+
+        // フレーム 9: カラーバー。レジスタはリセットの後の値。読み出しの要求が出ない
+        nb = n_bar; nf = n_fb;
+        wait_line(9, 0);
+        nm = n_mreq;
+        wait_line(9, 10);
+        expect_reg(32'h0, 32'd0, "CTRL after the CPU reset");
+        expect_reg(32'h4, {7'd0, FB_A}, "FB_BASE after the CPU reset");
+        // FRAME は、リセットの後にフレーム 8 のライン 720 で 1 回だけ増える (リセットの直後に増えることはない)
+        expect_reg(32'h8, 32'd1, "FRAME after the CPU reset");
+        expect_reg(32'hC, 32'd0, "STATUS after the CPU reset");
+        wait_line(9, 400);
+        if (n_mreq != nm) $fatal(1, "frame 9: %0d read requests after the CPU reset", n_mreq - nm);
+        apb_write(32'h0, 32'd1);
+        nxt_fb = 1'b1;
+        wait_line(10, 0);
+        if (n_bar - nb != H_ACTIVE * V_ACTIVE || n_fb != nf) $fatal(1, "frame 9: %0d color bar pixels, %0d frame buffer pixels", n_bar - nb, n_fb - nf);
+        $display("frame 9 (after the CPU reset: color bar, registers reset, no read requests): PASS");
+
+        // フレーム 10: A。UNDERRUN が 0
+        nf = n_fb;
+        wait_line(11, 0);
+        if (n_fb - nf != H_ACTIVE * V_ACTIVE) $fatal(1, "frame 10: %0d frame buffer pixels", n_fb - nf);
+        expect_reg(32'hC, 32'd0, "STATUS in frame 11");
+        $display("frame 10 (frame buffer A after the CPU reset, no underrun): PASS");
         $display("fb_display_tb: PASS (%0d frame buffer pixels, %0d color bar pixels)", n_fb, n_bar);
         $finish;
     end

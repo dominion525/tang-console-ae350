@@ -29,6 +29,11 @@
 //     +0x08 FRAME    R    表示したフレームの数 (垂直帰線の始まり、cy = V_ACTIVE の cx = 0 で 1 増える)。書き込みは無視
 //     +0x0C STATUS   R/W  bit 0 UNDERRUN (読み込みが間に合わなかったラインがあった)。1 を書くと 0 に戻る
 //
+//   リセット: 画素クロック側とメモリのクロック側は、それぞれの元のリセット (vrst_n、mrst_n) に加えて、CPU のリセット (APB の
+//     PRESETN) でも初期化する (解除はそれぞれのクロックに同期させる)。CPU だけをリセットしたとき (ROM のローダーの UART の
+//     リセットシーケンスなど) に、APB 側のレジスタだけが初期値に戻り、表示の状態と食い違わないように。メモリのクロック側の
+//     リセットは mrst_n_out に出し、読み出しの回路 (rtl/fb_sdram_reader.v) も同じリセットで初期化する
+//
 //   クロックの乗せ換え (すべて、値を先に決めてからトグルを変え、受け側でトグルを 2 段で受ける)
 //     APB → vclk    CTRL か FB_BASE を書くたびに cfg_tgl を変える。vclk 側は変化を見たら値を写す
 //     vclk → APB    フレームの数え上げ (frame_tgl) と、UNDERRUN の発生 (urun_tgl)
@@ -81,8 +86,29 @@ module fb_display #(
     input  wire          lb_we,
     input  wire [10:0]   lb_waddr,
     input  wire [15:0]   lb_wdata,
-    input  wire          mdone
+    input  wire          mdone,
+    output wire          mrst_n_out     // メモリのクロック側のリセット (読み出しの回路に渡す)
 );
+    // ---------------------------------------------------------
+    // 画素クロック側とメモリのクロック側のリセット (元のリセットと CPU のリセットのどちらでもかかり、解除はそれぞれのクロックに同期させる)
+    // ---------------------------------------------------------
+    wire v_arst_n = vrst_n & presetn;
+    wire m_arst_n = mrst_n & presetn;
+    /* verilator lint_off SYNCASYNCNET */
+    reg [1:0] v_rs, m_rs;
+    /* verilator lint_on SYNCASYNCNET */
+    always @(posedge vclk or negedge v_arst_n) begin
+        if (!v_arst_n) v_rs <= 2'b00;
+        else           v_rs <= {v_rs[0], 1'b1};
+    end
+    always @(posedge mclk or negedge m_arst_n) begin
+        if (!m_arst_n) m_rs <= 2'b00;
+        else           m_rs <= {m_rs[0], 1'b1};
+    end
+    wire v_rst_n = v_rs[1];
+    wire m_rst_n = m_rs[1];
+    assign mrst_n_out = m_rst_n;
+
     // ---------------------------------------------------------
     // APB 側
     // ---------------------------------------------------------
@@ -177,8 +203,8 @@ module fb_display #(
     wire [9:0]  y_next = (cy == V_LAST) ? 10'd0 : cy + 10'd1;
     wire        outstanding = (req_tgl_v != done_s[1]);
 
-    always @(posedge vclk or negedge vrst_n) begin
-        if (!vrst_n) begin
+    always @(posedge vclk or negedge v_rst_n) begin
+        if (!v_rst_n) begin
             cfg_s       <= 3'b000;
             en_p        <= 1'b0;
             en_a        <= 1'b0;
@@ -261,8 +287,8 @@ module fb_display #(
     // ---------------------------------------------------------
     reg [2:0] req_s;
     reg       done_tgl;
-    always @(posedge mclk or negedge mrst_n) begin
-        if (!mrst_n) begin
+    always @(posedge mclk or negedge m_rst_n) begin
+        if (!m_rst_n) begin
             req_s     <= 3'b000;
             mreq      <= 1'b0;
             mreq_addr <= {AW{1'b0}};

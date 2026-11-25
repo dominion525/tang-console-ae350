@@ -6,7 +6,9 @@
 //
 //   - mreq で dr_start を出す (dr_addr は mreq_addr の 16 バイト単位、dr_bursts は 1 ラインの LINE_BYTES / 16)
 //   - dr_wvalid ごとに、ラインの中のワードの番号を 1 つ進めて lb_we を出す。dr_done で mdone を出す (最後の lb_we と同じクロック)
-//   - fb_display は前の要求の mdone を受けるまで次の mreq を出さないので、dr_busy の間に dr_start を出すことはない
+//   - 要求は、sdram_ctrl_hs が表示用の読み出しをしていない (dr_busy が 0) ときに出す。リセット (fb_display の mrst_n_out。CPU の
+//     リセットでもかかる) の直前に出した読み出しは、sdram_ctrl_hs の中で止められずに続くので、それが終わるまで新しい要求を待たせる
+//   - 自分が出した読み出しの間だけ (active)、返ったワードと完了を fb_display に渡す (リセットの前に出した読み出しの結果は捨てる)
 //
 // Parameters:
 //   AW          バイトアドレスの幅
@@ -41,32 +43,44 @@ module fb_sdram_reader #(
     assign dr_bursts = BURSTS[AW-5:0];
 
     reg [10:0] idx;      // 次に返るワードの番号
+    reg        pend;     // 受けた要求を、まだ sdram_ctrl_hs に出していない
+    reg        active;   // 自分が出した読み出しが続いている
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             dr_start <= 1'b0;
             dr_addr  <= {(AW-4){1'b0}};
             idx      <= 11'd0;
+            pend     <= 1'b0;
+            active   <= 1'b0;
             lb_we    <= 1'b0;
             lb_waddr <= 11'd0;
             lb_wdata <= 16'd0;
             mdone    <= 1'b0;
         end else begin
-            dr_start <= mreq;
+            dr_start <= 1'b0;
             if (mreq) begin
+                pend    <= 1'b1;
                 dr_addr <= mreq_addr[AW-1:4];
-                idx     <= 11'd0;
             end
-            lb_we    <= dr_wvalid;
+            // sdram_ctrl_hs が表示用の読み出しをしていなければ出す (dr_start の次のクロックで dr_busy が 1 になる)
+            if (pend && !active && !dr_busy && !dr_start) begin
+                dr_start <= 1'b1;
+                pend     <= 1'b0;
+                active   <= 1'b1;
+                idx      <= 11'd0;
+            end
+            lb_we    <= dr_wvalid && active;
             lb_waddr <= idx;
             lb_wdata <= dr_wdata;
-            if (dr_wvalid) idx <= idx + 11'd1;
-            mdone    <= dr_done;
+            if (dr_wvalid && active) idx <= idx + 11'd1;
+            mdone    <= dr_done && active;
+            if (dr_done && active) active <= 1'b0;
         end
     end
 
     /* verilator lint_off UNUSEDSIGNAL */
-    wire unused = &{1'b0, dr_busy, mreq_addr[3:0]};
+    wire unused = &{1'b0, mreq_addr[3:0]};
     /* verilator lint_on UNUSEDSIGNAL */
 
 endmodule
