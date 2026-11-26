@@ -17,5 +17,8 @@ create_generated_clock -name s_clk -source [get_ports {clk50}] -multiply_by 10 -
 // 非同期の FIFO (rtl/ahb_sdram.v の書き込みのバッファ) のグレイコードのポインタは、ビットの間の配線のずれを制約しない。
 // ポインタは 1 回に 1 ビットしか変わらないので、ずれが受け側のクロックの 1 周期 (s_clk 6 ns、ddr_clk 10 ns) より十分小さければ、
 // 受け側は前の値か次の値のどちらかを受ける。一般には set_max_delay -datapath_only で上限を付けるが、Gowin の set_max_delay には
-// -datapath_only がなく、同じ経路では set_clock_groups が set_max_delay より優先される (Gowin SUG940-2.0E の 3.8 と 5.4.2) ため、付けない
+// -datapath_only がなく、同じ経路では set_clock_groups が set_max_delay より優先される (Gowin SUG940-2.0E の 3.8 と 5.4.2) ため、付けない。
+// 表示の回路 (rtl/fb_display.v) がトグルと一緒に乗せ換える多ビットの値 (CTRL と FB_BASE の組 snd_en / snd_base、要求のアドレス req_addr) も、
+// 同じ理由でずれを制約しない。受け側はトグルを 2 段で受けてから値を取り込むので、ずれが受け側のクロックの 2 周期 (約 12〜13.5 ns) より
+// 小さければ正しく動く
 set_clock_groups -asynchronous -group [get_clocks {clk50}] -group [get_clocks {core_clk}] -group [get_clocks {ddr_clk}] -group [get_clocks {ahb_clk}] -group [get_clocks {apb_clk}] -group [get_clocks {rtc_clk}] -group [get_clocks {s_clk}]

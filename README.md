@@ -36,7 +36,7 @@ Pass the newlib location with `NEWLIB`; there is no default.
 | `make coverage`        | Coverage                                                                                                                        |
 | `make run-probe`       | Run the probe program on the Hazard3 version                                                                                    |
 | `make test-hdmi`       | Decode and check the TMDS values from the HDMI output circuit (see "HDMI output")                                               |
-| `make test-fb-display` | Connect the frame buffer display circuit to the HDMI output circuit and the SDRAM model, and check 6 frames (see "HDMI output") |
+| `make test-fb-display` | Connect the frame buffer display circuit to the HDMI output circuit and the SDRAM model, and check 13 frames (see "HDMI output") |
 | `make test-fb`         | Check that a frame buffer drawn by the Hazard3 CPU is displayed (see "HDMI output")                                             |
 
 ### Building newlib (first time only)
@@ -117,6 +117,7 @@ If the CPU stops printing for more than 0.1 s, the monitor circuit (`board/tang_
 - The asynchronous FIFO passes Gray-coded pointers to the other clock through two flip-flops (Cummings' scheme).
   The routing skew between the pointer bits is not constrained (see the comment on the `set_clock_groups` line in `board/tang_console/top.sdc`).
   The usual way to bound it is `set_max_delay -datapath_only`, but Gowin's `set_max_delay` has no `-datapath_only` option, and `set_clock_groups` takes precedence over it on the same path (Gowin SUG940).
+  The multi-bit values that the display circuit (`rtl/fb_display.v`) passes along with a toggle (the CTRL and FB_BASE pair, and the request address) are not constrained either, for the same reason. The receiving side takes the value after it has received the toggle through two flip-flops, so it works as long as the skew is smaller than two periods of the receiving clock.
 - Consecutive writes to the same 8 bytes are combined into one SDRAM write.
   The combined entry goes into the buffer when a write to different 8 bytes arrives, when a read arrives, or when no write arrives for 16 DDR_CLK cycles.
 - A read waits until the buffer is empty (the earlier writes have reached the SDRAM).
@@ -418,8 +419,9 @@ With `HDMI=1`, the whole synthesis project is read as SystemVerilog 2017, becaus
 
 In simulation, `make test-hdmi` (included in `make test`) decodes the TMDS values from the output circuit and checks them.
 It checks the position and polarity of the sync signals, the video values, the ECC of the data island packets, the number and values of the audio samples, and N and CTS in the audio clock regeneration packets.
-`make test-fb-display` connects the display circuit, the SDRAM controller, and the SDRAM model to `hdmi.sv` and runs 6 frames.
+`make test-fb-display` connects the display circuit, the SDRAM controller, and the SDRAM model to `hdmi.sv` and runs 13 frames.
 It checks that every pixel shows the frame buffer value, that an FB_BASE change takes effect at a frame boundary, and that a line whose load was delayed shows the color bars and sets UNDERRUN.
+It also checks that the display follows CTRL and FB_BASE after a reset of the CPU alone or of the pixel clock side alone, and that CTRL and FB_BASE written back to back take effect together.
 `make test-fb` has the Hazard3 CPU draw into the frame buffer and enable the display, and checks that the displayed pixels match what was drawn.
 
 ### Using the frame buffer
@@ -432,7 +434,7 @@ The control registers start at APB address 0xF800_2000 (`sw/fb.h`).
 | Address     | Name    | Description                                                                      |
 | ----------- | ------- | -------------------------------------------------------------------------------- |
 | 0xF800_2000 | CTRL    | bit 0 ENABLE (0 shows the color bars, 1 shows the frame buffer; 0 after reset)   |
-| 0xF800_2004 | FB_BASE | Start address of the frame buffer (low 4 bits are 0; 0x01C0_0000 after reset)    |
+| 0xF800_2004 | FB_BASE | Start address of the frame buffer (low 4 bits are 0; an address within the 32 MB SDRAM, bits 31–25 are 0; 0x01C0_0000 after reset) |
 | 0xF800_2008 | FRAME   | Number of frames shown (increments at the start of vertical blanking; read only) |
 | 0xF800_200C | STATUS  | bit 0 UNDERRUN (a line was not loaded in time; write 1 to clear)                 |
 

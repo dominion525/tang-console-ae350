@@ -5,7 +5,7 @@
 //              既定の構成では、命令はブロック RAM の ROM から読み、データとスタックは AE350 の内蔵 DLM に置く
 //              (sw/board.ld)。値は sw/probe.c が UART (USB シリアル、1,250,000 bps) に出力する。
 //
-//   50 MHz ─▶ ae350_pll ─▶ CORE 800 / DDR 100 (DDR_H* の先が SDRAM の構成。DDR3 版は 50) / AHB 100 / APB 100 / RTC 10 MHz
+//   50 MHz ─▶ ae350_pll ─▶ CORE 800 / DDR 100 (build.sh の既定値で、DDR_H* の先が SDRAM の構成。DDR3 版と、マクロがないときは 50) / AHB 100 / APB 100 / RTC 10 MHz
 //                          (DDR_CLK の分周比はマクロ AE350_DDR_DIV。build.sh の DDR_DIV)
 //   shell_top (tb/shell_top.v。シミュレーションと同じ回路で、合成では本物の AE350_SOC につながる)
 //     ROM_H*   ─▶ ahb_rom (16 KB、内容は ROM_HEX)

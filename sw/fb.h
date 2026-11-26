@@ -21,7 +21,7 @@
 
 #define FB_REG(off)     (*(volatile uint32_t *)(0xF8002000u + (off)))
 #define FB_CTRL         FB_REG(0x00)       /* bit 0 ENABLE (0 はカラーバー、1 はフレームバッファ) */
-#define FB_BASE         FB_REG(0x04)       /* フレームバッファの先頭のバイトアドレス (下位 4 ビットは 0) */
+#define FB_BASE         FB_REG(0x04)       /* フレームバッファの先頭のバイトアドレス (下位 4 ビットは 0。SDRAM の 32 MB の中のアドレスで、ビット 31〜25 は 0 になる。ラインのアドレスは 32 MB を超えると 0 に折り返す) */
 #define FB_FRAME        FB_REG(0x08)       /* 表示したフレームの数 (垂直帰線の始まりで 1 増える) */
 #define FB_STATUS       FB_REG(0x0C)       /* bit 0 UNDERRUN (1 を書くと 0 に戻る) */
 
