@@ -24,6 +24,9 @@
 //   フレーム 10 全画素が A。UNDERRUN が 0 (読み出しの最中のリセットの後も、正しく読み込める)。ライン 400 で、CTRL 0、FB_BASE B、
 //               CTRL 1 を続けて書く (前の組を画素クロック側が写す前に次の書き込みが来て、後で送り直す経路を通ることも確かめる)
 //   フレーム 11 全画素が B (続けて書いた最後の組が、次のフレームから使われる)
+//   フレーム 12 ライン 300 で、画素クロック側だけをリセットする (HDMI の PLL のロックが外れたときと同じく、hdmi.sv も一緒に。
+//               座標が (0, 0) に戻るので、このフレームは比べない)
+//   フレーム 13 全画素が B (リセットの前の CTRL と FB_BASE のとおり)
 //
 // 実行: make test-fb-display
 // =============================================================
@@ -41,16 +44,16 @@ module fb_display_tb;
     // ---------------------------------------------------------
     // クロックとリセット
     // ---------------------------------------------------------
-    logic vclk, sclk, pclk, rst_n, cpu_rst_n;   // cpu_rst_n: CPU のリセット (PRESETN だけにかかる)
+    logic vclk, sclk, pclk, rst_n, cpu_rst_n, vid_rst_n;   // cpu_rst_n: CPU のリセット (PRESETN だけ)。vid_rst_n: 画素クロック側だけ
     initial begin
-        vclk = 1'b0; sclk = 1'b0; pclk = 1'b0; rst_n = 1'b0; cpu_rst_n = 1'b1;
+        vclk = 1'b0; sclk = 1'b0; pclk = 1'b0; rst_n = 1'b0; cpu_rst_n = 1'b1; vid_rst_n = 1'b1;
     end
     always #6.734 vclk = ~vclk;     // 74.25 MHz
     always #3     sclk = ~sclk;     // 166.7 MHz
     always #5     pclk = ~pclk;     // 100 MHz (APB)
     initial #100 rst_n = 1'b1;
     wire vrst_n, srst_n, presetn;
-    ae350_reset_sync u_vrst (.clk (vclk), .rst_n_in (rst_n), .rst_n_out (vrst_n));
+    ae350_reset_sync u_vrst (.clk (vclk), .rst_n_in (rst_n & vid_rst_n), .rst_n_out (vrst_n));
     ae350_reset_sync u_srst (.clk (sclk), .rst_n_in (rst_n), .rst_n_out (srst_n));
     ae350_reset_sync u_prst (.clk (pclk), .rst_n_in (rst_n & cpu_rst_n), .rst_n_out (presetn));
 
@@ -350,7 +353,10 @@ module fb_display_tb;
         nxt_fb = 1'b1;
         wait_line(8, 0);
         if (n_bar - nb != H_ACTIVE * V_ACTIVE) $fatal(1, "frame 7: %0d color bar pixels", n_bar - nb);
-        // リセットの前のトグルが 0 であること (CPU のリセットで APB 側のトグルが変わらず、表示の回路が設定の変化を受け取らない場合)
+        // リセットの前のトグルを 0 にする (CPU のリセットで APB 側のトグルが変わらず、表示の回路が設定の変化を受け取らない場合)。
+        // 1 なら、同じ値をもう 1 回書く (トグルの偶数と奇数は、起動の直後の送り直しで変わる)
+        if (u_fb.cfg_tgl !== 1'b0) apb_write(32'h0, 32'd1);
+        repeat (20) @(posedge pclk);
         if (u_fb.cfg_tgl !== 1'b0) $fatal(1, "the configuration toggle is not 0 before the CPU reset");
         $display("frame 7 (ENABLE written, color bar): PASS");
 
@@ -408,6 +414,27 @@ module fb_display_tb;
         expect_reg(32'h0, 32'd1, "CTRL in frame 12");
         expect_reg(32'h4, {7'd0, FB_B}, "FB_BASE in frame 12");
         $display("frame 11 (frame buffer B, the last of the back-to-back writes): PASS");
+
+        // フレーム 12: ライン 300 で画素クロック側だけをリセットする。リセットの前のトグルを 0 にしておく
+        wait_line(12, 10);
+        if (u_fb.cfg_tgl !== 1'b0) apb_write(32'h4, {7'd0, FB_B});
+        repeat (20) @(posedge pclk);
+        if (u_fb.cfg_tgl !== 1'b0 || u_fb.cfg_busy) $fatal(1, "the configuration toggle is not 0 before the video reset");
+        wait_line(12, 300);
+        skip_frame = 12; skip_line = 0;
+        vid_rst_n = 1'b0;
+        repeat (20) @(posedge vclk);
+        vid_rst_n = 1'b1;
+        wait_line(13, 0);
+        $display("frame 12 (reset of the pixel clock side only at line 300): PASS");
+
+        // フレーム 13: B
+        nf = n_fb;
+        wait_line(14, 0);
+        if (n_fb - nf != H_ACTIVE * V_ACTIVE) $fatal(1, "frame 13: %0d frame buffer pixels", n_fb - nf);
+        expect_reg(32'h0, 32'd1, "CTRL in frame 14");
+        expect_reg(32'h4, {7'd0, FB_B}, "FB_BASE in frame 14");
+        $display("frame 13 (frame buffer B after the reset of the pixel clock side): PASS");
         $display("fb_display_tb: PASS (%0d frame buffer pixels, %0d color bar pixels)", n_fb, n_bar);
         $finish;
     end

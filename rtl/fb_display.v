@@ -37,7 +37,9 @@
 //   クロックの乗せ換え (すべて、値を先に決めてからトグルを変え、受け側でトグルを 2 段で受ける)
 //     APB → vclk    要求と応答の 2 本のトグル。CTRL か FB_BASE を書いたら、写してもらう値の組 (snd_en、snd_base) を決めて
 //                   cfg_tgl を変え、vclk 側が写して cfg_ack を返すまで、その組を変えない。その間に書かれた値は、cfg_ack が
-//                   返った後に送り直す (cfg_pend)。CTRL と FB_BASE を続けて書いても、vclk 側が組の途中の値を写さない
+//                   返った後に送り直す (cfg_pend)。CTRL と FB_BASE を続けて書いても、vclk 側が組の途中の値を写さない。
+//                   vclk 側だけがリセットされたとき (HDMI の PLL のロックが外れたとき) は、そのリセットを APB 側で 2 段で受け
+//                   (vr_s)、リセットの間は cfg_pend を立てて送るのを待ち、解けたら今の値の組を送り直す
 //     vclk → APB    フレームの数え上げ (frame_tgl) と、UNDERRUN の発生 (urun_tgl)
 //     vclk → mclk   要求 (req_tgl。アドレスとラインバッファの側は先に決める)
 //     mclk → vclk   完了 (done_tgl)
@@ -123,6 +125,7 @@ module fb_display #(
     reg          snd_en;              // vclk 側に写してもらう値の組 (cfg_ack が返るまで変えない)
     reg [AW-1:4] snd_base;
     reg [1:0]    ack_s;               // vclk 側の応答 (cfg_ack) を受ける 2 段
+    reg [1:0]    vr_s;                // vclk 側のリセット (v_rst_n) を受ける 2 段
     reg [2:0]    frame_s, urun_s;     // vclk からのトグルを受ける (2 段 + 前の値)
     wire         frame_tgl, urun_tgl;
     reg          cfg_ack;             // vclk 側の応答 (写した要求のトグルの値)
@@ -153,14 +156,16 @@ module fb_display #(
             snd_en    <= 1'b0;
             snd_base  <= FB_BASE_INIT[AW-1:4];
             ack_s     <= 2'b00;
+            vr_s      <= 2'b00;
             frame_s   <= 3'b000;
             urun_s    <= 3'b000;
         end else begin
             frame_s <= {frame_s[1:0], frame_tgl};
             urun_s  <= {urun_s[1:0], urun_tgl};
             ack_s   <= {ack_s[0], cfg_ack};
-            // 送っていない書き込みがあり、前に送った組を vclk 側が写し終えていれば、今の値の組を送る
-            if (cfg_pend && !cfg_busy) begin
+            vr_s    <= {vr_s[0], v_rst_n};
+            // 送っていない書き込みがあり、vclk 側がリセットされておらず、前に送った組を vclk 側が写し終えていれば、今の値の組を送る
+            if (cfg_pend && vr_s[1] && !cfg_busy) begin
                 snd_en   <= ctrl_en;
                 snd_base <= fb_base;
                 cfg_tgl  <= ~cfg_tgl;
@@ -176,6 +181,7 @@ module fb_display #(
                 endcase
             end
             if (urun_s[2] != urun_s[1]) underrun <= 1'b1;   // 0 に戻す書き込みと同時なら、発生を優先する
+            if (!vr_s[1]) cfg_pend <= 1'b1;                  // vclk 側のリセットが解けたら、今の値の組を送り直す
         end
     end
 
