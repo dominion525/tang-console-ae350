@@ -22,7 +22,8 @@
 #   PLACE=<値> ROUTE=<値>  配置配線のオプション (Gowin の place_option と route_option)。指定しなければ Gowin の既定値
 #                    (CPU=hazard3 MEM=ddr3 で、配置によって core_clk のタイミング違反が出たため)。Hazard3 版の PLACE の既定値は 2
 #   HDMI=1           HDMI の出力を足す (1280×720 / 60 Hz のテストパターンと、48 kHz の無音の音声。hdl-util/hdmi、HDMI の PLL は
-#                    hdmi_pll.v、ピンは hdmi.cst)。CPU とはつながない。合成は SystemVerilog 2017 の指定で行う
+#                    hdmi_pll.v、ピンは hdmi.cst)。SDRAM 版ではフレームバッファの表示も入る (CPU から APB で設定し、SDRAM から読む)。
+#                    合成は SystemVerilog 2017 の指定で行う
 #   TRACE=1          デバッグ用。ahb_sdram に、受け付けた転送の記録を入れる (rtl/ahb_sdram.v の AHB_SDRAM_TRACE)
 G=${GOWIN_IDE:-/Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/IDE}
 here=$(cd "$(dirname "$0")" && pwd)

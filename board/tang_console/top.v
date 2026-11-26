@@ -623,7 +623,8 @@ wire unused_sdram = &{1'b0, s_init_done, s_dr_busy, s_dr_wvalid, s_dr_done, s_dr
 `ifdef AE350_HDMI
 // ---------------------------------------------------------
 // HDMI の出力 (build.sh の HDMI=1)。1280×720 / 60 Hz のテストパターン (rtl/hdmi_test_pattern.v) と 48 kHz の試験音
-// (rtl/hdmi_audio_tone.v。振幅 0 の無音) を、hdl-util/hdmi (rtl/vendor/hdmi/) で出す。CPU とはつながず、HDMI の PLL のクロックだけで動く
+// (rtl/hdmi_audio_tone.v。振幅 0 の無音) を、hdl-util/hdmi (rtl/vendor/hdmi/) で出す。SDRAM 版 (AE350_FB) では、フレームバッファの
+// 表示の回路 (rtl/fb_display.v) が APB と SDRAM のクロックにつながる。それ以外の構成ではテストパターンだけで、HDMI の PLL のクロックだけで動く
 // ---------------------------------------------------------
     wire hdmi_clk;       // 74.25 MHz (画素クロック)
     wire hdmi_clk_x5;    // 371.25 MHz (OSER10 の FCLK)

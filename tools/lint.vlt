@@ -16,7 +16,7 @@ lint_off -file "*ddr3/pll_init.v"
 // SDRAM のモデル (取り込んだ外部のコード)
 lint_off -file "*zeitlos/sdram_model.v"
 
-// テストベンチ用の Gowin の IO プリミティブのモデル (Gowin のモデルと同じく、FF の初期値を持ち、1 つのファイルに 3 つのプリミティブを置く)
+// テストベンチ用の Gowin の IO プリミティブのモデル (Gowin のモデルと同じく、FF の初期値を持ち、1 つのファイルに 5 つのプリミティブを置く)
 lint_off -rule PROCASSINIT -file "*tb/gowin_io_models.v"
 lint_off -rule DECLFILENAME -file "*tb/gowin_io_models.v"
 lint_off -rule UNUSEDPARAM -file "*tb/gowin_io_models.v"
