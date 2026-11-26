@@ -35,7 +35,9 @@
 //     リセットは mrst_n_out に出し、読み出しの回路 (rtl/fb_sdram_reader.v) も同じリセットで初期化する
 //
 //   クロックの乗せ換え (すべて、値を先に決めてからトグルを変え、受け側でトグルを 2 段で受ける)
-//     APB → vclk    CTRL か FB_BASE を書くたびに cfg_tgl を変える。vclk 側は変化を見たら値を写す
+//     APB → vclk    要求と応答の 2 本のトグル。CTRL か FB_BASE を書いたら、写してもらう値の組 (snd_en、snd_base) を決めて
+//                   cfg_tgl を変え、vclk 側が写して cfg_ack を返すまで、その組を変えない。その間に書かれた値は、cfg_ack が
+//                   返った後に送り直す (cfg_pend)。CTRL と FB_BASE を続けて書いても、vclk 側が組の途中の値を写さない
 //     vclk → APB    フレームの数え上げ (frame_tgl) と、UNDERRUN の発生 (urun_tgl)
 //     vclk → mclk   要求 (req_tgl。アドレスとラインバッファの側は先に決める)
 //     mclk → vclk   完了 (done_tgl)
@@ -116,9 +118,15 @@ module fb_display #(
     reg [AW-1:4] fb_base;
     reg [31:0]   frame_cnt;
     reg          underrun;
-    reg          cfg_tgl;
+    reg          cfg_tgl;             // 要求 (snd_en、snd_base を写してほしい)
+    reg          cfg_pend;            // vclk 側にまだ送っていない書き込みがある
+    reg          snd_en;              // vclk 側に写してもらう値の組 (cfg_ack が返るまで変えない)
+    reg [AW-1:4] snd_base;
+    reg [1:0]    ack_s;               // vclk 側の応答 (cfg_ack) を受ける 2 段
     reg [2:0]    frame_s, urun_s;     // vclk からのトグルを受ける (2 段 + 前の値)
     wire         frame_tgl, urun_tgl;
+    reg          cfg_ack;             // vclk 側の応答 (写した要求のトグルの値)
+    wire         cfg_busy = (cfg_tgl != ack_s[1]);   // 送った組を vclk 側がまだ写していない
 
     wire        access = psel && penable;
     wire [31:0] base32 = {{(32-AW){1'b0}}, fb_base, 4'b0000};
@@ -141,16 +149,28 @@ module fb_display #(
             frame_cnt <= 32'd0;
             underrun  <= 1'b0;
             cfg_tgl   <= 1'b0;
+            cfg_pend  <= 1'b0;
+            snd_en    <= 1'b0;
+            snd_base  <= FB_BASE_INIT[AW-1:4];
+            ack_s     <= 2'b00;
             frame_s   <= 3'b000;
             urun_s    <= 3'b000;
         end else begin
             frame_s <= {frame_s[1:0], frame_tgl};
             urun_s  <= {urun_s[1:0], urun_tgl};
+            ack_s   <= {ack_s[0], cfg_ack};
+            // 送っていない書き込みがあり、前に送った組を vclk 側が写し終えていれば、今の値の組を送る
+            if (cfg_pend && !cfg_busy) begin
+                snd_en   <= ctrl_en;
+                snd_base <= fb_base;
+                cfg_tgl  <= ~cfg_tgl;
+                cfg_pend <= 1'b0;
+            end
             if (frame_s[2] != frame_s[1]) frame_cnt <= frame_cnt + 32'd1;
             if (access && pwrite) begin
                 case (paddr[3:2])
-                    2'd0: if (pstrb[0]) begin ctrl_en <= pwdata[0]; cfg_tgl <= ~cfg_tgl; end
-                    2'd1: begin fb_base <= base_new[AW-1:4]; cfg_tgl <= ~cfg_tgl; end
+                    2'd0: if (pstrb[0]) begin ctrl_en <= pwdata[0]; cfg_pend <= 1'b1; end   // 送るのは次のクロックから
+                    2'd1: begin fb_base <= base_new[AW-1:4]; cfg_pend <= 1'b1; end
                     2'd3: if (pstrb[0] && pwdata[0]) underrun <= 1'b0;
                     default: ;
                 endcase
@@ -206,6 +226,7 @@ module fb_display #(
     always @(posedge vclk or negedge v_rst_n) begin
         if (!v_rst_n) begin
             cfg_s       <= 3'b000;
+            cfg_ack     <= 1'b0;
             en_p        <= 1'b0;
             en_a        <= 1'b0;
             base_p      <= FB_BASE_INIT[AW-1:4];
@@ -225,10 +246,11 @@ module fb_display #(
         end else begin
             cfg_s  <= {cfg_s[1:0], cfg_tgl};
             done_s <= {done_s[1:0], done_tgl};
-            // APB の値は、トグルが変わった後 (値は止まっている) に写す
+            // APB の値の組は、要求のトグルが変わった後 (組は cfg_ack を返すまで止まっている) に写し、応答を返す
             if (cfg_s[2] != cfg_s[1]) begin
-                en_p   <= ctrl_en;
-                base_p <= fb_base;
+                en_p    <= snd_en;
+                base_p  <= snd_base;
+                cfg_ack <= cfg_s[1];
             end
             // 完了: 要求した側の読み込みが終わった
             if (done_s[2] != done_s[1] && req_live) ready[req_side] <= 1'b1;

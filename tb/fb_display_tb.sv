@@ -21,7 +21,9 @@
 //   フレーム 8  全画素が B。ライン 300 で、表示用の読み出しの最中に、CPU のリセット (PRESETN) だけをかける (ROM のローダーの
 //               リセットシーケンスと同じ。画素クロックと SDRAM のクロックの元のリセットはかけない)。リセットの後のこのフレームは比べない
 //   フレーム 9  全画素がカラーバーで、読み出しの要求が出ない。レジスタはリセットの後の値 (STATUS は 0、FRAME はリセットの後のフレーム 8 のライン 720 で増えた 1)。CTRL に 1 を書く
-//   フレーム 10 全画素が A。UNDERRUN が 0 (読み出しの最中のリセットの後も、正しく読み込める)
+//   フレーム 10 全画素が A。UNDERRUN が 0 (読み出しの最中のリセットの後も、正しく読み込める)。ライン 400 で、CTRL 0、FB_BASE B、
+//               CTRL 1 を続けて書く (前の組を画素クロック側が写す前に次の書き込みが来て、後で送り直す経路を通ることも確かめる)
+//   フレーム 11 全画素が B (続けて書いた最後の組が、次のフレームから使われる)
 //
 // 実行: make test-fb-display
 // =============================================================
@@ -187,6 +189,9 @@ module fb_display_tb;
     int          frame_no;                           // テストベンチが数えるフレーム (ライン 0 の始まりで 1 増える)
     int          n_fb, n_bar;
     int          skip_frame = -1, skip_line = 0;      // このフレームのこのライン (cy) からは比べない
+    int          n_resend;                            // 送った組を写す前に次の書き込みが来ていた (後で送り直す) クロックの数
+    initial n_resend = 0;
+    always @(posedge pclk) if (u_fb.cfg_pend && u_fb.cfg_busy) n_resend <= n_resend + 1;
     logic [10:0] cx_q;
     logic [9:0]  cy_q;
     logic        started;                            // リセットの後、最初のフレームが始まった
@@ -260,7 +265,7 @@ module fb_display_tb;
     // 手順
     // ---------------------------------------------------------
     logic [31:0] d0, d1;
-    int          nb, nf, nm;
+    int          nb, nf, nm, nr;
     initial begin
         // 模様を置く (A と B の 720 ライン)
         for (int y = 0; y < V_ACTIVE; y++) begin
@@ -382,12 +387,27 @@ module fb_display_tb;
         if (n_bar - nb != H_ACTIVE * V_ACTIVE || n_fb != nf) $fatal(1, "frame 9: %0d color bar pixels, %0d frame buffer pixels", n_bar - nb, n_fb - nf);
         $display("frame 9 (after the CPU reset: color bar, registers reset, no read requests): PASS");
 
-        // フレーム 10: A。UNDERRUN が 0
+        // フレーム 10: A。UNDERRUN が 0。ライン 400 で CTRL と FB_BASE を続けて書く
         nf = n_fb;
+        wait_line(10, 400);
+        nr = n_resend;
+        apb_write(32'h0, 32'd0);
+        apb_write(32'h4, {7'd0, FB_B});
+        apb_write(32'h0, 32'd1);
+        nxt_base = FB_B;
         wait_line(11, 0);
+        if (n_resend == nr) $fatal(1, "the back-to-back writes did not wait for the previous configuration to be copied");
         if (n_fb - nf != H_ACTIVE * V_ACTIVE) $fatal(1, "frame 10: %0d frame buffer pixels", n_fb - nf);
+        nf = n_fb;   // フレーム 11 の起点 (下の STATUS の読み出しの間にも、フレーム 11 の画素を数える)
         expect_reg(32'hC, 32'd0, "STATUS in frame 11");
-        $display("frame 10 (frame buffer A after the CPU reset, no underrun): PASS");
+        $display("frame 10 (frame buffer A after the CPU reset, no underrun, CTRL and FB_BASE written back to back): PASS");
+
+        // フレーム 11: B
+        wait_line(12, 0);
+        if (n_fb - nf != H_ACTIVE * V_ACTIVE) $fatal(1, "frame 11: %0d frame buffer pixels", n_fb - nf);
+        expect_reg(32'h0, 32'd1, "CTRL in frame 12");
+        expect_reg(32'h4, {7'd0, FB_B}, "FB_BASE in frame 12");
+        $display("frame 11 (frame buffer B, the last of the back-to-back writes): PASS");
         $display("fb_display_tb: PASS (%0d frame buffer pixels, %0d color bar pixels)", n_fb, n_bar);
         $finish;
     end
