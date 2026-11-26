@@ -479,8 +479,9 @@ wire        fb_mreq, fb_lb_we, fb_mdone;
 wire [24:0] fb_mreq_addr;
 wire [10:0] fb_lb_waddr;
 wire [15:0] fb_lb_wdata;
+wire        fb_mrst_n;   // 表示の回路が出す、メモリのクロック側のリセット (CPU のリセットでもかかる)
 fb_sdram_reader u_fb_reader (
-    .clk (s_clk), .rst_n (sdram_rst_s[1]), .mreq (fb_mreq), .mreq_addr (fb_mreq_addr), .lb_we (fb_lb_we), .lb_waddr (fb_lb_waddr),
+    .clk (s_clk), .rst_n (fb_mrst_n), .mreq (fb_mreq), .mreq_addr (fb_mreq_addr), .lb_we (fb_lb_we), .lb_waddr (fb_lb_waddr),
     .lb_wdata (fb_lb_wdata), .mdone (fb_mdone), .dr_start (fb_dr_start), .dr_addr (fb_dr_addr), .dr_bursts (fb_dr_bursts),
     .dr_busy (s_dr_busy), .dr_wvalid (s_dr_wvalid), .dr_wdata (s_dr_wdata), .dr_done (s_dr_done)
 );
@@ -622,7 +623,8 @@ wire unused_sdram = &{1'b0, s_init_done, s_dr_busy, s_dr_wvalid, s_dr_done, s_dr
 `ifdef AE350_HDMI
 // ---------------------------------------------------------
 // HDMI の出力 (build.sh の HDMI=1)。1280×720 / 60 Hz のテストパターン (rtl/hdmi_test_pattern.v) と 48 kHz の試験音
-// (rtl/hdmi_audio_tone.v。振幅 0 の無音) を、hdl-util/hdmi (rtl/vendor/hdmi/) で出す。CPU とはつながず、HDMI の PLL のクロックだけで動く
+// (rtl/hdmi_audio_tone.v。振幅 0 の無音) を、hdl-util/hdmi (rtl/vendor/hdmi/) で出す。SDRAM 版 (AE350_FB) では、フレームバッファの
+// 表示の回路 (rtl/fb_display.v) が APB と SDRAM のクロックにつながる。それ以外の構成ではテストパターンだけで、HDMI の PLL のクロックだけで動く
 // ---------------------------------------------------------
     wire hdmi_clk;       // 74.25 MHz (画素クロック)
     wire hdmi_clk_x5;    // 371.25 MHz (OSER10 の FCLK)
@@ -701,7 +703,7 @@ wire unused_sdram = &{1'b0, s_init_done, s_dr_busy, s_dr_wvalid, s_dr_done, s_dr
         .pwdata (fb_pwdata), .pstrb (fb_pstrb), .prdata (fb_prdata), .pready (fb_pready), .pslverr (fb_pslverr),
         .vclk (hdmi_clk), .vrst_n (hdmi_rst_n), .cx (hdmi_cx), .cy (hdmi_cy), .rgb (hdmi_rgb),
         .mclk (s_clk), .mrst_n (sdram_rst_s[1]), .mreq (fb_mreq), .mreq_addr (fb_mreq_addr), .lb_we (fb_lb_we),
-        .lb_waddr (fb_lb_waddr), .lb_wdata (fb_lb_wdata), .mdone (fb_mdone)
+        .lb_waddr (fb_lb_waddr), .lb_wdata (fb_lb_wdata), .mdone (fb_mdone), .mrst_n_out (fb_mrst_n)
     );
 `endif
     // ボードの HDMI の線の 499 Ω (AC 結合のコンデンサの後ろで GND へ) を有効にする。駆動しないと、ボードの 100 kΩ (R106) で切れる

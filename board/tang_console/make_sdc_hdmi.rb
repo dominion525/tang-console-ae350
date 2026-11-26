@@ -4,7 +4,8 @@
 # HDMI の PLL (hdmi_pll.v) の画素クロック (74.25 MHz) と、その 5 倍のクロック (371.25 MHz、OSER10 の FCLK) を追加する。
 # 2 つは同じ PLL の出力で、OSER10 が両方を受けるので、同じグループに入れる。ほかのクロックとは非同期 (HDMI の回路は
 # 画素クロックだけで動く。ほかのクロックとの間の経路は、50 MHz で動く PLL_INIT が出す PLL のロックを、画素クロックで
-# 同期化するところ (top.v の u_hdmi_rst) と、OSER10 の非同期のリセットだけ)
+# 同期化するところ (top.v の u_hdmi_rst) と、OSER10 の非同期のリセット。SDRAM 版では、フレームバッファの表示の回路 (rtl/fb_display.v)
+# の APB と SDRAM のクロックとの乗せ換え (トグルの 2 段受けと、2 つのクロックのラインバッファ) もある)
 
 src, dst = ARGV
 abort 'usage: ruby make_sdc_hdmi.rb <input sdc> <output sdc>' unless dst

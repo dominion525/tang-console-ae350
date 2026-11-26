@@ -29,8 +29,15 @@
 //     +0x08 FRAME    R    表示したフレームの数 (垂直帰線の始まり、cy = V_ACTIVE の cx = 0 で 1 増える)。書き込みは無視
 //     +0x0C STATUS   R/W  bit 0 UNDERRUN (読み込みが間に合わなかったラインがあった)。1 を書くと 0 に戻る
 //
+//   リセット: 画素クロック側とメモリのクロック側は、それぞれの元のリセット (vrst_n、mrst_n) に加えて、CPU のリセット (APB の
+//     PRESETN) でも初期化する (解除はそれぞれのクロックに同期させる)。CPU だけをリセットしたとき (ROM のローダーの UART の
+//     リセットシーケンスなど) に、APB 側のレジスタだけが初期値に戻り、表示の状態と食い違わないように。メモリのクロック側の
+//     リセットは mrst_n_out に出し、読み出しの回路 (rtl/fb_sdram_reader.v) も同じリセットで初期化する
+//
 //   クロックの乗せ換え (すべて、値を先に決めてからトグルを変え、受け側でトグルを 2 段で受ける)
-//     APB → vclk    CTRL か FB_BASE を書くたびに cfg_tgl を変える。vclk 側は変化を見たら値を写す
+//     APB → vclk    要求と応答の 2 本のトグル。CTRL か FB_BASE を書いたら、写してもらう値の組 (snd_en、snd_base) を決めて
+//                   cfg_tgl を変え、vclk 側が写して cfg_ack を返すまで、その組を変えない。その間に書かれた値は、cfg_ack が
+//                   返った後に送り直す (cfg_pend)。CTRL と FB_BASE を続けて書いても、vclk 側が組の途中の値を写さない
 //     vclk → APB    フレームの数え上げ (frame_tgl) と、UNDERRUN の発生 (urun_tgl)
 //     vclk → mclk   要求 (req_tgl。アドレスとラインバッファの側は先に決める)
 //     mclk → vclk   完了 (done_tgl)
@@ -81,8 +88,29 @@ module fb_display #(
     input  wire          lb_we,
     input  wire [10:0]   lb_waddr,
     input  wire [15:0]   lb_wdata,
-    input  wire          mdone
+    input  wire          mdone,
+    output wire          mrst_n_out     // メモリのクロック側のリセット (読み出しの回路に渡す)
 );
+    // ---------------------------------------------------------
+    // 画素クロック側とメモリのクロック側のリセット (元のリセットと CPU のリセットのどちらでもかかり、解除はそれぞれのクロックに同期させる)
+    // ---------------------------------------------------------
+    wire v_arst_n = vrst_n & presetn;
+    wire m_arst_n = mrst_n & presetn;
+    /* verilator lint_off SYNCASYNCNET */
+    reg [1:0] v_rs, m_rs;
+    /* verilator lint_on SYNCASYNCNET */
+    always @(posedge vclk or negedge v_arst_n) begin
+        if (!v_arst_n) v_rs <= 2'b00;
+        else           v_rs <= {v_rs[0], 1'b1};
+    end
+    always @(posedge mclk or negedge m_arst_n) begin
+        if (!m_arst_n) m_rs <= 2'b00;
+        else           m_rs <= {m_rs[0], 1'b1};
+    end
+    wire v_rst_n = v_rs[1];
+    wire m_rst_n = m_rs[1];
+    assign mrst_n_out = m_rst_n;
+
     // ---------------------------------------------------------
     // APB 側
     // ---------------------------------------------------------
@@ -90,9 +118,15 @@ module fb_display #(
     reg [AW-1:4] fb_base;
     reg [31:0]   frame_cnt;
     reg          underrun;
-    reg          cfg_tgl;
+    reg          cfg_tgl;             // 要求 (snd_en、snd_base を写してほしい)
+    reg          cfg_pend;            // vclk 側にまだ送っていない書き込みがある
+    reg          snd_en;              // vclk 側に写してもらう値の組 (cfg_ack が返るまで変えない)
+    reg [AW-1:4] snd_base;
+    reg [1:0]    ack_s;               // vclk 側の応答 (cfg_ack) を受ける 2 段
     reg [2:0]    frame_s, urun_s;     // vclk からのトグルを受ける (2 段 + 前の値)
     wire         frame_tgl, urun_tgl;
+    reg          cfg_ack;             // vclk 側の応答 (写した要求のトグルの値)
+    wire         cfg_busy = (cfg_tgl != ack_s[1]);   // 送った組を vclk 側がまだ写していない
 
     wire        access = psel && penable;
     wire [31:0] base32 = {{(32-AW){1'b0}}, fb_base, 4'b0000};
@@ -115,16 +149,28 @@ module fb_display #(
             frame_cnt <= 32'd0;
             underrun  <= 1'b0;
             cfg_tgl   <= 1'b0;
+            cfg_pend  <= 1'b0;
+            snd_en    <= 1'b0;
+            snd_base  <= FB_BASE_INIT[AW-1:4];
+            ack_s     <= 2'b00;
             frame_s   <= 3'b000;
             urun_s    <= 3'b000;
         end else begin
             frame_s <= {frame_s[1:0], frame_tgl};
             urun_s  <= {urun_s[1:0], urun_tgl};
+            ack_s   <= {ack_s[0], cfg_ack};
+            // 送っていない書き込みがあり、前に送った組を vclk 側が写し終えていれば、今の値の組を送る
+            if (cfg_pend && !cfg_busy) begin
+                snd_en   <= ctrl_en;
+                snd_base <= fb_base;
+                cfg_tgl  <= ~cfg_tgl;
+                cfg_pend <= 1'b0;
+            end
             if (frame_s[2] != frame_s[1]) frame_cnt <= frame_cnt + 32'd1;
             if (access && pwrite) begin
                 case (paddr[3:2])
-                    2'd0: if (pstrb[0]) begin ctrl_en <= pwdata[0]; cfg_tgl <= ~cfg_tgl; end
-                    2'd1: begin fb_base <= base_new[AW-1:4]; cfg_tgl <= ~cfg_tgl; end
+                    2'd0: if (pstrb[0]) begin ctrl_en <= pwdata[0]; cfg_pend <= 1'b1; end   // 送るのは次のクロックから
+                    2'd1: begin fb_base <= base_new[AW-1:4]; cfg_pend <= 1'b1; end
                     2'd3: if (pstrb[0] && pwdata[0]) underrun <= 1'b0;
                     default: ;
                 endcase
@@ -177,9 +223,10 @@ module fb_display #(
     wire [9:0]  y_next = (cy == V_LAST) ? 10'd0 : cy + 10'd1;
     wire        outstanding = (req_tgl_v != done_s[1]);
 
-    always @(posedge vclk or negedge vrst_n) begin
-        if (!vrst_n) begin
+    always @(posedge vclk or negedge v_rst_n) begin
+        if (!v_rst_n) begin
             cfg_s       <= 3'b000;
+            cfg_ack     <= 1'b0;
             en_p        <= 1'b0;
             en_a        <= 1'b0;
             base_p      <= FB_BASE_INIT[AW-1:4];
@@ -199,10 +246,11 @@ module fb_display #(
         end else begin
             cfg_s  <= {cfg_s[1:0], cfg_tgl};
             done_s <= {done_s[1:0], done_tgl};
-            // APB の値は、トグルが変わった後 (値は止まっている) に写す
+            // APB の値の組は、要求のトグルが変わった後 (組は cfg_ack を返すまで止まっている) に写し、応答を返す
             if (cfg_s[2] != cfg_s[1]) begin
-                en_p   <= ctrl_en;
-                base_p <= fb_base;
+                en_p    <= snd_en;
+                base_p  <= snd_base;
+                cfg_ack <= cfg_s[1];
             end
             // 完了: 要求した側の読み込みが終わった
             if (done_s[2] != done_s[1] && req_live) ready[req_side] <= 1'b1;
@@ -261,8 +309,8 @@ module fb_display #(
     // ---------------------------------------------------------
     reg [2:0] req_s;
     reg       done_tgl;
-    always @(posedge mclk or negedge mrst_n) begin
-        if (!mrst_n) begin
+    always @(posedge mclk or negedge m_rst_n) begin
+        if (!m_rst_n) begin
             req_s     <= 3'b000;
             mreq      <= 1'b0;
             mreq_addr <= {AW{1'b0}};

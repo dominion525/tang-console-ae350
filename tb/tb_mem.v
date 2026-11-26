@@ -500,15 +500,16 @@ module tb_mem;
     wire [24:0] fb_mreq_addr;
     wire [10:0] fb_lb_waddr;
     wire [15:0] fb_lb_wdata;
+    wire        fb_mrst_n;
     fb_display u_fb (
         .pclk (apb_clk), .presetn (presetn), .psel (fb_psel), .penable (fb_penable), .pwrite (fb_pwrite), .paddr (fb_paddr),
         .pwdata (fb_pwdata), .pstrb (fb_pstrb), .prdata (fb_prdata), .pready (fb_pready), .pslverr (fb_pslverr),
         .vclk (vclk), .vrst_n (vrst_n), .cx (fb_cx), .cy (fb_cy), .rgb (fb_rgb),
         .mclk (sdram_clk), .mrst_n (srst_n), .mreq (fb_mreq), .mreq_addr (fb_mreq_addr), .lb_we (fb_lb_we),
-        .lb_waddr (fb_lb_waddr), .lb_wdata (fb_lb_wdata), .mdone (fb_mdone)
+        .lb_waddr (fb_lb_waddr), .lb_wdata (fb_lb_wdata), .mdone (fb_mdone), .mrst_n_out (fb_mrst_n)
     );
     fb_sdram_reader u_fb_reader (
-        .clk (sdram_clk), .rst_n (srst_n), .mreq (fb_mreq), .mreq_addr (fb_mreq_addr), .lb_we (fb_lb_we), .lb_waddr (fb_lb_waddr),
+        .clk (sdram_clk), .rst_n (fb_mrst_n), .mreq (fb_mreq), .mreq_addr (fb_mreq_addr), .lb_we (fb_lb_we), .lb_waddr (fb_lb_waddr),
         .lb_wdata (fb_lb_wdata), .mdone (fb_mdone), .dr_start (s_dr_start), .dr_addr (s_dr_addr), .dr_bursts (s_dr_bursts),
         .dr_busy (s_dr_busy), .dr_wvalid (s_dr_wvalid), .dr_wdata (s_dr_wdata), .dr_done (s_dr_done)
     );
