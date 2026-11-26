@@ -261,6 +261,8 @@ module sdram_ctrl_hs #(
         dr_wdata     <= dq_s;
         dr_done      <= dr_take_last;
         if (dr_take_last) dr_busy <= 1'b0;
+        // リセットで止めた表示用の読み出し (dr_pend が 0) は、行を閉じる最後の READ のデータが返り終わったところで dr_busy を 0 にする
+        if (dr_busy && !dr_pend && state != S_DR_RD && !(|dr_mk) && !dr_take && !dr_take_last) dr_busy <= 1'b0;
         if (dr_start && !dr_busy && rst_q) begin
             dr_busy  <= 1'b1;
             dr_pend  <= 1'b1;
@@ -441,9 +443,11 @@ module sdram_ctrl_hs #(
 
         dr_mk <= {dr_mk[MKW-2:0], dr_read};
         dr_ml <= {dr_ml[MKW-2:0], dr_read && dr_fin_q};
-        // リセットの間は、表示用の読み出しを止める (行の途中なら、次の READ を最後にして閉じる)
+        // リセットの間は、表示用の読み出しを止める (行の途中なら、次の READ を最後にして閉じる)。行の途中 (S_DR_RD) なら、行を閉じる
+        // までは dr_busy を 1 のままにして、新しい dr_start を受けない (リセットがごく短いと、開いている行に新しい要求のアドレスで
+        // READ を出してしまうため)
         if (!rst_q) begin
-            dr_busy <= 1'b0;
+            if (state != S_DR_RD) dr_busy <= 1'b0;
             dr_pend <= 1'b0;
             dr_mk   <= {MKW{1'b0}};
             dr_ml   <= {MKW{1'b0}};
