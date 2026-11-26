@@ -73,6 +73,7 @@ DDR_H* の先には、ベースボードの SDRAM（32 MB）をつなぎます�
 SDRAM のコントローラは `rtl/sdram_ctrl_hs.v` と `rtl/sdram_io.v` で、166.7 MHz で動きます。
 以下では、DDR_H* の先を SDRAM にした構成を **SDRAM 版** と呼びます。
 SDRAM 版の DDR_CLK は 100 MHz です（`build.sh` の `DDR_DIV`。`DDR_DIV=16` で 50 MHz）。
+Hazard3 版（`CPU=hazard3`、`CPU=hazard3-fast`）の SDRAM 版も、DDR_CLK 100 MHz でタイミング違反がなく、実機で hello と `mem_bench` が動作しました。
 Gowin の手引き（MUG1031 の表 4-1）では、DDR_CLK は 200 MHz 未満で、ほかのクロックとは非同期です。
 DDR3 版と LiteDRAM 版の DDR_CLK は 50 MHz です。
 

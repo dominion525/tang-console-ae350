@@ -73,6 +73,7 @@ DDR_H* is connected to the SDRAM on the baseboard (32 MB).
 The SDRAM controller is `rtl/sdram_ctrl_hs.v` with `rtl/sdram_io.v`, running at 166.7 MHz.
 Below, a build with SDRAM behind DDR_H* is called the **SDRAM build**.
 In the SDRAM build, DDR_CLK is 100 MHz (`DDR_DIV` in `build.sh`; `DDR_DIV=16` gives 50 MHz).
+The Hazard3 SDRAM builds (`CPU=hazard3` and `CPU=hazard3-fast`) also meet timing with a 100 MHz DDR_CLK, and hello and `mem_bench` ran on the board.
 Gowin's manual (MUG1031, Table 4-1) gives DDR_CLK as less than 200 MHz and asynchronous to the other clocks.
 The DDR3 and LiteDRAM builds use a 50 MHz DDR_CLK.
 
