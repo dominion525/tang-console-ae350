@@ -114,6 +114,9 @@ If the CPU stops printing for more than 0.1 s, the monitor circuit (`board/tang_
 - A read fetches the 16-byte line that contains the address from the SDRAM and returns it on DDR_H*. Transfers are handled one at a time.
 - A write completes as soon as it enters a 16-entry write buffer (an asynchronous FIFO from the DDR_CLK side to the SDRAM clock side).
   When the buffer has room, the write is accepted with no wait states; when it is full, the write waits until an entry frees up.
+- The asynchronous FIFO passes Gray-coded pointers to the other clock through two flip-flops (Cummings' scheme).
+  The routing skew between the pointer bits is not constrained (see the comment on the `set_clock_groups` line in `board/tang_console/top.sdc`).
+  The usual way to bound it is `set_max_delay -datapath_only`, but Gowin's `set_max_delay` has no `-datapath_only` option, and `set_clock_groups` takes precedence over it on the same path (Gowin SUG940).
 - Consecutive writes to the same 8 bytes are combined into one SDRAM write.
   The combined entry goes into the buffer when a write to different 8 bytes arrives, when a read arrives, or when no write arrives for 16 DDR_CLK cycles.
 - A read waits until the buffer is empty (the earlier writes have reached the SDRAM).
