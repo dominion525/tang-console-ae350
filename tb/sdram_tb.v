@@ -21,6 +21,8 @@
 //   13 書き込みのバッファ (16 段) があふれる長さの書き込み (8 バイトを 192 回続けて) で、満杯になって待たされ、すべて読み直して一致する
 //   14 同じ 8 バイトへの書き込みのまとめ: 4 バイトを 2 回、1 バイトを 8 回書くと、それぞれ SDRAM への 1 回の書き込みになり、値が正しい。
 //      1 回だけ書いて待つと、読み出しがなくても SDRAM に届く
+//   15 表示用の読み出しの行の途中で、ごく短いリセット (SDRAM のクロックで 2〜3 クロック) をかけ、行を閉じる READ の前に解ける。
+//      その直後の別のアドレスの表示用の読み出しと、AHB の読み書きが正しい
 //
 // 実行: make test-sdram-unit
 // =============================================================
@@ -617,6 +619,37 @@ module sdram_tb;
                    `SDRAM_MEM[mi(32'h0000_0810)]);
         ahb_read_check(32'h0000_0810, 3'd2);
         $display("14 write combining: PASS");
+
+        // 15: 表示用の読み出しの行の途中のごく短いリセット
+        dr_fill(32'h01C0_0000, 1280);
+        dr_fill(32'h0080_0000, 1280);
+        @(posedge sclk);
+        while (dr_busy) @(posedge sclk);
+        dr_clr    <= 1'b1;             // 返ったワードの数を 0 に戻す (dr_read と同じ)
+        dr_addr   <= 21'h1C_0000;      // 0x01C0_0000 (16 バイト単位)
+        dr_bursts <= 21'd160;
+        dr_start  <= 1'b1;
+        @(posedge sclk);
+        dr_clr    <= 1'b0;
+        dr_start  <= 1'b0;
+        //   表示の READ を 3 回出した直後 (立ち下がり) に、rst_n を 1 ns だけ下げる
+        i = 0;
+        while (i < 3) begin
+            @(negedge sclk);
+            if (u_path.u_ctrl.state == 4'd10 && u_path.u_ctrl.io_cmd == 4'b0101) i = i + 1;
+        end
+        rst_n = 1'b0;
+        #1;
+        rst_n = 1'b1;
+        @(posedge sclk);
+        while (!u_path.u_ctrl.rst_q) @(posedge sclk);
+        if (u_path.u_ctrl.state != 4'd10) $fatal(1, "the reset did not end before the READ that closes the row");
+        //   すぐに別のアドレスの表示用の読み出しを出す (dr_read は dr_busy が 0 になるのを待つ)
+        dr_read(32'h0080_0000, 160);
+        dr_check_pat(32'h0080_0000, 1280);
+        ahb_write(32'h0000_0600, 3'd3, 64'h0F1E_2D3C_4B5A_6978);
+        ahb_read_check(32'h0000_0600, 3'd3);
+        $display("15 short reset during a display read: PASS");
 
         $display("sdram_tb: PASS (%0d read checks)", n_checks);
         $finish;
