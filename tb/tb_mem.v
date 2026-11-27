@@ -560,8 +560,25 @@ module tb_mem;
 
     // DDR のモデルと同じく、プログラムが使う下位 64 KB を 0xA5 で初期化する (EXTM_H* の背景の転送がこれを前提にしている)
     integer sdram_i;
+    // +sdram_load=<16 進のファイル (1 行 1 バイト、$readmemh の形)> と +sdram_load_len=<バイト数>: シミュレーションが始まる前に、
+    // SDRAM の 0x0001_0000 (sw/sdram.ld の .text の始まりで、ROM のローダーの run が飛ぶ先) から中身を書いておく。大きいプログラムを
+    // ローダーで送る時間を省くため (手順には run だけを書く)。語の中の並びは ddr_poke32 と同じく、下位のバイトが低い番地
+    localparam integer SDRAM_LOAD_MAX = 4194304;     // 読み込みの置き場の大きさ (4 MB)
+    reg [7:0]       sdram_load_buf [0:SDRAM_LOAD_MAX];   // 1 バイト多いのは、長さが奇数のときの最後の語の上位のバイト
+    reg [8*256-1:0] sdram_load_path;
+    integer         sdram_load_len;
     initial begin
         for (sdram_i = 0; sdram_i < 65536; sdram_i = sdram_i + 2) `TB_SDRAM_MEM[sdram_idx(sdram_i)] = 16'hA5A5;
+        if ($value$plusargs("sdram_load=%s", sdram_load_path)) begin
+            if (!$value$plusargs("sdram_load_len=%d", sdram_load_len)) $fatal(1, "+sdram_load needs +sdram_load_len");
+            if (sdram_load_len < 1 || sdram_load_len > SDRAM_LOAD_MAX)
+                $fatal(1, "+sdram_load_len=%0d is outside 1..%0d", sdram_load_len, SDRAM_LOAD_MAX);
+            sdram_load_buf[sdram_load_len] = 8'h00;
+            $readmemh(sdram_load_path, sdram_load_buf, 0, sdram_load_len - 1);
+            for (sdram_i = 0; sdram_i < sdram_load_len; sdram_i = sdram_i + 2)
+                `TB_SDRAM_MEM[sdram_idx(32'h0001_0000 + sdram_i)] = {sdram_load_buf[sdram_i + 1], sdram_load_buf[sdram_i]};
+            $display("sdram_load: %0d bytes at 0x00010000", sdram_load_len);
+        end
     end
 
     /* verilator lint_off UNUSEDSIGNAL */
