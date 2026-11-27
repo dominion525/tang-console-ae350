@@ -169,7 +169,7 @@ define run_cmp
 	sed -n 's/^UART: //p' $(BUILD)/$(2).log | diff sw/$(1)_expected.txt -
 endef
 
-test: test-plic test-sram test-sdram-unit test-sdram-io test-sdram-pll test-stage2 test-stage3 test-stage4 test-stage5 test-clocks test-reset test-random test-sdram test-loader test-uart-reset test-uart-tool test-hdmi test-fb-display test-fb
+test: test-plic test-sram test-sdram-unit test-sdram-io test-sdram-pll test-stage2 test-stage3 test-stage4 test-stage5 test-clocks test-reset test-random test-sdram test-loader test-sdram-load test-uart-reset test-uart-tool test-hdmi test-fb-display test-fb
 
 # ROM のローダーのテスト (tools/loader_test.rb が手順と期待の出力を作る)。シミュレーション用のローダーは、タイムアウトを
 # 200,000 mcycle (250 µs) にする (実機は 1 秒)。送信は実機の 1.25 Mbps と同じ間隔で行うので、hello は数分かかる
@@ -343,6 +343,17 @@ test-loader: $(SIM_SDRAM) $(BUILD)/loader_sim.hex $(BUILD)/ilm_min.bin $(BUILD)/
 	ruby tools/loader_test.rb hello $(BUILD)/hello.bin $(BUILD)/hello.dis $(BUILD)/loader_hello.txt $(BUILD)/loader_hello_expected.txt
 	$(SIM_SDRAM) +rom=$(BUILD)/loader_sim.hex +uart_script=$(BUILD)/loader_hello.txt +max_cycles=80000000 > $(BUILD)/loader_hello.log 2>&1; status=$$?; cat $(BUILD)/loader_hello.log; exit $$status
 	sed -n 's/^UART: //p' $(BUILD)/loader_hello.log | tr -d '\r' | diff $(BUILD)/loader_hello_expected.txt -
+
+# テストベンチの +sdram_load で、hello をローダーで送らずに SDRAM に入れておき、run だけを送って実行する (tools/loader_test.rb の
+# direct)。大きいプログラムを、ローダーで送る時間を省いて流すための形が使えることを確かめる
+.PHONY: test-sdram-load
+test-sdram-load: $(SIM_SDRAM) $(BUILD)/loader_sim.hex $(BUILD)/hello.bin tools/loader_test.rb
+	ruby tools/loader_test.rb direct $(BUILD)/hello.bin $(BUILD)/hello.dis $(BUILD)/sdram_load.txt $(BUILD)/sdram_load_expected.txt $(BUILD)/hello_bin.hex
+	$(SIM_SDRAM) +rom=$(BUILD)/loader_sim.hex +uart_script=$(BUILD)/sdram_load.txt +max_cycles=80000000 \
+		+sdram_load=$(BUILD)/hello_bin.hex +sdram_load_len=$$(wc -c < $(BUILD)/hello.bin | tr -d ' ') > $(BUILD)/sdram_load.log 2>&1; \
+		status=$$?; cat $(BUILD)/sdram_load.log; exit $$status
+	grep -q "^sdram_load: $$(wc -c < $(BUILD)/hello.bin | tr -d ' ') bytes at 0x00010000$$" $(BUILD)/sdram_load.log
+	sed -n 's/^UART: //p' $(BUILD)/sdram_load.log | tr -d '\r' | diff $(BUILD)/sdram_load_expected.txt -
 
 # ウェイトを転送ごとにランダムに決め (ROM と DDR とも 0〜3 サイクル)、乱数の種を 3 つ変えて stage2〜stage5 を実行する
 RAND := +rom_wait_rand=3 +ddr_wait_rand=3

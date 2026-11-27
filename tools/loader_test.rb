@@ -3,10 +3,13 @@
 #
 #   ruby tools/loader_test.rb cmds  <ILM に置く小さなプログラムの .bin> <終了しないプログラムの .bin> <手順> <期待> <作業ディレクトリ>
 #   ruby tools/loader_test.rb hello <hello.bin> <hello.dis> <手順> <期待>
+#   ruby tools/loader_test.rb direct <hello.bin> <hello.dis> <手順> <期待> <16 進のファイル>
 #
 # cmds: 拒否されるコマンド、GO、タイムアウト、受信エラー、16 バイトの OK と CRC-32、終了しないプログラムの run と、UART の
 #       リセットシーケンスによるローダーへの復帰 (rtl/uart_reset_seq.v)、小さなプログラムの run (0x600D で終わる)
 # hello: hello (newlib を使う 48 KB のプログラム) を送って run し、出力を比べる
+# direct: hello をローダーで送らず、テストベンチの +sdram_load で SDRAM に入れておき (16 進のファイルを作る)、run だけを送って、
+#         出力を比べる (ローダーの行は READY と RUN だけになる)
 # どちらも、送るときは 1 バイトごとに APB_CLK で 640 サイクル待つ (1 バイト 800 サイクル = 8 µs。実機の 1.25 Mbps と同じ間隔)
 # タイムアウトの確認での待ち (P 100000、1 ms) は、シミュレーション用のローダーのタイムアウト (200,000 mcycle = 250 µs) より長い
 
@@ -142,6 +145,24 @@ S abc
 READY ae350 loader
 GO
 #{ok_line(h)}
+RUN #{format('%08x', LOAD_AT)}
+hello from SDRAM (main 0x#{main})
+READY: send one line
+received: abc
+  E
+when 'direct'
+  bin, dis, script, expected, hex = ARGV
+  h = File.binread(bin)
+  main = File.read(dis)[/^([0-9a-f]{8}) <main>:$/, 1] or abort 'main not found in hello.dis'
+  File.write(hex, h.bytes.map { |b| format("%02x\n", b) }.join)
+  File.write(script, <<-S)
+W READY
+S run #{format('%08x', LOAD_AT)}
+W READY:
+S abc
+  S
+  File.write(expected, <<-E)
+READY ae350 loader
 RUN #{format('%08x', LOAD_AT)}
 hello from SDRAM (main 0x#{main})
 READY: send one line
